@@ -51,6 +51,7 @@
 - pro vlaky train kit https://kenney.nl/assets/train-kit
 - pro města city kit commercial https://kenney.nl/assets/city-kit-commercial
 - pro vesnice city kit suburban https://kenney.nl/assets/city-kit-suburban
+- složka /assets obsahuje glb modely + textury
 
 ## Notifikace
 - do spodní lišty, např. začátek nového roku se shrnutím toho předchozího
