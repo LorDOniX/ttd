@@ -1,0 +1,100 @@
+# Vlastní transport tycoon deluxe
+
+## Popis
+- chtěl bych 2d izometrickou hru, renderovaná ve 3d grafice, rozdělená na dílky (čtverečky)
+- na mapě bude podle seedu generovaná tráva, voda, města, vesnice
+- města budou generována pomocí spojených cest a modelů city kit commercial, velikost 1000-5000
+- vesnice budou generována pomocí spojených cest a modelů city kit suburban, velikost 100-1000
+- názvy měst převzít z českých vesnic a měst
+- města se budou v průběhu let zvětšovat např. o 5% za 1 rok
+- začíná se 1950, končí se 2050, jeden rok trvá 15m reálného času
+- města jsou oddělené celky, nejsou spojena mezi sebou, uvnitř měst jsou náhodně generované baráčky spojené cestou pro auta
+- existují 2 typy cest - pro auta a vlaky, cesty pro auta budou použita uvnitř měst
+- hráč bude moct zadat svůj název společnosti
+- hráč bude moct stavět koleje, které budou spojovat 2 nástupiště, které se dají vytvořit a je potřeba 1 depa, ze kterého vyjede vlak na koleje
+- nástupiště dáme jako 1x3 políčka, když bude v blízkosti města, tak se na něm budou objevovat cestující, které budeme moct převážet
+- počet cestujících se odvodí od velikosti města
+- pokud spojíme 2 města, takže 1 nástupiště ve městě převeze lidi do druhého nástupiště v druhém městě, hráč dostane peníze podle tabulky ohodnocení
+- vlak v každé stanici nejdříve vyloží náklad, může dostat za něj zaplaceno, převezme aktuální náklad a pojede na druhé nástupiště, furt dokola
+- vzdálenost pro převoz se počítá jako počty ujetých čtverečků od nástupiště do nástupiště
+- na začátek začíná uživatel s rozpočtem 1000000
+- vlaky z train kitu rozdělíme tak, že bude dostupný 1 vlak z n vlaků a v průběhu let se objeví dostupný další vlak ke koupi, který bude lepší než ten předchozí
+- vlaky budou mít parametry výdaje za 1 rok, co se budou postupně po měsící odečítat a cenu za koupě, rychlost
+- vagonky pro cestující budou mít taky cenu za 1 vagonek např. 50000
+- první vlak bude stát např. 250000, všechny další a drazší s lepšími parametry budou např. +20% navíc, bude mít větší provozní náklady, ale bude rychlejší
+- vlak po příjezdu do nástupiště zpomaluje, než zastaví
+
+## Ovládání
+- stejné jako v openttd
+- možnost zoomu na kolečko, levým interakce, pravým a držení přesun po mapě
+
+## Jak se to bude hrát
+- po načtení mapy se budou dát pokládat koleje a nástupiště, umísťovat depa, ze kterých bude jezdit vlak
+- vlak bude jezdit na tu první zastávku, která bude blíže depu
+- vlak neustále jezdí mezi 2 zastávkami/nástupištěmi a generuje zisk a odečítají se provozní náklady
+- kdykoliv si můžu hru uložit a nahrát
+
+## Tabulka ohodnocení
+- jednotka 1 čtvereček za čas
+- pro cestující bude 10 jednotek cestujícíh za 1 čtvereček vzdálenosti do 1 měsíce herní doby 5000
+- pro cestující bude 10 jednotek cestujícíh za 1 čtvereček vzdálenosti do 2 měsíců herní doby 2500
+- pro cestující bude 10 jednotek cestujícíh za 1 čtvereček vzdálenosti do 3 měsíců a více herní doby 1000
+
+## Herní smyčka
+- překreslení mapy, zobrazení aktuální pozice vlaků
+
+## Modely
+- pro textury cest - auta něco vygeneruj nebo doporuč
+- pro textury cest - vlaky něco vygeneruj nebo doporuč
+- nástupiště, depo - něco vygeneruj nebo doporuč
+- textury vagónů pro pasažéry něco vygeneruj nebo doporuč
+- pro vlaky train kit https://kenney.nl/assets/train-kit
+- pro města city kit commercial https://kenney.nl/assets/city-kit-commercial
+- pro vesnice city kit suburban https://kenney.nl/assets/city-kit-suburban
+
+## Notifikace
+- do spodní lišty, např. začátek nového roku se shrnutím toho předchozího
+- budeme rozšiřovat
+
+## HUD
+- ukázka v souboru hud.jpg z openttd
+
+### Ikona diskety
+- načíst stav hry jako json
+- uložit stav hry jako json
+
+### Ikona kolečka
+- dialog s nastavením
+
+### Ikona financí
+- zobrazí seznam všech dopravním prostředků a kolik vydělávají, kolik mají spotřebu a přehled pro současný rok
+
+### Ikona vlaku
+- dialoové možnosti pro stavění kolejí, depa, nástupiště
+
+### Nastavení
+- zobrazení a skrytí mřížky
+- změna názvu společnosti
+
+### Spodní lišta
+- zobrazuje název společnosti a události uprostřed
+- vpravo je zobrazena cena v CZK
+
+## Stavby
+
+### Depo
+- po kliknutí na depo je možné uvnitř vytvořit vlak a přidat mu vagónky
+- pokud existuje vlak, je možné jej
+
+### Vlaky
+- cena za 1 dílek kolejí bude 10000, cena za 1 dílek nástupiště 25000, cena za 1 dílek s depem 50000
+- bude možnost umístnit do mapy začátek kolejí a přes držení levého tlačítka vybrat cílový bod, pak se za cenu 1 kusu kolejí udělá výstavba, která v průběhu spotřebuje peníze a kdyžtak se zastaví s dialogem, že došly peníze
+- když se ke kolejím s jakékoliv strany přidá depo, tak se může pak v depu zakoupený vlak poslat na trať
+- můžu si vybrat nástupiště a to umístnit do mapy
+
+## Dialogy
+- veškeré interakce nad mapou - zobrazení oken nad 3d grafikou se bude řídit tak, že při stisku backspace se všechny dialogy vymažou
+- dialog bude nastavení, seznam dopravních prostředků, seznam věcí pro stavbu vlaku, atd.
+
+## Do budoucna
+- uděláme možnosti převozu i jiných materiálů než lidí, je potřeba pak grafika např. pro elektrárnu a uhelný důl
