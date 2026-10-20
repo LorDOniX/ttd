@@ -214,8 +214,53 @@ body {
   font-weight: 600;
 }
 
-.finance__balance {
-  margin-top: 10px;
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #2a2a28;
+}
+
+.tabs__tab {
+  padding: 4px 12px;
+  color: #ddd;
+  background: #4a4a46;
+  border: 1px solid #2a2a28;
+  border-bottom: none;
+  cursor: pointer;
+}
+
+.tabs__tab--active {
+  color: #fff;
+  background: #3c5a8a;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  font-size: 10px;
+}
+
+.chart text {
+  fill: #ccc;
+}
+
+.chart__grid {
+  stroke: #6b6b64;
+  stroke-width: 1;
+}
+
+.chart__legend {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.chart__legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
 }
 
 .tool-button {

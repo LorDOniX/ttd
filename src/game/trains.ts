@@ -102,7 +102,7 @@ export class Fleet {
 
   buy(depot: Depot, model: TrainModel): string | null {
     if (this.game.money < model.price) return `Nedostatek peněz (${formatMoney(model.price)}).`;
-    this.game.spend(model.price);
+    this.game.spend(model.price, 'vehicles');
     const id = this.nextId++;
     this.trains.push({
       id,
@@ -135,7 +135,7 @@ export class Fleet {
     if (train.state !== 'depot') return 'Vagony lze měnit jen v depu.';
     if (train.wagons >= MAX_WAGONS) return `Vlak může mít nejvýš ${MAX_WAGONS} vagonů.`;
     if (this.game.money < WAGON_PRICE) return `Nedostatek peněz (${formatMoney(WAGON_PRICE)}).`;
-    this.game.spend(WAGON_PRICE);
+    this.game.spend(WAGON_PRICE, 'vehicles');
     train.wagons++;
     this.changed();
     return null;
@@ -144,13 +144,13 @@ export class Fleet {
   removeWagon(train: Train): void {
     if (train.state !== 'depot' || train.wagons === 0) return;
     train.wagons--;
-    this.game.refund(WAGON_PRICE * TRAIN_SELL_REFUND);
+    this.game.refund(WAGON_PRICE * TRAIN_SELL_REFUND, 'vehicles');
     this.changed();
   }
 
   sell(train: Train): void {
     if (train.state !== 'depot') return;
-    this.game.refund(trainValue(train) * TRAIN_SELL_REFUND);
+    this.game.refund(trainValue(train) * TRAIN_SELL_REFUND, 'vehicles');
     this.trains.splice(this.trains.indexOf(train), 1);
     this.changed();
   }
@@ -360,7 +360,7 @@ export class Fleet {
   private chargeRunningCosts(): void {
     for (const train of this.trains) {
       const yearly = trainModel(train).runningCost + train.wagons * WAGON_RUNNING_COST;
-      this.game.spend(yearly / 12);
+      this.game.spend(yearly / 12, 'running');
       train.costs += yearly / 12;
     }
   }

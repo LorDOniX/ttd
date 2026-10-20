@@ -43,6 +43,37 @@ describe('uložení a načtení', () => {
     );
   });
 
+  it('úvěr a historie let se uloží', () => {
+    const { game } = buildLine();
+    game.borrow();
+    runDays(game, 400);
+    const copy = restoreGame(parseSave(JSON.stringify(serializeGame(game, 'test'))));
+    expect(copy.loan).toBe(game.loan);
+    expect(copy.history).toEqual(game.history);
+  });
+
+  it('uložení verze 1 převede: bez úvěru, loňský rok do historie', () => {
+    const { game } = buildLine();
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    const { companyName, money, rngState } = data.game;
+    data.version = 1;
+    data.clock.date.year = 1960;
+    data.game = {
+      companyName,
+      money,
+      rngState,
+      thisYear: { income: 10, expenses: 5, passengers: 1 },
+      lastYear: { income: 100, expenses: 50, passengers: 7 },
+    };
+    const restored = restoreGame(parseSave(JSON.stringify(data)));
+    expect(restored.loan).toBe(0);
+    expect(restored.thisYear.expenses).toBe(5);
+    expect(restored.thisYear.costs.interest).toBe(0);
+    expect(restored.history).toEqual([
+      expect.objectContaining({ year: 1959, income: 100, expenses: 50, passengers: 7 }),
+    ]);
+  });
+
   it('starší uložení bez rozměru nástupiště načte jako 1×3', () => {
     const { game } = buildLine();
     const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));

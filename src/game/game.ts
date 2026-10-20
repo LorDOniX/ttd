@@ -1,5 +1,5 @@
-import { START_MONEY } from './balance';
-import { Construction } from './construction';
+import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN, START_MONEY } from './balance';
+import { Construction, infrastructureValue } from './construction';
 import { Emitter } from './emitter';
 import { GameClock, formatDate } from './clock';
 import { Passengers } from './passengers';
@@ -10,10 +10,28 @@ import { growTown } from '../world/town';
 
 export const DEFAULT_COMPANY_NAME = 'Moje dopravní společnost';
 
+export type ExpenseKind = 'construction' | 'vehicles' | 'running' | 'maintenance' | 'interest';
+
+export const EXPENSE_KINDS: readonly ExpenseKind[] = ['construction', 'vehicles', 'running', 'maintenance', 'interest'];
+
 export interface YearStats {
   income: number;
   expenses: number;
   passengers: number;
+  costs: Record<ExpenseKind, number>;
+}
+
+export interface YearRecord extends YearStats {
+  year: number;
+}
+
+export function emptyYear(): YearStats {
+  return {
+    income: 0,
+    expenses: 0,
+    passengers: 0,
+    costs: { construction: 0, vehicles: 0, running: 0, maintenance: 0, interest: 0 },
+  };
 }
 
 type GameEvents = {
@@ -49,18 +67,38 @@ export class Game {
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
   money = START_MONEY;
-  thisYear: YearStats = { income: 0, expenses: 0, passengers: 0 };
-  lastYear: YearStats | null = null;
+  loan = 0;
+  thisYear: YearStats = emptyYear();
+  // Uzavřené roky od nejstaršího
+  history: YearRecord[] = [];
+  // Cena staveb pro údržbu; počítá se z celé mapy, proto jen po změně kolejí
+  private infrastructure: number | null = null;
 
   constructor(readonly world: World) {
     // Vlastní proud náhody pro průběh hry, oddělený od generování mapy
     this.rng = new Rng(world.seed ^ 0x5bd1e995);
     this.fleet = new Fleet(this);
     this.passengers = new Passengers(this);
+    this.clock.events.on('month', () => this.payMonthly());
+    this.events.on('railChanged', () => (this.infrastructure = null));
     this.clock.events.on('year', (year) => this.onYearEnd(year));
     this.clock.events.on('end', () =>
       this.news(`${formatDate(this.clock.date)}: konec hry. Konečný stav účtu ${formatMoney(this.money)}.`),
     );
+  }
+
+  get lastYear(): YearRecord | null {
+    return this.history.at(-1) ?? null;
+  }
+
+  // Měsíční splátka úroku z aktuálního úvěru
+  get monthlyInterest(): number {
+    return Math.round((this.loan * LOAN_INTEREST) / 12);
+  }
+
+  get monthlyMaintenance(): number {
+    this.infrastructure ??= infrastructureValue(this.world);
+    return Math.round((this.infrastructure * MAINTENANCE_RATE) / 12);
   }
 
   update(dtMs: number): void {
@@ -74,15 +112,34 @@ export class Game {
     this.events.emit('money', this.money);
   }
 
-  spend(amount: number): void {
+  spend(amount: number, kind: ExpenseKind): void {
     this.money -= amount;
     this.thisYear.expenses += amount;
+    this.thisYear.costs[kind] += amount;
     this.events.emit('money', this.money);
   }
 
   // Vrácené peníze (např. z demolice) snižují výdaje, nejsou příjmem
-  refund(amount: number): void {
-    this.spend(-amount);
+  refund(amount: number, kind: ExpenseKind): void {
+    this.spend(-amount, kind);
+  }
+
+  // Úvěr není příjem ani výdaj, mění jen stav účtu
+  borrow(): string | null {
+    if (this.loan + LOAN_STEP > MAX_LOAN) return `Úvěr může být nejvýš ${formatMoney(MAX_LOAN)}.`;
+    this.loan += LOAN_STEP;
+    this.money += LOAN_STEP;
+    this.events.emit('money', this.money);
+    return null;
+  }
+
+  repay(): string | null {
+    if (this.loan < LOAN_STEP) return 'Žádný úvěr nemáte.';
+    if (this.money < LOAN_STEP) return `Na splátku chybí peníze (${formatMoney(LOAN_STEP)}).`;
+    this.loan -= LOAN_STEP;
+    this.money -= LOAN_STEP;
+    this.events.emit('money', this.money);
+    return null;
   }
 
   news(text: string): void {
@@ -96,14 +153,22 @@ export class Game {
     this.events.emit('company', trimmed);
   }
 
+  // Platby za uplynulý měsíc; prosinec se započítá ještě do končícího roku
+  private payMonthly(): void {
+    const interest = this.monthlyInterest;
+    const maintenance = this.monthlyMaintenance;
+    if (interest > 0) this.spend(interest, 'interest');
+    if (maintenance > 0) this.spend(maintenance, 'maintenance');
+  }
+
   private onYearEnd(year: number): void {
     const { income, expenses, passengers } = this.thisYear;
     this.news(
       `Rok ${year} skončil – přepraveno ${passengers.toLocaleString('cs-CZ')} cestujících, ` +
         `příjmy ${formatMoney(income)}, výdaje ${formatMoney(expenses)}, zisk ${formatMoney(income - expenses)}.`,
     );
-    this.lastYear = this.thisYear;
-    this.thisYear = { income: 0, expenses: 0, passengers: 0 };
+    this.history.push({ year, ...this.thisYear });
+    this.thisYear = emptyYear();
 
     for (const town of this.world.towns) {
       growTown(this.world.map, town, year + 1, this.rng);

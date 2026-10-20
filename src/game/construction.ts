@@ -9,6 +9,7 @@ import {
   TRACK_PIECE_COST,
 } from './balance';
 import { formatMoney, type Game } from './game';
+import type { World } from '../world/generator';
 import { NO_OWNER, TileType, type GameMap, type TilePos } from '../world/map';
 import { stationTiles, type Edge, type StationShape } from '../world/rail';
 import type { PathStep } from '../world/railPath';
@@ -26,6 +27,22 @@ export function stationCost(shape: StationShape): number {
 export function trackPieceCost(map: GameMap, x: number, y: number): number {
   const type = map.get(x, y);
   return type === TileType.Water || type === TileType.Bridge ? BRIDGE_PIECE_COST : TRACK_PIECE_COST;
+}
+
+// Cena všech kolejí, nástupišť a dep společnosti, ze které se počítá údržba
+export function infrastructureValue(world: World): number {
+  const { map, rail } = world;
+  let value = 0;
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      const type = map.get(x, y);
+      if (type === TileType.Rail || type === TileType.Crossing || type === TileType.Bridge) {
+        value += rail.pieceCount(x, y) * trackPieceCost(map, x, y);
+      }
+    }
+  }
+  for (const station of rail.stations) value += stationCost(station);
+  return value + rail.depots.length * DEPOT_COST;
 }
 
 type Job = { kind: 'track'; step: PathStep } | { kind: 'road'; step: RoadStep };
@@ -71,7 +88,7 @@ export class Construction {
     const sameTown = rail.stations.filter((s) => s.townId === nearest.id).length;
     const name = sameTown === 0 ? nearest.name : `${nearest.name} ${sameTown + 1}`;
 
-    this.game.spend(cost);
+    this.game.spend(cost, 'construction');
     rail.addStation({ ...shape, name, townId: nearest.id });
     this.game.news(`Postaveno nástupiště ${name}.`);
     this.game.events.emit('railChanged');
@@ -82,7 +99,7 @@ export class Construction {
     const { rail } = this.game.world;
     if (!rail.canPlaceDepot(x, y)) return 'Sem depo postavit nelze.';
     if (this.game.money < DEPOT_COST) return `Nedostatek peněz (${formatMoney(DEPOT_COST)}).`;
-    this.game.spend(DEPOT_COST);
+    this.game.spend(DEPOT_COST, 'construction');
     rail.addDepot(x, y, entrance);
     this.game.events.emit('railChanged');
     return null;
@@ -193,8 +210,8 @@ export class Construction {
       }
     }
 
-    if (plan.cost > 0) this.game.spend(plan.cost);
-    else this.game.refund(-plan.cost);
+    if (plan.cost > 0) this.game.spend(plan.cost, 'construction');
+    else this.game.refund(-plan.cost, 'construction');
     if (railChanged) this.game.events.emit('railChanged');
     if (roadsChanged) this.game.events.emit('roadsChanged');
     if (townsChanged) this.game.events.emit('townsChanged');
@@ -225,7 +242,7 @@ export class Construction {
       }
       this.queue.shift();
       this.elapsed -= interval;
-      this.game.spend(cost);
+      this.game.spend(cost, 'construction');
       if (job.kind === 'track') {
         this.game.world.rail.addPiece(job.step.x, job.step.y, job.step.piece);
         railChanged = true;

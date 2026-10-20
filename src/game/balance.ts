@@ -2,6 +2,13 @@
 
 export const START_MONEY = 1_000_000;
 
+// Úvěr v bance: úrok se platí měsíčně
+export const MAX_LOAN = 2_000_000;
+export const LOAN_STEP = 100_000;
+export const LOAN_INTEREST = 0.08;
+// Roční údržba jako podíl ceny postavených kolejí, nástupišť a dep, platí se měsíčně
+export const MAINTENANCE_RATE = 0.05;
+
 // Stavby
 export const TRACK_PIECE_COST = 5_000;
 // Dílek koleje na mostě přes vodu

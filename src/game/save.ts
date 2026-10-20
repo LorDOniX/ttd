@@ -1,5 +1,5 @@
 import { STATION_LENGTH } from './balance';
-import { Game, type YearStats } from './game';
+import { Game, emptyYear, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Train } from './trains';
 import type { World } from '../world/generator';
@@ -7,7 +7,8 @@ import { GameMap } from '../world/map';
 import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
-const SAVE_VERSION = 1;
+// 2: úvěr, historie let a rozpad výdajů
+const SAVE_VERSION = 2;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -18,8 +19,34 @@ export interface SaveData {
   towns: Town[];
   rail: { pieces: string; stations: Station[]; depots: Depot[]; nextStationId: number; nextDepotId: number };
   fleet: { trains: Train[]; nextId: number };
-  game: { companyName: string; money: number; thisYear: YearStats; lastYear: YearStats | null; rngState: number };
+  game: {
+    companyName: string;
+    money: number;
+    loan: number;
+    thisYear: YearStats;
+    history: YearRecord[];
+    rngState: number;
+  };
   clock: { date: GameDate; day: number; dayProgress: number };
+}
+
+// Verze 1 měla jen lonišní rok a výdaje bez rozpadu
+interface GameV1 {
+  companyName: string;
+  money: number;
+  thisYear: Omit<YearStats, 'costs'>;
+  lastYear: Omit<YearStats, 'costs'> | null;
+  rngState: number;
+}
+
+function migrateV1(game: GameV1, year: number): SaveData['game'] {
+  const { lastYear, ...rest } = game;
+  return {
+    ...rest,
+    loan: 0,
+    thisYear: { ...emptyYear(), ...game.thisYear },
+    history: lastYear ? [{ ...emptyYear(), ...lastYear, year: year - 1 }] : [],
+  };
 }
 
 function encode(bytes: Uint8Array): string {
@@ -64,8 +91,9 @@ export function serializeGame(game: Game, seedText: string): SaveData {
     game: {
       companyName: game.companyName,
       money: game.money,
+      loan: game.loan,
       thisYear: game.thisYear,
-      lastYear: game.lastYear,
+      history: game.history,
       rngState: game.rng.state,
     },
     clock: { date: clock.date, day: clock.day, dayProgress: clock.dayProgress },
@@ -84,7 +112,9 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || data.version !== SAVE_VERSION) throw new Error('Nepodporovaná verze uložené hry.');
+  if (!isObject(data) || (data.version !== 1 && data.version !== SAVE_VERSION)) {
+    throw new Error('Nepodporovaná verze uložené hry.');
+  }
   const { map, rail, fleet, game, clock } = data;
   if (!isObject(map) || !isObject(rail) || !isObject(fleet) || !isObject(game) || !isObject(clock)) {
     throw new Error('Neúplná uložená hra.');
@@ -101,6 +131,13 @@ export function parseSave(text: string): SaveData {
     !isObject(clock.date) ||
     !isObject(game.thisYear)
   ) {
+    throw new Error('Poškozená uložená hra.');
+  }
+  if (data.version === 1) {
+    const year = Number(clock.date.year);
+    return { ...data, version: SAVE_VERSION, game: migrateV1(game as unknown as GameV1, year) } as unknown as SaveData;
+  }
+  if (typeof game.loan !== 'number' || !Number.isFinite(game.loan) || !Array.isArray(game.history)) {
     throw new Error('Poškozená uložená hra.');
   }
   return data as unknown as SaveData;
@@ -126,8 +163,9 @@ export function restoreGame(data: SaveData): Game {
   const game = new Game(world);
   game.companyName = data.game.companyName;
   game.money = data.game.money;
+  game.loan = data.game.loan;
   game.thisYear = data.game.thisYear;
-  game.lastYear = data.game.lastYear;
+  game.history = data.game.history;
   game.rng.state = data.game.rngState;
   game.clock.date = data.clock.date;
   game.clock.day = data.clock.day;

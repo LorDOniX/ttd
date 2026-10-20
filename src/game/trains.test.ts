@@ -37,9 +37,11 @@ describe('vlaky', () => {
   it('provozní náklady se strhávají měsíčně', () => {
     const { game, depot } = buildLine();
     buyTrain(game, depot, 3);
-    const before = game.money;
+    const before = game.thisYear.costs.running;
     runDays(game, 31);
-    expect(before - game.money).toBeCloseTo((TRAIN_MODELS[0].runningCost + 3 * WAGON_RUNNING_COST) / 12);
+    expect(game.thisYear.costs.running - before).toBeCloseTo(
+      (TRAIN_MODELS[0].runningCost + 3 * WAGON_RUNNING_COST) / 12,
+    );
   });
 
   it('demolice pod vlakem a obsluhovaného nástupiště je zablokovaná', () => {
