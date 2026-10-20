@@ -1,6 +1,6 @@
 import { MAX_WAGONS, TRAIN_SELL_REFUND, WAGON_CAPACITY, WAGON_PRICE } from '../game/balance';
 import { Game, formatMoney } from '../game/game';
-import { trainModel, trainValue, type Train } from '../game/trains';
+import { ordersError, trainModel, trainValue, type Train } from '../game/trains';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { h } from './dom';
@@ -52,12 +52,37 @@ export function openDepot(
       h('div', { className: 'form__hint' }, stateText(game, train)),
     );
     const row = h('div', { className: 'train' }, info);
+    const detail = (label: string): HTMLButtonElement =>
+      button(label, () => openTrain(windows, game, train, { focus, openDepot: (d) => openDepot(windows, game, d, focus) }));
 
     if (train.state === 'depot') {
+      row.append(
+        h(
+          'div',
+          { className: 'train__actions' },
+          button(`+ vagon (${formatMoney(WAGON_PRICE)})`, () => report(fleet.addWagon(train)), train.wagons >= MAX_WAGONS),
+          button('− vagon', () => fleet.removeWagon(train), train.wagons === 0),
+          button(`Prodat (${formatMoney(trainValue(train) * TRAIN_SELL_REFUND)})`, () => fleet.sell(train)),
+        ),
+      );
+      const orders = train.orders;
+      if (orders) {
+        row.append(
+          h('div', { className: 'form__hint' }, `Jízdní řád: ${orders.map((s) => fleet.stationName(s)).join(' → ')}`),
+          h(
+            'div',
+            { className: 'train__actions' },
+            detail('Upravit řád'),
+            button('Vyjet', () => report(fleet.start(train, orders)), ordersError(orders) !== null),
+          ),
+        );
+        return row;
+      }
+      // Bez řádu rychlá volba kyvadla mezi dvěma nástupišti; víc zastávek přes okno vlaku
       const stations = stationsByDistance();
-      const orders = pendingOrders.get(train.id) ?? train.orders ?? [stations[0]?.id, stations[1]?.id];
-      const a = stationSelect(orders[0]);
-      const b = stationSelect(orders[1]);
+      const pending = pendingOrders.get(train.id) ?? [stations[0]?.id, stations[1]?.id];
+      const a = stationSelect(pending[0]);
+      const b = stationSelect(pending[1]);
       const remember = (): void => {
         pendingOrders.set(train.id, [Number(a.value), Number(b.value)]);
       };
@@ -67,17 +92,11 @@ export function openDepot(
         h(
           'div',
           { className: 'train__actions' },
-          button(`+ vagon (${formatMoney(WAGON_PRICE)})`, () => report(fleet.addWagon(train)), train.wagons >= MAX_WAGONS),
-          button('− vagon', () => fleet.removeWagon(train), train.wagons === 0),
-          button(`Prodat (${formatMoney(trainValue(train) * TRAIN_SELL_REFUND)})`, () => fleet.sell(train)),
-        ),
-        h(
-          'div',
-          { className: 'train__actions' },
           a,
           '↔',
           b,
           button('Vyjet', () => report(fleet.start(train, [Number(a.value), Number(b.value)])), stations.length < 2),
+          detail('Více zastávek'),
         ),
       );
     } else {
@@ -87,9 +106,7 @@ export function openDepot(
           { className: 'train__actions' },
           button('Do depa', () => fleet.sendToDepot(train), train.target === -1),
           button('Najít', () => focus(...pointAt(train.path, train.pos))),
-          button('Detail', () =>
-            openTrain(windows, game, train, { focus, openDepot: (d) => openDepot(windows, game, d, focus) }),
-          ),
+          detail('Detail'),
         ),
       );
     }

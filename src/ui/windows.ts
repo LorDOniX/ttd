@@ -33,16 +33,20 @@ export class WindowManager {
     return this.windows.has(id);
   }
 
-  // Obnoví obsah otevřeného okna bez přenesení dopředu; během kliknutí do okna počká
+  // Obnoví obsah otevřeného okna bez přenesení dopředu; během kliknutí nebo výběru v okně počká
   update(id: string, content: HTMLElement): void {
     const win = this.windows.get(id);
     if (!win) return;
     win.pending = content;
-    if (this.pressed !== win) this.flush(win);
+    this.flush(win);
   }
 
   private flush(win: OpenWindow): void {
-    if (!win.pending) return;
+    if (!win.pending || this.pressed === win) return;
+    const active = document.activeElement;
+    const editing =
+      (active instanceof HTMLSelectElement || active instanceof HTMLInputElement) && win.el.contains(active);
+    if (editing) return;
     win.body.replaceChildren(win.pending);
     win.pending = null;
   }
@@ -100,6 +104,11 @@ export class WindowManager {
     el.addEventListener('pointerdown', () => {
       this.pressed = win;
       this.bringToFront(el);
+    });
+    el.addEventListener('focusout', () => setTimeout(() => this.flush(win)));
+    // Vybraný seznam by jinak držel fokus a blokoval obnovy okna
+    el.addEventListener('change', (e) => {
+      if (e.target instanceof HTMLSelectElement) e.target.blur();
     });
     this.makeDraggable(el, header);
     this.bringToFront(el);

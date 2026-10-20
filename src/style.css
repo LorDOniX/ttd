@@ -108,6 +108,28 @@ body {
   cursor: pointer;
 }
 
+.orders {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.orders__row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  background: #4a4a46;
+}
+
+.orders__row > span {
+  flex: 1;
+}
+
+.orders__row--current {
+  background: #3c5a8a;
+}
+
 .table--clickable tr:not(:first-child):hover {
   background: #66665f;
 }
