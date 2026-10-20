@@ -104,5 +104,17 @@
 - veškeré interakce nad mapou - zobrazení oken nad 3d grafikou se bude řídit tak, že při stisku delete se všechny dialogy vymažou
 - dialog bude nastavení, seznam dopravních prostředků, seznam věcí pro stavbu vlaku, atd.
 
+## Fáze vývoje
+Každá fáze končí samostatným commitem a spustitelnou hrou (Vite + TypeScript + three.js).
+
+0. **Skelet projektu** – Vite, TypeScript, three.js, servírování `assets/`, prázdná scéna
+1. **Mapa a kamera** – izometrická ortografická kamera, dlaždicová mřížka, zoom kolečkem, posun pravým tlačítkem, výběr dlaždice levým
+2. **Generování světa** – PRNG ze seedu, tráva a voda, města (commercial, 1000–5000) a vesnice (suburban, 100–1000), silnice uvnitř sídel, české názvy, popisky
+3. **Čas, HUD, dialogy** – kalendář 1950–2050 (15 min = 1 rok), peníze 1 000 000 CZK, horní a spodní lišta, notifikace, okna (Delete zavře vše), nastavení (mřížka, název společnosti), růst měst 5 %/rok
+4. **Stavba železnice** – koleje tažením včetně diagonál (A* trasa, postupná výstavba, stop při nedostatku peněz), nástupiště 1×3, depo, procedurální textury, automatické navazování kolejí
+5. **Vlaky** – katalog z train kitu odemykaný v čase (+20 % cena a náklady, vyšší rychlost), nákup v depu, vagony 50 000, jízda po grafu kolejí, zpomalení před stanicí, kyvadlový provoz
+6. **Cestující a ekonomika** – cestující podle velikosti města v dosahu, vykládka a nakládka, tabulka ohodnocení, měsíční provozní náklady, okno financí, roční shrnutí
+7. **Uložení a načtení** – stav hry do a z JSON
+
 ## Do budoucna
 - uděláme možnosti převozu i jiných materiálů než lidí, je potřeba pak grafika např. pro elektrárnu a uhelný důl
