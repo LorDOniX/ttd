@@ -4,6 +4,9 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 // Dimetrie 2:1 jako v OpenTTD: kamera z rohu mapy pod elevací 30°
 const ISO_DIRECTION = new THREE.Vector3(1, Math.SQRT2 * Math.tan(Math.PI / 6), 1).normalize();
+const ROTATION_STEP = Math.PI / 4;
+const ROTATION_MS = 300;
+const UP = new THREE.Vector3(0, 1, 0);
 
 export class IsoCamera {
   readonly camera = new THREE.OrthographicCamera();
@@ -11,6 +14,9 @@ export class IsoCamera {
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly raycaster = new THREE.Raycaster();
   private panAnchor: THREE.Vector3 | null = null;
+  // Natočení pohledu kolem svislé osy; cílové se mění po 45°, aktuální k němu plynule dobíhá
+  private azimuth = 0;
+  private targetAzimuth = 0;
 
   constructor(
     private readonly dom: HTMLElement,
@@ -40,6 +46,23 @@ export class IsoCamera {
     this.updatePosition();
   }
 
+  // Otočí pohled o 45° (direction 1 = po směru hodinových ručiček)
+  rotate(direction: 1 | -1 = 1): void {
+    this.targetAzimuth += direction * ROTATION_STEP;
+    const from = this.azimuth;
+    const to = this.targetAzimuth;
+    const start = performance.now();
+    const step = (now: number): void => {
+      const t = Math.min(1, (now - start) / ROTATION_MS);
+      // Při rychlém klikání novou animaci nepřeruší stará
+      if (to !== this.targetAzimuth) return;
+      this.azimuth = from + (to - from) * (1 - (1 - t) * (1 - t));
+      this.updatePosition();
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
   // Průsečík paprsku z kurzoru se zemí (y = 0)
   groundPoint(clientX: number, clientY: number): THREE.Vector3 | null {
     const rect = this.dom.getBoundingClientRect();
@@ -54,7 +77,8 @@ export class IsoCamera {
   private updatePosition(): void {
     this.target.x = THREE.MathUtils.clamp(this.target.x, this.bounds.min.x, this.bounds.max.x);
     this.target.z = THREE.MathUtils.clamp(this.target.z, this.bounds.min.y, this.bounds.max.y);
-    this.camera.position.copy(this.target).addScaledVector(ISO_DIRECTION, 100);
+    const direction = ISO_DIRECTION.clone().applyAxisAngle(UP, this.azimuth);
+    this.camera.position.copy(this.target).addScaledVector(direction, 100);
     this.camera.lookAt(this.target);
     this.camera.updateMatrixWorld();
   }

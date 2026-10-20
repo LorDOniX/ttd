@@ -10,6 +10,7 @@ export interface ToolbarActions {
   openFinance: () => void;
   openRailBuild: () => void;
   openRoadBuild: () => void;
+  rotateView: (direction: 1 | -1) => void;
 }
 
 // Horní lišta s ikonami a spodní stavová lišta
@@ -37,6 +38,12 @@ export class Hud {
       return b;
     };
 
+    const rotate = button('🔄', 'Otočit pohled o 45° (pravé tlačítko opačně)', () => actions.rotateView(1));
+    rotate.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      actions.rotateView(-1);
+    });
+
     const toolbar = h(
       'div',
       { className: 'toolbar' },
@@ -46,6 +53,7 @@ export class Hud {
       button('💰', 'Finance', actions.openFinance),
       button('🚂', 'Stavba železnice', actions.openRailBuild),
       button('🛣️', 'Stavba silnic', actions.openRoadBuild),
+      rotate,
     );
 
     const statusbar = h(

@@ -128,6 +128,7 @@ new Hud(container, game, {
   openFinance: () => openFinance(windows, game),
   openRailBuild: () => buildTools.openRailWindow(),
   openRoadBuild: () => buildTools.openRoadWindow(),
+  rotateView: (direction) => isoCamera.rotate(direction),
 });
 
 game.events.on('townsChanged', () => {
