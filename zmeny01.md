@@ -1,0 +1,10 @@
+- přidat stromy
+- mosty přes vodu
+- otočení pohledu o 45 stupnu HUD ikona rotace
+- úvodní obrazovka při začátku hry
+	- na styl openttd
+	- město, vlaky na pozadí, živé město a náhodná doprava
+	- nová hra - parametry pro seed, genrerování, velikost 128x128, 256x256, 512x512
+	- načtení hry
+	- pokračování hry - jestli bude v localstorage/sessionstorage
+- zobrazení ceny při převozu do cílové destinace zelená částka co postupně zmizí

@@ -1,0 +1,5 @@
+- otočení 90 stupnu misto 45
+- okolo mostu zabradli - at to odlisime od normalnich koleji
+- otevřený dialog - tlačítko center na lokaci
+- minimapa dialog - klik center na místo kliku
+- volitelně velké nástupiště - na táhnutí

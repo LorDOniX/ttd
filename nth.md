@@ -22,3 +22,4 @@ Volitelná rozšíření mimo hlavní fáze ze [ttd.md](ttd.md).
 
 ## Ostatní
 - co půjde jendodušše převzít z open ttd - navrhni
+- výška terénu
