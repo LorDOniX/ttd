@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import type { Town } from '../world/town';
+import type { Station } from '../world/rail';
 
 // Popisky měst jako HTML nad 3D scénou
 export class TownLabels {
@@ -38,5 +39,24 @@ export class TownLabels {
 
   render(scene: THREE.Scene, camera: THREE.Camera): void {
     this.renderer.render(scene, camera);
+  }
+}
+
+// Popisky nástupišť s počtem čekajících cestujících; vykresluje je CSS2DRenderer z TownLabels
+export class StationLabels {
+  readonly object = new THREE.Group();
+
+  rebuild(stations: readonly Station[], inReach: (station: Station) => boolean): void {
+    this.object.clear();
+    for (const station of stations) {
+      const el = document.createElement('div');
+      el.className = 'station-label';
+      el.textContent = inReach(station)
+        ? `${station.name} · čeká ${Math.floor(station.waiting)}`
+        : `${station.name} · mimo dosah města`;
+      const label = new CSS2DObject(el);
+      label.position.set(station.x + 0.5, 0.8, station.y + 0.5);
+      this.object.add(label);
+    }
   }
 }

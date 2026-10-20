@@ -42,6 +42,8 @@ type ClockEvents = {
 export class GameClock {
   readonly events = new Emitter<ClockEvents>();
   date: GameDate = { year: START_YEAR, month: 0, day: 1 };
+  // Počet celých dní od začátku hry
+  day = 0;
   // Rozpracovaná část aktuálního dne 0..1
   dayProgress = 0;
   private _paused = false;
@@ -59,6 +61,11 @@ export class GameClock {
     return this.date.year >= END_YEAR;
   }
 
+  // Herní čas ve dnech včetně rozpracovaného dne
+  get now(): number {
+    return this.day + this.dayProgress;
+  }
+
   // Posune čas o reálných dtMs, vrací počet uplynulých herních dní (necelé číslo)
   tick(dtMs: number): number {
     if (this._paused || this.ended) return 0;
@@ -73,6 +80,7 @@ export class GameClock {
   }
 
   private advanceDay(): void {
+    this.day++;
     const d = this.date;
     if (d.day < daysInMonth(d.year, d.month)) {
       this.date = { ...d, day: d.day + 1 };

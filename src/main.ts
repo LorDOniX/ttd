@@ -5,7 +5,7 @@ import { Game } from './game/game';
 import { BuildingsView } from './render/buildings';
 import { IsoCamera } from './render/camera';
 import { TileCursor } from './render/cursor';
-import { TownLabels } from './render/labels';
+import { StationLabels, TownLabels } from './render/labels';
 import { BuildPreview } from './render/preview';
 import { RailView } from './render/rail';
 import { RoadView } from './render/roads';
@@ -68,6 +68,9 @@ labels.setSize(window.innerWidth, window.innerHeight);
 labels.rebuild(towns);
 scene.add(labels.object);
 
+const stationLabels = new StationLabels();
+scene.add(stationLabels.object);
+
 const cursor = new TileCursor();
 scene.add(cursor.object);
 
@@ -108,7 +111,12 @@ game.events.on('railChanged', () => {
   railView.rebuild();
   // Demolice přejezdu mění i vzhled silnice
   roads.rebuild();
+  rebuildStationLabels();
 });
+
+const rebuildStationLabels = (): void =>
+  stationLabels.rebuild(world.rail.stations, (s) => game.passengers.townsInReach(s).length > 0);
+game.events.on('stationsChanged', rebuildStationLabels);
 
 game.events.on('roadsChanged', () => roads.rebuild());
 

@@ -55,6 +55,16 @@ export function segmentPoint(s: Segment, t: number): [number, number] {
   return [s.x + ax + (bx - ax) * t, s.y + ay + (by - ay) * t];
 }
 
+// Index kusu koleje, na kterém leží bod ve vzdálenosti d
+export function segmentIndexAt(path: readonly Segment[], d: number): number {
+  let rest = d;
+  for (let i = 0; i < path.length; i++) {
+    rest -= segmentLength(path[i]);
+    if (rest < 0) return i;
+  }
+  return path.length - 1;
+}
+
 // Bod ve vzdálenosti d od začátku trasy (ořezaný na rozsah trasy)
 export function pointAt(path: readonly Segment[], d: number): [number, number] {
   let rest = Math.max(0, d);

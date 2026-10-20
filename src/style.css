@@ -267,3 +267,11 @@ body {
   font-size: 14px;
   font-weight: 600;
 }
+
+.station-label {
+  padding: 0 5px;
+  color: #fff;
+  background: rgba(120, 60, 20, 0.8);
+  font-size: 11px;
+  white-space: nowrap;
+}

@@ -2,6 +2,7 @@ import { START_MONEY } from './balance';
 import { Construction } from './construction';
 import { Emitter } from './emitter';
 import { GameClock, formatDate } from './clock';
+import { Passengers } from './passengers';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
@@ -12,6 +13,7 @@ export const DEFAULT_COMPANY_NAME = 'Moje dopravní společnost';
 export interface YearStats {
   income: number;
   expenses: number;
+  passengers: number;
 }
 
 type GameEvents = {
@@ -22,6 +24,7 @@ type GameEvents = {
   railChanged: [];
   roadsChanged: [];
   trainsChanged: [];
+  stationsChanged: [];
   outOfMoney: [];
 };
 
@@ -39,16 +42,18 @@ export class Game {
   readonly clock = new GameClock();
   readonly construction = new Construction(this);
   readonly fleet: Fleet;
+  readonly passengers: Passengers;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
   money = START_MONEY;
-  thisYear: YearStats = { income: 0, expenses: 0 };
+  thisYear: YearStats = { income: 0, expenses: 0, passengers: 0 };
   lastYear: YearStats | null = null;
 
   constructor(readonly world: World) {
     // Vlastní proud náhody pro průběh hry, oddělený od generování mapy
     this.rng = new Rng(world.seed ^ 0x5bd1e995);
     this.fleet = new Fleet(this);
+    this.passengers = new Passengers(this);
     this.clock.events.on('year', (year) => this.onYearEnd(year));
     this.clock.events.on('end', () =>
       this.news(`${formatDate(this.clock.date)}: konec hry. Konečný stav účtu ${formatMoney(this.money)}.`),
@@ -89,15 +94,18 @@ export class Game {
   }
 
   private onYearEnd(year: number): void {
-    const { income, expenses } = this.thisYear;
+    const { income, expenses, passengers } = this.thisYear;
     this.news(
-      `Rok ${year} skončil – příjmy ${formatMoney(income)}, výdaje ${formatMoney(expenses)}, ` +
-        `zisk ${formatMoney(income - expenses)}.`,
+      `Rok ${year} skončil – přepraveno ${passengers.toLocaleString('cs-CZ')} cestujících, ` +
+        `příjmy ${formatMoney(income)}, výdaje ${formatMoney(expenses)}, zisk ${formatMoney(income - expenses)}.`,
     );
     this.lastYear = this.thisYear;
-    this.thisYear = { income: 0, expenses: 0 };
+    this.thisYear = { income: 0, expenses: 0, passengers: 0 };
 
-    for (const town of this.world.towns) growTown(this.world.map, town, year + 1, this.rng);
+    for (const town of this.world.towns) {
+      growTown(this.world.map, town, year + 1, this.rng);
+      town.served = false;
+    }
     this.events.emit('townsChanged');
   }
 }

@@ -16,6 +16,7 @@ import {
   pathLength,
   reverseSegment,
   segmentLength,
+  segmentIndexAt,
   segmentStart,
   segmentStillExists,
   type RouteStart,
@@ -48,6 +49,16 @@ export interface Train {
   waitDays: number;
   // Lokomotiva je na konci soupravy (po otočení směru jízdy)
   flipped: boolean;
+  // Cestující na palubě: odkud a kdy nastoupili, kolik dlaždic ujeli
+  passengers: number;
+  boardedStation: number;
+  boardedAt: number;
+  tiles: number;
+  // Letos a loni: příjmy z jízdného a provozní náklady
+  income: number;
+  costs: number;
+  lastIncome: number;
+  lastCosts: number;
 }
 
 export function trainModel(train: Train): TrainModel {
@@ -71,6 +82,12 @@ export class Fleet {
     game.clock.events.on('month', () => this.chargeRunningCosts());
     game.clock.events.on('year', (ended) => {
       for (const m of TRAIN_MODELS) if (m.year === ended + 1) game.news(`Nový vlak k dispozici: ${m.name}.`);
+      for (const train of this.trains) {
+        train.lastIncome = train.income;
+        train.lastCosts = train.costs;
+        train.income = 0;
+        train.costs = 0;
+      }
     });
     game.events.on('railChanged', () => this.revalidate());
   }
@@ -101,6 +118,14 @@ export class Fleet {
       speed: 0,
       waitDays: 0,
       flipped: false,
+      passengers: 0,
+      boardedStation: -1,
+      boardedAt: 0,
+      tiles: 0,
+      income: 0,
+      costs: 0,
+      lastIncome: 0,
+      lastCosts: 0,
     });
     this.changed();
     return null;
@@ -211,11 +236,14 @@ export class Fleet {
     // Minimální rychlost, aby brzdění vlak nezastavilo těsně před cílem
     train.speed = Math.max(train.speed, 0.15);
     const step = train.speed * days;
+    const before = segmentIndexAt(train.path, train.pos);
     if (step < remaining) {
       train.pos += step;
+      train.tiles += segmentIndexAt(train.path, train.pos) - before;
       return;
     }
     train.pos += remaining;
+    train.tiles += train.path.length - 1 - before;
     train.speed = 0;
     this.arrive(train);
   }
@@ -226,10 +254,14 @@ export class Fleet {
       train.state = 'depot';
       train.path = [];
       train.orders = null;
+      // Cestující v depu vystoupí bez zaplacení
+      train.passengers = 0;
       this.game.news(`${train.name} dorazil do depa.`);
     } else {
       train.state = 'loading';
       train.waitDays = TRAIN_LOADING_DAYS;
+      const station = this.goal(train);
+      if (station && !('entrance' in station)) this.game.passengers.exchange(train, station);
     }
     this.changed();
   }
@@ -329,6 +361,7 @@ export class Fleet {
     for (const train of this.trains) {
       const yearly = trainModel(train).runningCost + train.wagons * WAGON_RUNNING_COST;
       this.game.spend(yearly / 12);
+      train.costs += yearly / 12;
     }
   }
 

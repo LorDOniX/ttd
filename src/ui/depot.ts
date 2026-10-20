@@ -1,4 +1,4 @@
-import { MAX_WAGONS, TRAIN_SELL_REFUND, WAGON_PRICE } from '../game/balance';
+import { MAX_WAGONS, TRAIN_SELL_REFUND, WAGON_CAPACITY, WAGON_PRICE } from '../game/balance';
 import { Game, formatMoney } from '../game/game';
 import { trainModel, trainValue, type Train } from '../game/trains';
 import type { Depot } from '../world/rail';
@@ -55,6 +55,7 @@ export function openDepot(windows: WindowManager, game: Game, depot: Depot): voi
       { className: 'train__info' },
       h('strong', {}, train.name),
       ` · ${model.name} · ${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'}`,
+      ` · ${train.passengers}/${train.wagons * WAGON_CAPACITY} cestujících`,
       h('div', { className: 'form__hint' }, stateText(game, train)),
     );
     const row = h('div', { className: 'train' }, info);

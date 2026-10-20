@@ -78,6 +78,8 @@ export interface Station {
   y: number;
   axis: Axis;
   townId: number;
+  // Čekající cestující (necelé číslo kvůli průběžnému přírůstku)
+  waiting: number;
 }
 
 export interface Depot {
@@ -161,8 +163,8 @@ export class RailNetwork {
     );
   }
 
-  addStation(station: Omit<Station, 'id'>): Station {
-    const created = { ...station, id: this.nextStationId++ };
+  addStation(station: Omit<Station, 'id' | 'waiting'>): Station {
+    const created = { ...station, id: this.nextStationId++, waiting: 0 };
     for (const t of stationTiles(station.x, station.y, station.axis)) {
       this.map.set(t.x, t.y, TileType.Station);
       this.pieces[t.y * this.map.width + t.x] = 1 << axisPiece(station.axis);
