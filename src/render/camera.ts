@@ -35,6 +35,11 @@ export class IsoCamera {
     this.updatePosition();
   }
 
+  focus(x: number, z: number): void {
+    this.target.set(x, 0, z);
+    this.updatePosition();
+  }
+
   // Průsečík paprsku z kurzoru se zemí (y = 0)
   groundPoint(clientX: number, clientY: number): THREE.Vector3 | null {
     const rect = this.dom.getBoundingClientRect();

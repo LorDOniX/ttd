@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { GameMap, TileType } from '../world/map';
+import type { Town } from '../world/town';
 
-const TILE_COLORS: Record<TileType, THREE.Color> = {
-  [TileType.Grass]: new THREE.Color(0x5f9e3c),
-  [TileType.Water]: new THREE.Color(0x3a6fb0),
-};
+const GRASS = new THREE.Color(0x5f9e3c);
+const WATER = new THREE.Color(0x3a6fb0);
+const PAVEMENT = new THREE.Color(0xa3a39a);
+const GARDEN = new THREE.Color(0x6aa843);
 
 // Deterministický šum 0..1 pro jemné odstíny dlaždic
 function tileNoise(x: number, y: number): number {
@@ -18,7 +19,10 @@ export class TerrainView {
   private readonly geometry: THREE.BufferGeometry;
   private readonly grid: THREE.LineSegments;
 
-  constructor(private readonly map: GameMap) {
+  constructor(
+    private readonly map: GameMap,
+    private readonly towns: readonly Town[],
+  ) {
     this.geometry = this.buildGeometry();
     const mesh = new THREE.Mesh(
       this.geometry,
@@ -68,8 +72,19 @@ export class TerrainView {
     return geometry;
   }
 
+  private tileColor(x: number, y: number): THREE.Color {
+    switch (this.map.get(x, y)) {
+      case TileType.Water:
+        return WATER;
+      case TileType.Building:
+        return this.towns[this.map.getOwner(x, y)]?.kind === 'city' ? PAVEMENT : GARDEN;
+      default:
+        return GRASS;
+    }
+  }
+
   private writeTileColor(colors: Float32Array, x: number, y: number): void {
-    const base = TILE_COLORS[this.map.get(x, y)];
+    const base = this.tileColor(x, y);
     const shade = 0.94 + tileNoise(x, y) * 0.08;
     const offset = (y * this.map.width + x) * 12;
     for (let k = 0; k < 4; k++) {

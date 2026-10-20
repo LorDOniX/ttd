@@ -1,0 +1,84 @@
+import { GameMap, TileType } from './map';
+import { CITY_NAMES, VILLAGE_NAMES } from './names';
+import { fbm } from './noise';
+import { Rng } from './rng';
+import { createTownShape, expandTown, type Town, type TownKind } from './town';
+
+export interface World {
+  seed: number;
+  map: GameMap;
+  towns: Town[];
+}
+
+const WATER_LEVEL = 0.34;
+const WATER_SCALE = 1 / 28;
+const EDGE_MARGIN = 14;
+
+const KIND_SETUP: Record<TownKind, { tilesPerTown: number; minPop: number; maxPop: number }> = {
+  city: { tilesPerTown: 9000, minPop: 1000, maxPop: 5000 },
+  village: { tilesPerTown: 4500, minPop: 100, maxPop: 1000 },
+};
+
+function generateWater(map: GameMap, seed: number): void {
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      if (fbm(seed, x * WATER_SCALE, y * WATER_SCALE) < WATER_LEVEL) map.set(x, y, TileType.Water);
+    }
+  }
+}
+
+function landRatio(map: GameMap, cx: number, cy: number, r: number): number {
+  let land = 0;
+  let total = 0;
+  for (let y = cy - r; y <= cy + r; y++) {
+    for (let x = cx - r; x <= cx + r; x++) {
+      total++;
+      if (map.isType(x, y, TileType.Grass)) land++;
+    }
+  }
+  return land / total;
+}
+
+function minDistance(kind: TownKind, other: TownKind): number {
+  return kind === 'city' && other === 'city' ? 40 : 26;
+}
+
+function placeTowns(map: GameMap, rng: Rng, kind: TownKind, names: string[], towns: Town[]): void {
+  const setup = KIND_SETUP[kind];
+  const count = Math.max(1, Math.round((map.width * map.height) / setup.tilesPerTown));
+  let placed = 0;
+
+  for (let attempt = 0; attempt < 600 && placed < count && names.length > 0; attempt++) {
+    const x = rng.int(EDGE_MARGIN, map.width - 1 - EDGE_MARGIN);
+    const y = rng.int(EDGE_MARGIN, map.height - 1 - EDGE_MARGIN);
+    if (!map.isType(x, y, TileType.Grass) || landRatio(map, x, y, 6) < 0.75) continue;
+    if (towns.some((t) => Math.hypot(t.x - x, t.y - y) < minDistance(kind, t.kind))) continue;
+
+    const town: Town = {
+      id: towns.length,
+      name: names.pop()!,
+      kind,
+      x,
+      y,
+      population: rng.int(setup.minPop, setup.maxPop),
+      radius: 2,
+      shape: createTownShape(rng),
+      buildings: [],
+    };
+    expandTown(map, town, rng);
+    towns.push(town);
+    placed++;
+  }
+}
+
+export function generateWorld(seed: number, size: number): World {
+  const rng = new Rng(seed);
+  const map = new GameMap(size, size);
+  generateWater(map, seed);
+
+  const towns: Town[] = [];
+  placeTowns(map, rng, 'city', rng.shuffle([...CITY_NAMES]), towns);
+  placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns);
+
+  return { seed, map, towns };
+}

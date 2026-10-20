@@ -26,3 +26,24 @@ body {
   font-size: 13px;
   pointer-events: none;
 }
+
+.label-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.town-label {
+  padding: 1px 6px;
+  color: #fff;
+  background: rgba(20, 30, 60, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.town-label--city {
+  font-size: 14px;
+  font-weight: 600;
+}
