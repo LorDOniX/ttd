@@ -119,6 +119,21 @@ body {
   user-select: none;
 }
 
+.window__title > span {
+  flex: 1;
+}
+
+.window__locate {
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+  padding: 0;
+  color: #fff;
+  background: #3c6a3c;
+  border: 1px solid #2a2a28;
+  cursor: pointer;
+}
+
 .window__close {
   width: 20px;
   height: 20px;

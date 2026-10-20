@@ -140,12 +140,13 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     const tile = tileAt(e.clientX, e.clientY);
     if (!tile) return;
     const depot = world.rail.depotAt(tile.x, tile.y);
+    const focus = (x: number, z: number): void => isoCamera.focus(x, z);
     if (depot) {
-      openDepot(windows, game, depot);
+      openDepot(windows, game, depot, focus);
       return;
     }
     const owner = map.getOwner(tile.x, tile.y);
-    if (owner !== NO_OWNER) openTown(windows, game, towns[owner]);
+    if (owner !== NO_OWNER) openTown(windows, game, towns[owner], focus);
   });
 
   let lastFrame = performance.now();

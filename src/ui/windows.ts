@@ -2,11 +2,14 @@ interface OpenWindow {
   el: HTMLElement;
   body: HTMLElement;
   onClose?: () => void;
+  locate?: () => void;
 }
 
 export interface WindowOptions {
   width?: number;
   onClose?: () => void;
+  // Vycentruje pohled na místo, ke kterému se okno váže
+  locate?: () => void;
 }
 
 // Okna nad 3D scénou; klávesa Delete zavře všechna
@@ -34,6 +37,7 @@ export class WindowManager {
       // Obnovení obsahu se stejnými options nesmí odhlásit odběr událostí
       if (existing.onClose !== options.onClose) existing.onClose?.();
       existing.onClose = options.onClose;
+      existing.locate = options.locate;
       existing.body.replaceChildren(content);
       this.bringToFront(existing.el);
       return;
@@ -52,7 +56,16 @@ export class WindowManager {
     close.textContent = '×';
     close.title = 'Zavřít';
     close.addEventListener('click', () => this.close(id));
-    header.append(titleEl, close);
+    header.append(titleEl);
+    if (options.locate) {
+      const locate = document.createElement('button');
+      locate.className = 'window__locate';
+      locate.textContent = '⌖';
+      locate.title = 'Zobrazit na mapě';
+      locate.addEventListener('click', () => this.windows.get(id)?.locate?.());
+      header.append(locate);
+    }
+    header.append(close);
 
     const body = document.createElement('div');
     body.className = 'window__body';
@@ -68,7 +81,7 @@ export class WindowManager {
     el.addEventListener('pointerdown', () => this.bringToFront(el));
     this.makeDraggable(el, header);
     this.bringToFront(el);
-    this.windows.set(id, { el, body, onClose: options.onClose });
+    this.windows.set(id, { el, body, onClose: options.onClose, locate: options.locate });
   }
 
   close(id: string): void {

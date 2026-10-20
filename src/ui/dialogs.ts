@@ -174,7 +174,12 @@ export function openSaveLoad(windows: WindowManager, game: Game, seedText: strin
   });
 }
 
-export function openTown(windows: WindowManager, game: Game, town: Town): void {
+export function openTown(
+  windows: WindowManager,
+  game: Game,
+  town: Town,
+  focus: (x: number, z: number) => void,
+): void {
   const id = `town-${town.id}`;
   const render = (): HTMLElement =>
     h(
@@ -188,6 +193,6 @@ export function openTown(windows: WindowManager, game: Game, town: Town): void {
   const off = game.events.on('townsChanged', () => {
     if (windows.isOpen(id)) windows.open(id, town.name, render(), options);
   });
-  const options = { width: 240, onClose: off };
+  const options = { width: 240, onClose: off, locate: () => focus(town.x + 0.5, town.y + 0.5) };
   windows.open(id, town.name, render(), options);
 }

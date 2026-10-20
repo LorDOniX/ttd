@@ -2,6 +2,7 @@ import { MAX_WAGONS, TRAIN_SELL_REFUND, WAGON_CAPACITY, WAGON_PRICE } from '../g
 import { Game, formatMoney } from '../game/game';
 import { trainModel, trainValue, type Train } from '../game/trains';
 import type { Depot } from '../world/rail';
+import { pointAt } from '../world/route';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
@@ -20,7 +21,12 @@ function stateText(game: Game, train: Train): string {
 }
 
 // Okno depa: nákup vlaků, vagony, vypravení na trať a prodej
-export function openDepot(windows: WindowManager, game: Game, depot: Depot): void {
+export function openDepot(
+  windows: WindowManager,
+  game: Game,
+  depot: Depot,
+  focus: (x: number, z: number) => void,
+): void {
   const id = `depot-${depot.id}`;
   const { fleet } = game;
   const report = (error: string | null): void => {
@@ -93,6 +99,7 @@ export function openDepot(windows: WindowManager, game: Game, depot: Depot): voi
           'div',
           { className: 'train__actions' },
           button('Do depa', () => fleet.sendToDepot(train), train.target === -1),
+          button('Najít', () => focus(...pointAt(train.path, train.pos))),
         ),
       );
     }
@@ -130,6 +137,10 @@ export function openDepot(windows: WindowManager, game: Game, depot: Depot): voi
     if (windows.isOpen(id)) windows.open(id, `Depo ${depot.id + 1}`, render(), options);
   };
   const unsubscribe = [game.events.on('trainsChanged', refresh), game.events.on('railChanged', refresh)];
-  const options = { width: 460, onClose: () => unsubscribe.forEach((off) => off()) };
+  const options = {
+    width: 460,
+    onClose: () => unsubscribe.forEach((off) => off()),
+    locate: () => focus(depot.x + 0.5, depot.y + 0.5),
+  };
   windows.open(id, `Depo ${depot.id + 1}`, render(), options);
 }
