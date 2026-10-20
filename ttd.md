@@ -57,6 +57,13 @@
 - do spodní lišty, např. začátek nového roku se shrnutím toho předchozího
 - budeme rozšiřovat
 
+## Příklady z openttd
+- screenshots složka
+- a.jpg - příklad hry a hud
+- b.jpg - dialogy zobrazených vlaků a stavby kolejí, nástupišť
+- c.jpg - příklady textur kolejí a jejich variant
+- d.jpg - příklady textur silnice a jejich variant
+
 ## HUD
 - ukázka v souboru hud.jpg z openttd
 
@@ -94,7 +101,7 @@
 - můžu si vybrat nástupiště a to umístnit do mapy
 
 ## Dialogy
-- veškeré interakce nad mapou - zobrazení oken nad 3d grafikou se bude řídit tak, že při stisku backspace se všechny dialogy vymažou
+- veškeré interakce nad mapou - zobrazení oken nad 3d grafikou se bude řídit tak, že při stisku delete se všechny dialogy vymažou
 - dialog bude nastavení, seznam dopravních prostředků, seznam věcí pro stavbu vlaku, atd.
 
 ## Do budoucna
