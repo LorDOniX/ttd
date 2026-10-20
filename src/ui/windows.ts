@@ -93,7 +93,8 @@ export class WindowManager {
   }
 
   closeAll(): void {
-    for (const id of [...this.windows.keys()]) this.close(id);
+    // Mazání z Map během iterace je v JS bezpečné
+    for (const id of this.windows.keys()) this.close(id);
   }
 
   private bringToFront(el: HTMLElement): void {

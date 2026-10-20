@@ -116,6 +116,19 @@ Každá fáze končí samostatným commitem a spustitelnou hrou (Vite + TypeScri
 6. **Cestující a ekonomika** – cestující podle velikosti města v dosahu, vykládka a nakládka, tabulka ohodnocení, měsíční provozní náklady, okno financí, roční shrnutí
 7. **Uložení a načtení** – stav hry do a z JSON
 
+### Druhé kolo
+Pořadí: nejdřív pojistka (testy) a výkon, pak rychlé výhry, přehledová okna a nakonec větší herní mechaniky. Fáze, které mění uložená data, zvednou verzi uložení a starší uložení převedou.
+
+8. **Testy a nástroje** – Vitest a převod dosavadních ověřovacích skriptů na testy (hledání tras kolejí a silnic, ekonomika, pohyb vlaků, deterministické uložení a načtení); ESLint + Prettier, kód se přeformátuje postupně při úpravách
+9. **Výkon** – překreslování jen změněných dlaždic (terén, stromy) místo celé mapy; dosah nástupišť a sdílení cestujících počítané jen při změně kolejí nebo měst
+10. **Rychlost hry a ovládání** – zrychlení času ×1/×2/×4 vedle pauzy; posun mapy šipkami; klávesové zkratky pro nástroje a okna
+11. **Finance** – úvěr v bance (max. 2 000 000 Kč po 100 000 Kč, úrok 8 % ročně placený měsíčně); údržba tratí (5 % ceny stavby ročně, placeno měsíčně); grafy příjmů, výdajů a přepravených cestujících po letech
+12. **Přehledová okna** – okno vlaku po kliknutí na vlak (cíl, náklad, zisk, akce); seznam všech vlaků; historie zpráv; nástroj „?“ s informací o dlaždici včetně dosahu nástupiště
+13. **Jízdní řád s více zastávkami** – seznam zastávek vlaku editovaný v okně vlaku, vlak je objíždí dokola, výměna cestujících na každé zastávce
+14. **Hodnocení stanic** – hodnocení 0–100 % podle doby od posledního vlaku, rychlosti vlaku a počtu čekajících; ovlivňuje příliv cestujících a jejich odchod
+15. **Stárnutí vlaků** – životnost 25 let, prodejní cena klesá lineárně na 10 %, po životnosti +50 % provozní náklady, upozornění a obnova za nejnovější model se zachováním vagonů a jízdního řádu
+16. **Návěstidla** – (a) automatická rezervace úseku před vlakem, vlak čeká, dokud není volno, na vícekolejném nástupišti si vybere volnou kolej; (b) hráčem stavěná návěstidla, která dělí trať na úseky
+
 ### NTH (nice to have)
 - volitelná rozšíření jsou v [nth.md](nth.md)
 
