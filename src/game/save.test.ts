@@ -87,4 +87,17 @@ describe('uložení a načtení', () => {
       [3, 1],
     ]);
   });
+
+  it('uložení verze 2 načte nástupiště s výchozím hodnocením', () => {
+    const { game } = buildLine();
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.version = 2;
+    for (const station of data.rail.stations) {
+      delete station.rating;
+      delete station.lastVisit;
+      delete station.lastSpeed;
+    }
+    const [a] = restoreGame(parseSave(JSON.stringify(data))).world.rail.stations;
+    expect([a.rating, a.lastVisit, a.lastSpeed]).toEqual([0.5, -1, 0]);
+  });
 });

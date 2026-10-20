@@ -1,4 +1,4 @@
-import { STATION_LENGTH } from '../game/balance';
+import { RATING_START, STATION_LENGTH } from '../game/balance';
 import { GameMap, TileType, type TilePos } from './map';
 
 export enum Edge {
@@ -86,6 +86,10 @@ export interface Station extends StationShape {
   townId: number;
   // Čekající cestující (necelé číslo kvůli průběžnému přírůstku)
   waiting: number;
+  // Hodnocení 0–1, herní den poslední návštěvy vlaku (−1 = nikdy) a jeho rychlost
+  rating: number;
+  lastVisit: number;
+  lastSpeed: number;
 }
 
 export interface Depot {
@@ -189,8 +193,15 @@ export class RailNetwork {
     );
   }
 
-  addStation(station: Omit<Station, 'id' | 'waiting'>): Station {
-    const created = { ...station, id: this.nextStationId++, waiting: 0 };
+  addStation(station: Omit<Station, 'id' | 'waiting' | 'rating' | 'lastVisit' | 'lastSpeed'>): Station {
+    const created = {
+      ...station,
+      id: this.nextStationId++,
+      waiting: 0,
+      rating: RATING_START,
+      lastVisit: -1,
+      lastSpeed: 0,
+    };
     for (const t of stationTiles(station)) {
       this.map.set(t.x, t.y, TileType.Station);
       this.pieces[t.y * this.map.width + t.x] = 1 << axisPiece(station.axis);

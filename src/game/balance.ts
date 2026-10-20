@@ -72,6 +72,28 @@ export const PASSENGERS_MONTHLY_SHARE = 0.03;
 export const PASSENGERS_MAX_WAITING_MONTHS = 3;
 export const STATION_CATCHMENT_RADIUS = 4;
 
+// Hodnocení nástupiště 0–1 se denně posouvá k cílové hodnotě složené ze tří částí
+export const RATING_START = 0.5;
+export const RATING_DAILY_CHANGE = 0.01;
+// Doba od posledního vlaku ve dnech
+export const RATING_VISIT_TIERS: readonly { maxDays: number; points: number }[] = [
+  { maxDays: 10, points: 0.4 },
+  { maxDays: 20, points: 0.3 },
+  { maxDays: 30, points: 0.2 },
+  { maxDays: 45, points: 0.1 },
+];
+// Plné body za rychlost posledního vlaku od 10 dlaždic/den, pomalejší poměrně
+export const RATING_SPEED_POINTS = 0.3;
+export const RATING_SPEED_FULL = 10;
+// Málo čekajících je dobře, přeplněné nástupiště hodnocení snižuje
+export const RATING_WAITING_TIERS: readonly { max: number; points: number }[] = [
+  { max: 50, points: 0.3 },
+  { max: 150, points: 0.2 },
+  { max: 300, points: 0.1 },
+];
+// Při hodnocení 0 odejde denně 2 % čekajících, od 50 % nikdo
+export const RATING_MAX_DAILY_LEAVE = 0.02;
+
 // Města
 export const TOWN_POPULATION = {
   city: { min: 1000, max: 5000 },

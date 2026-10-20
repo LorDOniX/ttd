@@ -2,6 +2,7 @@ import { MAINTENANCE_RATE } from '../game/balance';
 import { stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
 import { catchmentArea, inArea } from '../game/passengers';
+import { ratingParts, targetRating } from '../game/rating';
 import { NO_OWNER, TileType, type TilePos } from '../world/map';
 import type { Depot } from '../world/rail';
 import { buildingAt, buildingCapacity, type Town } from '../world/town';
@@ -28,6 +29,7 @@ export interface TileInfoLinks {
 }
 
 const monthly = (value: number): string => `${formatMoney(Math.round((value * MAINTENANCE_RATE) / 12))} měsíčně`;
+const percent = (value: number): string => `${Math.round(value * 100)} %`;
 
 // Okno nástroje „?“: co na dlaždici je a do dosahu kterých nástupišť patří
 export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, links: TileInfoLinks): void {
@@ -68,11 +70,20 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
     if (station) {
       const served = game.fleet.trains.filter((t) => t.orders?.includes(station.id)).map((t) => t.name);
       const reach = game.passengers.townsInReach(station).map((t) => t.name);
+      const now = game.clock.now;
+      const parts = ratingParts(station, now);
+      const visit = station.lastVisit < 0 ? 'nikdy' : `před ${Math.floor(now - station.lastVisit)} dny`;
       rows.push(
         ['Název', station.name],
         ['Rozměr', `${station.tracks}×${station.length}`],
         ['Čeká cestujících', String(Math.floor(station.waiting))],
-        ['Příliv za měsíc', String(Math.round(game.passengers.monthlyPassengers(station)))],
+        ['Hodnocení', `${percent(station.rating)} (směřuje k ${percent(targetRating(station, now))})`],
+        [
+          'Složení hodnocení',
+          `poslední vlak ${visit}: ${percent(parts.visit)}, rychlost: ${percent(parts.speed)}, ` +
+            `čekající: ${percent(parts.waiting)}`,
+        ],
+        ['Příliv za měsíc', String(Math.round(game.passengers.inflow(station)))],
         ['Města v dosahu', reach.length > 0 ? reach.join(', ') : 'žádné – nástupiště nikdo nevyužije'],
         ['Obsluhují vlaky', served.length > 0 ? served.join(', ') : 'žádné'],
         ['Údržba', monthly(stationCost(station))],

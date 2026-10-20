@@ -6,7 +6,8 @@ import {
   WAGON_CAPACITY,
 } from './balance';
 import { formatMoney, type Game } from './game';
-import type { Train } from './trains';
+import { inflowFactor, leaveShare, updateRating } from './rating';
+import { trainModel, type Train } from './trains';
 import { TileType } from '../world/map';
 import { stationTiles, type Station, type StationShape } from '../world/rail';
 import type { Town } from '../world/town';
@@ -82,6 +83,11 @@ export class Passengers {
     }, 0);
   }
 
+  // Skutečný měsíční příliv po započtení hodnocení nástupiště
+  inflow(station: Station): number {
+    return this.monthlyPassengers(station) * inflowFactor(station.rating);
+  }
+
   // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající
   exchange(train: Train, station: Station): void {
     const { game } = this;
@@ -109,14 +115,19 @@ export class Passengers {
       train.tiles = 0;
     }
     for (const town of this.townsInReach(station)) town.served = true;
+    station.lastVisit = game.clock.now;
+    station.lastSpeed = trainModel(train).speed;
     game.events.emit('stationsChanged');
   }
 
   private generate(): void {
+    const now = this.game.clock.now;
     for (const station of this.game.world.rail.stations) {
-      const monthly = this.monthlyPassengers(station);
+      updateRating(station, now);
+      const monthly = this.inflow(station);
       const max = monthly * PASSENGERS_MAX_WAITING_MONTHS;
-      station.waiting = Math.min(max, station.waiting + monthly / DAYS_PER_MONTH);
+      const waiting = Math.min(max, station.waiting + monthly / DAYS_PER_MONTH);
+      station.waiting = waiting * (1 - leaveShare(station.rating));
     }
     this.game.events.emit('stationsChanged');
   }

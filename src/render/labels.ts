@@ -52,7 +52,7 @@ export class StationLabels {
       const el = document.createElement('div');
       el.className = 'station-label';
       el.textContent = inReach(station)
-        ? `${station.name} · čeká ${Math.floor(station.waiting)}`
+        ? `${station.name} · čeká ${Math.floor(station.waiting)} · ${Math.round(station.rating * 100)} %`
         : `${station.name} · mimo dosah města`;
       const label = new CSS2DObject(el);
       label.position.set(station.x + 0.5, 0.8, station.y + 0.5);

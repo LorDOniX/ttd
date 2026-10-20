@@ -1,4 +1,4 @@
-import { STATION_LENGTH } from './balance';
+import { RATING_START, STATION_LENGTH } from './balance';
 import { Game, emptyYear, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Train } from './trains';
@@ -7,8 +7,8 @@ import { GameMap } from '../world/map';
 import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
-// 2: úvěr, historie let a rozpad výdajů
-const SAVE_VERSION = 2;
+// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť
+const SAVE_VERSION = 3;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -112,7 +112,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || (data.version !== 1 && data.version !== SAVE_VERSION)) {
+  if (!isObject(data) || ![1, 2, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -151,9 +151,16 @@ export function restoreGame(data: SaveData): Game {
 
   const rail = new RailNetwork(map);
   rail.pieces.set(decode(data.rail.pieces, width * height));
-  // Starší uložení nezná velikost nástupišť, všechna byla 1×3
+  // Starší uložení nezná velikost nástupišť (všechna byla 1×3) ani jejich hodnocení
   rail.stations.push(
-    ...data.rail.stations.map((s) => ({ ...s, length: s.length ?? STATION_LENGTH, tracks: s.tracks ?? 1 })),
+    ...data.rail.stations.map((s) => ({
+      ...s,
+      length: s.length ?? STATION_LENGTH,
+      tracks: s.tracks ?? 1,
+      rating: s.rating ?? RATING_START,
+      lastVisit: s.lastVisit ?? -1,
+      lastSpeed: s.lastSpeed ?? 0,
+    })),
   );
   rail.depots.push(...data.rail.depots);
   rail.nextStationId = data.rail.nextStationId;
