@@ -21,6 +21,7 @@ function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: nu
   if (!map.inBounds(x, y)) return false;
   switch (map.get(x, y)) {
     case TileType.Grass:
+    case TileType.Trees:
     case TileType.Road:
       return true;
     case TileType.Rail:

@@ -12,6 +12,7 @@ import { RailView } from './render/rail';
 import { RoadView } from './render/roads';
 import { TerrainView } from './render/terrain';
 import { TrainsView } from './render/trains';
+import { TreesView } from './render/trees';
 import { BuildTools } from './ui/buildTools';
 import { openDepot } from './ui/depot';
 import { openFinance, openSaveLoad, openSettings, openTown } from './ui/dialogs';
@@ -70,6 +71,17 @@ scene.add(roads.object);
 const buildings = new BuildingsView();
 scene.add(buildings.object);
 void buildings.rebuild(towns);
+
+const trees = new TreesView(map);
+scene.add(trees.object);
+void trees.refresh();
+// Stavba, růst měst i demolice může vykácet stromy
+for (const event of ['railChanged', 'roadsChanged', 'townsChanged', 'treesChanged'] as const) {
+  game.events.on(event, () => {
+    terrain.refresh();
+    void trees.refresh();
+  });
+}
 
 const railView = new RailView(world.rail);
 scene.add(railView.object);

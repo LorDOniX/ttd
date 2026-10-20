@@ -8,6 +8,8 @@ export enum TileType {
   Depot = 6,
   // Silnice křížená rovnou kolejí
   Crossing = 7,
+  // Tráva se stromy; stavba stromy sama vykácí
+  Trees = 8,
 }
 
 export interface TilePos {
@@ -53,6 +55,11 @@ export class GameMap {
 
   isType(x: number, y: number, type: TileType): boolean {
     return this.inBounds(x, y) && this.get(x, y) === type;
+  }
+
+  // Volná dlaždice pro stavbu: tráva nebo stromy
+  isFree(x: number, y: number): boolean {
+    return this.isType(x, y, TileType.Grass) || this.isType(x, y, TileType.Trees);
   }
 
   isRoad(x: number, y: number): boolean {

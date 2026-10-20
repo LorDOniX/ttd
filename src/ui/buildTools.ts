@@ -215,6 +215,8 @@ export class BuildTools {
       this.preview.showArea(plan.tiles, 'demolish');
       if (plan.blocked) {
         text = plan.blocked;
+      } else if (plan.tiles.length > 0 && plan.cost === 0) {
+        text = 'Demolice zdarma';
       } else if (plan.tiles.length > 0) {
         text = plan.cost > 0 ? `Demolice: ${formatMoney(plan.cost)}` : `Vrátí se: ${formatMoney(-plan.cost)}`;
       }

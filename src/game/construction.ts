@@ -122,6 +122,9 @@ export class Construction {
           tiles.push({ x, y });
           break;
         }
+        case TileType.Trees:
+          tiles.push({ x, y });
+          break;
       }
     }
     return { tiles, cost, blocked };
@@ -137,9 +140,14 @@ export class Construction {
     let railChanged = false;
     let roadsChanged = false;
     let townsChanged = false;
+    let treesChanged = false;
 
     for (const { x, y } of plan.tiles) {
       switch (map.get(x, y)) {
+        case TileType.Trees:
+          map.set(x, y, TileType.Grass);
+          treesChanged = true;
+          break;
         case TileType.Rail:
         case TileType.Crossing:
           rail.removeTrack(x, y);
@@ -177,6 +185,7 @@ export class Construction {
     if (railChanged) this.game.events.emit('railChanged');
     if (roadsChanged) this.game.events.emit('roadsChanged');
     if (townsChanged) this.game.events.emit('townsChanged');
+    if (treesChanged) this.game.events.emit('treesChanged');
     return null;
   }
 
@@ -224,7 +233,7 @@ export class Construction {
   private roadPlaceable(step: RoadStep): boolean {
     const { map, rail } = this.game.world;
     const type = map.get(step.x, step.y);
-    if (type === TileType.Grass) return true;
+    if (map.isFree(step.x, step.y)) return true;
     // Přejezd jen přes samotnou rovnou kolej
     const mask = rail.mask(step.x, step.y);
     return type === TileType.Rail && (mask === 1 || mask === 2);

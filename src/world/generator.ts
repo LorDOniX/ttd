@@ -27,13 +27,38 @@ function generateWater(map: GameMap, seed: number): void {
   }
 }
 
+const FOREST_SCALE = 1 / 22;
+const FOREST_LEVEL = 0.58;
+const FOREST_DENSITY = 0.85;
+const LONE_TREE_CHANCE = 0.03;
+
+// Rovnoměrně rozdělená náhoda 0..1 pro dlaždici
+function tileRandom(seed: number, x: number, y: number): number {
+  let h = (seed ^ Math.imul(x, 374761393) ^ Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+// Lesy podle šumu a občasné solitéry na volné trávě
+function generateTrees(map: GameMap, seed: number): void {
+  const forestSeed = seed ^ 0x9e3779b9;
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      if (!map.isType(x, y, TileType.Grass)) continue;
+      const forest = fbm(forestSeed, x * FOREST_SCALE, y * FOREST_SCALE) > FOREST_LEVEL;
+      const roll = tileRandom(forestSeed, x, y);
+      if (roll < (forest ? FOREST_DENSITY : LONE_TREE_CHANCE)) map.set(x, y, TileType.Trees);
+    }
+  }
+}
+
 function landRatio(map: GameMap, cx: number, cy: number, r: number): number {
   let land = 0;
   let total = 0;
   for (let y = cy - r; y <= cy + r; y++) {
     for (let x = cx - r; x <= cx + r; x++) {
       total++;
-      if (map.isType(x, y, TileType.Grass)) land++;
+      if (map.isFree(x, y)) land++;
     }
   }
   return land / total;
@@ -58,7 +83,7 @@ function placeTowns(
   for (let attempt = 0; attempt < 600 && placed < count && names.length > 0; attempt++) {
     const x = rng.int(EDGE_MARGIN, map.width - 1 - EDGE_MARGIN);
     const y = rng.int(EDGE_MARGIN, map.height - 1 - EDGE_MARGIN);
-    if (!map.isType(x, y, TileType.Grass) || landRatio(map, x, y, 6) < 0.75) continue;
+    if (!map.isFree(x, y) || landRatio(map, x, y, 6) < 0.75) continue;
     if (towns.some((t) => Math.hypot(t.x - x, t.y - y) < minDistance(kind, t.kind))) continue;
 
     const town: Town = {
@@ -87,6 +112,7 @@ export function generateWorld(seed: number, size: number, year: number): World {
   const towns: Town[] = [];
   placeTowns(map, rng, 'city', rng.shuffle([...CITY_NAMES]), towns, year);
   placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year);
+  generateTrees(map, seed);
 
   return { seed, map, towns, rail: new RailNetwork(map) };
 }

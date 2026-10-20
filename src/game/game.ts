@@ -25,6 +25,7 @@ type GameEvents = {
   roadsChanged: [];
   trainsChanged: [];
   stationsChanged: [];
+  treesChanged: [];
   outOfMoney: [];
 };
 

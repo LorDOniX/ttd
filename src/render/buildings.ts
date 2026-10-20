@@ -14,7 +14,7 @@ interface Part {
 const prototypes = new Map<string, Promise<Part[]>>();
 
 // Rozloží model na části a normalizuje ho na střed dlaždice se dnem v y = 0
-function loadPrototype(kit: Kit, model: string): Promise<Part[]> {
+export function loadPrototype(kit: Kit, model: string): Promise<Part[]> {
   const key = `${kit}/${model}`;
   let pending = prototypes.get(key);
   if (!pending) {

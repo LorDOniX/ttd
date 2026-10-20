@@ -114,7 +114,7 @@ function growRoads(map: GameMap, town: Town, radius: number): void {
     insideShape(town, x, y, radius) &&
     onRoadGrid(town, x, y) &&
     isFreeFor(map, town, x, y) &&
-    (map.get(x, y) === TileType.Grass || map.isRoad(x, y));
+    (map.isFree(x, y) || map.isRoad(x, y));
 
   if (!canBeRoad(town.x, town.y)) return;
   const visited = new Set<number>([town.y * map.width + town.x]);
@@ -122,7 +122,7 @@ function growRoads(map: GameMap, town: Town, radius: number): void {
   while (queue.length > 0) {
     const y = queue.pop()!;
     const x = queue.pop()!;
-    if (map.get(x, y) === TileType.Grass) map.set(x, y, TileType.Road);
+    if (map.isFree(x, y)) map.set(x, y, TileType.Road);
     map.setOwner(x, y, town.id);
     for (const n of NEIGHBOURS) {
       const nx = x + n.dx;
@@ -164,7 +164,7 @@ export function expandTown(map: GameMap, town: Town, year: number, rng: Rng): vo
     const r = Math.ceil(town.radius * 1.3) + 1;
     for (let y = town.y - r; y <= town.y + r; y++) {
       for (let x = town.x - r; x <= town.x + r; x++) {
-        if (!map.isType(x, y, TileType.Grass) || !isFreeFor(map, town, x, y)) continue;
+        if (!map.isFree(x, y) || !isFreeFor(map, town, x, y)) continue;
         if (onRoadGrid(town, x, y)) continue;
         if (!insideShape(town, x, y, town.radius + 1)) continue;
         if (tileHash(x, y, town.id) < rules.gardenRatio) continue;

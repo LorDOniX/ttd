@@ -6,6 +6,7 @@ const GRASS = new THREE.Color(0x5f9e3c);
 const WATER = new THREE.Color(0x3a6fb0);
 const PAVEMENT = new THREE.Color(0xa3a39a);
 const GARDEN = new THREE.Color(0x6aa843);
+const FOREST = new THREE.Color(0x4f8a32);
 
 // Deterministický šum 0..1 pro jemné odstíny dlaždic
 function tileNoise(x: number, y: number): number {
@@ -84,6 +85,8 @@ export class TerrainView {
     switch (this.map.get(x, y)) {
       case TileType.Water:
         return WATER;
+      case TileType.Trees:
+        return FOREST;
       case TileType.Building:
         return this.towns[this.map.getOwner(x, y)]?.kind === 'city' ? PAVEMENT : GARDEN;
       default:

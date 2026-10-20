@@ -126,6 +126,7 @@ export class RailNetwork {
     if (!this.map.inBounds(x, y)) return false;
     switch (this.map.get(x, y)) {
       case TileType.Grass:
+      case TileType.Trees:
       case TileType.Rail:
         return true;
       case TileType.Road:
@@ -142,7 +143,7 @@ export class RailNetwork {
   addPiece(x: number, y: number, piece: number): void {
     this.pieces[y * this.map.width + x] |= 1 << piece;
     const type = this.map.get(x, y);
-    if (type === TileType.Grass) this.map.set(x, y, TileType.Rail);
+    if (this.map.isFree(x, y)) this.map.set(x, y, TileType.Rail);
     if (type === TileType.Road) this.map.set(x, y, TileType.Crossing);
   }
 
@@ -158,7 +159,7 @@ export class RailNetwork {
     const bit = 1 << axisPiece(axis);
     return stationTiles(x, y, axis).every(
       (t) =>
-        this.map.isType(t.x, t.y, TileType.Grass) ||
+        this.map.isFree(t.x, t.y) ||
         (this.map.isType(t.x, t.y, TileType.Rail) && (this.mask(t.x, t.y) | bit) === bit),
     );
   }
@@ -187,7 +188,7 @@ export class RailNetwork {
   }
 
   canPlaceDepot(x: number, y: number): boolean {
-    return this.map.isType(x, y, TileType.Grass);
+    return this.map.isFree(x, y);
   }
 
   addDepot(x: number, y: number, entrance: Edge): Depot {
