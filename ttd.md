@@ -116,5 +116,8 @@ Každá fáze končí samostatným commitem a spustitelnou hrou (Vite + TypeScri
 6. **Cestující a ekonomika** – cestující podle velikosti města v dosahu, vykládka a nakládka, tabulka ohodnocení, měsíční provozní náklady, okno financí, roční shrnutí
 7. **Uložení a načtení** – stav hry do a z JSON
 
+### NTH (nice to have)
+- **Vlaky se navzájem hlídají** – návěstidla a rezervace úseků kolejí jako v OpenTTD, aby dva vlaky na stejné koleji neprojely skrz sebe (dnes se vlaky navzájem ignorují)
+
 ## Do budoucna
 - uděláme možnosti převozu i jiných materiálů než lidí, je potřeba pak grafika např. pro elektrárnu a uhelný důl
