@@ -117,7 +117,7 @@ Každá fáze končí samostatným commitem a spustitelnou hrou (Vite + TypeScri
 7. **Uložení a načtení** – stav hry do a z JSON
 
 ### NTH (nice to have)
-- **Vlaky se navzájem hlídají** – návěstidla a rezervace úseků kolejí jako v OpenTTD, aby dva vlaky na stejné koleji neprojely skrz sebe (dnes se vlaky navzájem ignorují)
+- volitelná rozšíření jsou v [nth.md](nth.md)
 
 ## Do budoucna
 - uděláme možnosti převozu i jiných materiálů než lidí, je potřeba pak grafika např. pro elektrárnu a uhelný důl
