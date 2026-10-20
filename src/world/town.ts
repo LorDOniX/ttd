@@ -177,3 +177,24 @@ export function expandTown(map: GameMap, town: Town, year: number, rng: Rng): vo
     if (town.buildings.length < target) town.radius++;
   }
 }
+
+const YEARLY_GROWTH = 1.05;
+// Pravděpodobnost, že se budova v centru během roku přestaví na mrakodrap
+const REDEVELOP_CHANCE = 0.12;
+
+// Přestavba budov v centru města na mrakodrapy
+function redevelopCentre(town: Town, year: number, rng: Rng): void {
+  if (town.kind !== 'city' || year < SKYSCRAPER_YEAR) return;
+  for (const b of town.buildings) {
+    if (SKYSCRAPERS.includes(b.model)) continue;
+    const ratio = Math.hypot(b.x - town.x, b.y - town.y) / Math.max(town.radius, 4);
+    if (ratio < 0.35 && rng.chance(REDEVELOP_CHANCE)) b.model = rng.pick(SKYSCRAPERS);
+  }
+}
+
+// Roční růst: přírůstek obyvatel, nové budovy na okraji, přestavba centra
+export function growTown(map: GameMap, town: Town, year: number, rng: Rng): void {
+  town.population = Math.round(town.population * YEARLY_GROWTH);
+  expandTown(map, town, year, rng);
+  redevelopCentre(town, year, rng);
+}

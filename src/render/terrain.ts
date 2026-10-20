@@ -46,6 +46,14 @@ export class TerrainView {
     colors.needsUpdate = true;
   }
 
+  refresh(): void {
+    const colors = this.geometry.getAttribute('color') as THREE.BufferAttribute;
+    for (let y = 0; y < this.map.height; y++) {
+      for (let x = 0; x < this.map.width; x++) this.writeTileColor(colors.array as Float32Array, x, y);
+    }
+    colors.needsUpdate = true;
+  }
+
   private buildGeometry(): THREE.BufferGeometry {
     const { width, height } = this.map;
     const count = width * height;

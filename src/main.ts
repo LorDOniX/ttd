@@ -1,22 +1,27 @@
 import * as THREE from 'three';
 import './style.css';
+import { START_YEAR } from './game/clock';
+import { Game } from './game/game';
 import { BuildingsView } from './render/buildings';
 import { IsoCamera } from './render/camera';
 import { TileCursor } from './render/cursor';
 import { TownLabels } from './render/labels';
 import { RoadView } from './render/roads';
 import { TerrainView } from './render/terrain';
+import { openFinance, openSettings, openTown } from './ui/dialogs';
+import { Hud } from './ui/hud';
+import { WindowManager } from './ui/windows';
 import { generateWorld } from './world/generator';
 import { NO_OWNER, type TilePos } from './world/map';
 import { hashSeed } from './world/rng';
 
 const MAP_SIZE = 256;
-const START_YEAR = 1950;
 
 // Seed z URL (?seed=...), jinak náhodný
 const seedText = new URLSearchParams(location.search).get('seed') ?? String(Date.now());
 const world = generateWorld(hashSeed(seedText), MAP_SIZE, START_YEAR);
 const { map, towns } = world;
+const game = new Game(world);
 
 const container = document.getElementById('app')!;
 
@@ -64,11 +69,24 @@ window.addEventListener('resize', () => {
   isoCamera.resize();
 });
 
-// Dočasný výpis vybrané dlaždice, nahradí ho HUD ve fázi 3
-const status = document.createElement('div');
-status.className = 'debug-status';
-status.textContent = `Seed: ${seedText}`;
-container.appendChild(status);
+const windows = new WindowManager(container);
+const grid = {
+  visible: () => terrain.gridVisible,
+  setVisible: (visible: boolean) => terrain.setGridVisible(visible),
+};
+new Hud(container, game, {
+  openSettings: () => openSettings(windows, game, grid, seedText),
+  openFinance: () => openFinance(windows, game),
+});
+
+game.events.on('townsChanged', () => {
+  terrain.refresh();
+  roads.rebuild();
+  void buildings.rebuild(towns);
+  towns.forEach((town) => labels.update(town));
+});
+
+game.news(`Vítejte v roce ${START_YEAR}! Začínáte s rozpočtem na stavbu železnice.`);
 
 function tileAt(clientX: number, clientY: number): TilePos | null {
   const p = isoCamera.groundPoint(clientX, clientY);
@@ -97,15 +115,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (moved > 4) return;
   const tile = tileAt(e.clientX, e.clientY);
   const owner = tile ? map.getOwner(tile.x, tile.y) : NO_OWNER;
-  const town = owner === NO_OWNER ? '' : ` – ${towns[owner].name}`;
-  status.textContent = `Seed: ${seedText}` + (tile ? ` | Dlaždice ${tile.x}, ${tile.y}${town}` : '');
+  if (owner !== NO_OWNER) openTown(windows, game, towns[owner]);
 });
 
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'g' || e.key === 'G') terrain.setGridVisible(!terrain.gridVisible);
-});
-
-renderer.setAnimationLoop(() => {
+let lastFrame = performance.now();
+renderer.setAnimationLoop((now: number) => {
+  game.clock.tick(now - lastFrame);
+  lastFrame = now;
   renderer.render(scene, isoCamera.camera);
   labels.render(scene, isoCamera.camera);
 });

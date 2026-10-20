@@ -16,15 +16,168 @@ body {
   display: block;
 }
 
-.debug-status {
+.toolbar {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
-  padding: 2px 6px;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: #4a4a46;
+  border: 1px solid #2a2a28;
+  border-top: none;
+  z-index: 5;
+}
+
+.toolbar__button {
+  width: 36px;
+  height: 30px;
+  font-size: 18px;
+  line-height: 1;
   color: #fff;
-  background: rgba(0, 0, 0, 0.5);
+  background: #6b6b64;
+  border: 1px solid;
+  border-color: #8e8e86 #33332f #33332f #8e8e86;
+  cursor: pointer;
+}
+
+.toolbar__button:hover:not(:disabled) {
+  background: #7a7a72;
+}
+
+.toolbar__button--active {
+  background: #8a5a2a;
+}
+
+.toolbar__button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.statusbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 26px;
+  padding: 0 10px;
+  color: #fff;
+  background: #4a4a46;
+  border-top: 1px solid #2a2a28;
   font-size: 13px;
-  pointer-events: none;
+  z-index: 5;
+}
+
+.statusbar__date {
+  min-width: 140px;
+}
+
+.statusbar__center {
+  flex: 1;
+  overflow: hidden;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.statusbar__news:not(:empty)::before {
+  content: ' – ';
+}
+
+.statusbar__money {
+  min-width: 140px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.statusbar__money--negative {
+  color: #ff8a80;
+}
+
+.window {
+  position: absolute;
+  min-width: 200px;
+  color: #eee;
+  background: #575752;
+  border: 1px solid #2a2a28;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+}
+
+.window__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 4px 3px 8px;
+  font-weight: 600;
+  background: #3c5a8a;
+  cursor: move;
+  user-select: none;
+}
+
+.window__close {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: #fff;
+  background: #8a3c3c;
+  border: 1px solid #2a2a28;
+  cursor: pointer;
+}
+
+.window__body {
+  padding: 8px;
+}
+
+.window h4 {
+  margin: 10px 0 4px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.form__hint {
+  color: #bbb;
+  font-size: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  padding-top: 6px;
+  text-align: left;
+}
+
+.table td {
+  padding: 1px 0;
+}
+
+.table .num {
+  text-align: right;
+}
+
+.table .strong {
+  font-weight: 600;
+}
+
+.finance__balance {
+  margin-top: 10px;
 }
 
 .label-layer {
