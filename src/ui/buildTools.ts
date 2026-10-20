@@ -1,10 +1,12 @@
 import {
   BRIDGE_PIECE_COST,
+  DEMOLISH_REFUND,
   DEPOT_COST,
   MAX_STATION_LENGTH,
   MAX_STATION_TRACKS,
   PLATFORM_TILE_COST,
   ROAD_TILE_COST,
+  SIGNAL_COST,
   TRACK_PIECE_COST,
 } from '../game/balance';
 import { stationCost, trackPieceCost } from '../game/construction';
@@ -18,7 +20,7 @@ import { findRoadPath, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
-export type BuildTool = 'track' | 'station' | 'depot' | 'road' | 'demolish' | 'info';
+export type BuildTool = 'track' | 'station' | 'depot' | 'signal' | 'road' | 'demolish' | 'info';
 
 // Největší strana obdélníku pro demolici
 const MAX_DEMOLISH_SIZE = 64;
@@ -51,6 +53,7 @@ export class BuildTools {
       ['track', 'Koleje', 'K', `${formatMoney(TRACK_PIECE_COST)} / dílek, most ${formatMoney(BRIDGE_PIECE_COST)}`],
       ['station', 'Nástupiště', 'N', `${formatMoney(PLATFORM_TILE_COST)} / dílek`],
       ['depot', 'Depo', 'D', formatMoney(DEPOT_COST)],
+      ['signal', 'Návěstidlo', 'B', `${formatMoney(SIGNAL_COST)}, znovu = odstranit`],
       ['demolish', 'Demolice', 'X', 'vrátí 50 %'],
     ]);
   }
@@ -81,6 +84,7 @@ export class BuildTools {
         'div',
         { className: 'form__hint' },
         'Koleje, silnice a demolice: táhněte levým tlačítkem. Nástupiště: kliknutím 1×3, tažením větší. ' +
+          'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. ' +
           'R – otočit, Esc – zrušit nástroj.',
       ),
     );
@@ -127,7 +131,9 @@ export class BuildTools {
       this.onInspect(tile);
       return;
     }
-    if (this.tool === 'track' || this.tool === 'road' || this.tool === 'demolish' || this.tool === 'station') {
+    if (this.tool === 'signal') {
+      this.report(this.game.construction.toggleSignal(tile.x, tile.y));
+    } else if (this.tool === 'track' || this.tool === 'road' || this.tool === 'demolish' || this.tool === 'station') {
       this.dragStart = tile;
       this.updatePath();
     } else {
@@ -286,6 +292,18 @@ export class BuildTools {
       if (station) {
         this.showCatchment(station);
         text = `${station.name} – dosah nástupiště`;
+      }
+    } else if (this.tool === 'signal' && tile) {
+      const { x, y } = tile;
+      if (rail.hasSignal(x, y)) {
+        this.preview.showArea([tile], 'demolish');
+        text = `Odstranit návěstidlo · vrátí ${formatMoney(SIGNAL_COST * DEMOLISH_REFUND)}`;
+      } else if (rail.canPlaceSignal(x, y)) {
+        this.preview.showArea([tile], this.game.money >= SIGNAL_COST ? 'valid' : 'invalid');
+        text = `Návěstidlo · ${formatMoney(SIGNAL_COST)}`;
+      } else {
+        this.preview.showArea([tile], 'invalid');
+        text = 'Návěstidlo jen na rovnou kolej bez výhybky';
       }
     } else if (this.tool === 'demolish' && tile) {
       const plan = this.game.construction.demolishPlan(this.demolishArea());

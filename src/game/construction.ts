@@ -6,6 +6,7 @@ import {
   DEPOT_COST,
   PLATFORM_TILE_COST,
   ROAD_TILE_COST,
+  SIGNAL_COST,
   TRACK_PIECE_COST,
 } from './balance';
 import { formatMoney, type Game } from './game';
@@ -42,7 +43,7 @@ export function infrastructureValue(world: World): number {
     }
   }
   for (const station of rail.stations) value += stationCost(station);
-  return value + rail.depots.length * DEPOT_COST;
+  return value + rail.depots.length * DEPOT_COST + rail.signals.size * SIGNAL_COST;
 }
 
 type Job = { kind: 'track'; step: PathStep } | { kind: 'road'; step: RoadStep };
@@ -95,6 +96,22 @@ export class Construction {
     return null;
   }
 
+  // Návěstidlo postaví, nebo existující odstraní za polovinu ceny
+  toggleSignal(x: number, y: number): string | null {
+    const { rail } = this.game.world;
+    if (rail.hasSignal(x, y)) {
+      rail.removeSignal(x, y);
+      this.game.refund(SIGNAL_COST * DEMOLISH_REFUND, 'construction');
+    } else {
+      if (!rail.canPlaceSignal(x, y)) return 'Návěstidlo jde jen na rovnou kolej bez výhybky.';
+      if (this.game.money < SIGNAL_COST) return `Nedostatek peněz (${formatMoney(SIGNAL_COST)}).`;
+      this.game.spend(SIGNAL_COST, 'construction');
+      rail.addSignal(x, y);
+    }
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
   buildDepot(x: number, y: number, entrance: Edge): string | null {
     const { rail } = this.game.world;
     if (!rail.canPlaceDepot(x, y)) return 'Sem depo postavit nelze.';
@@ -126,6 +143,7 @@ export class Construction {
         case TileType.Crossing:
         case TileType.Bridge:
           cost -= rail.pieceCount(x, y) * trackPieceCost(map, x, y) * DEMOLISH_REFUND;
+          if (rail.hasSignal(x, y)) cost -= SIGNAL_COST * DEMOLISH_REFUND;
           tiles.push({ x, y });
           break;
         case TileType.Station: {

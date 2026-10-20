@@ -116,6 +116,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     { codes: ['KeyN'], key: 'N', label: 'Nástupiště', run: () => buildTools.toggleTool('station') },
     { codes: ['KeyD'], key: 'D', label: 'Depo', run: () => buildTools.toggleTool('depot') },
     { codes: ['KeyS'], key: 'S', label: 'Silnice', run: () => buildTools.toggleTool('road') },
+    { codes: ['KeyB'], key: 'B', label: 'Návěstidlo', run: () => buildTools.toggleTool('signal') },
     { codes: ['KeyX'], key: 'X', label: 'Demolice', run: () => buildTools.toggleTool('demolish') },
     { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště nebo depo', run: () => buildTools.rotate() },
     { codes: ['KeyI'], key: 'I', label: 'Informace o dlaždici („?“)', run: actions.toggleInfo },

@@ -7,8 +7,8 @@ import { GameMap } from '../world/map';
 import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
-// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků
-const SAVE_VERSION = 4;
+// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla
+const SAVE_VERSION = 5;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -17,7 +17,14 @@ export interface SaveData {
   seedText: string;
   map: { width: number; height: number; tiles: string; owner: string };
   towns: Town[];
-  rail: { pieces: string; stations: Station[]; depots: Depot[]; nextStationId: number; nextDepotId: number };
+  rail: {
+    pieces: string;
+    stations: Station[];
+    depots: Depot[];
+    nextStationId: number;
+    nextDepotId: number;
+    signals?: number[];
+  };
   fleet: { trains: Train[]; nextId: number };
   game: {
     companyName: string;
@@ -86,6 +93,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       depots: rail.depots,
       nextStationId: rail.nextStationId,
       nextDepotId: rail.nextDepotId,
+      signals: [...rail.signals],
     },
     fleet: { trains: fleet.trains, nextId: fleet.nextId },
     game: {
@@ -112,7 +120,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -123,7 +131,7 @@ export function parseSave(text: string): SaveData {
   if (!size(map.width) || !size(map.height)) throw new Error('Neplatná velikost mapy.');
   const strings = [map.tiles, map.owner, rail.pieces, game.companyName, data.seedText];
   const numbers = [data.seed, rail.nextStationId, rail.nextDepotId, fleet.nextId, game.money, game.rngState, clock.day, clock.dayProgress];
-  const arrays = [data.towns, rail.stations, rail.depots, fleet.trains];
+  const arrays = [data.towns, rail.stations, rail.depots, fleet.trains, rail.signals ?? []];
   if (
     strings.some((s) => typeof s !== 'string') ||
     numbers.some((n) => typeof n !== 'number' || !Number.isFinite(n)) ||
@@ -165,6 +173,10 @@ export function restoreGame(data: SaveData): Game {
   rail.depots.push(...data.rail.depots);
   rail.nextStationId = data.rail.nextStationId;
   rail.nextDepotId = data.rail.nextDepotId;
+  // Starší uložení návěstidla nemá; neplatné indexy se zahodí
+  for (const tile of data.rail.signals ?? []) {
+    if (Number.isInteger(tile) && tile >= 0 && tile < width * height) rail.signals.add(tile);
+  }
 
   const world: World = { seed: data.seed, map, towns: data.towns, rail };
   const game = new Game(world);

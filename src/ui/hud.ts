@@ -73,7 +73,7 @@ export class Hud {
       button('💰', 'Finance (F)', actions.openFinance),
       button('🚆', 'Seznam vlaků (V)', actions.openTrainList),
       button('📰', 'Historie zpráv (H)', actions.openNews),
-      button('🚂', 'Stavba železnice (K, N, D, X)', actions.openRailBuild),
+      button('🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild),
       button('🛣️', 'Stavba silnic (S)', actions.openRoadBuild),
       this.infoButton,
       rotate,

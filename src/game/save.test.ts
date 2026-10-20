@@ -43,6 +43,15 @@ describe('uložení a načtení', () => {
     );
   });
 
+  it('návěstidla se uloží a neplatná se při načtení zahodí', () => {
+    const { game } = buildLine();
+    game.world.rail.addSignal(20, 12);
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.rail.signals.push(-5, 1e9, 'x');
+    const copy = restoreGame(parseSave(JSON.stringify(data)));
+    expect([...copy.world.rail.signals]).toEqual([12 * 64 + 20]);
+  });
+
   it('úvěr a historie let se uloží', () => {
     const { game } = buildLine();
     game.borrow();

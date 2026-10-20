@@ -19,6 +19,7 @@ export const STATION_LENGTH = 3;
 export const MAX_STATION_LENGTH = 7;
 export const MAX_STATION_TRACKS = 4;
 export const DEPOT_COST = 50_000;
+export const SIGNAL_COST = 5_000;
 export const ROAD_TILE_COST = 3_000;
 
 // Demolice: stavby hráče vrací část ceny, majetek měst se platí

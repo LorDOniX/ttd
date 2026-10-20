@@ -132,7 +132,7 @@ export class Fleet {
   private readonly blocked = new Map<number, { total: number; sinceReplan: number }>();
 
   constructor(private readonly game: Game) {
-    this.reservations = new Reservations(game.world.map.width, () => false);
+    this.reservations = new Reservations(game.world.map.width, (x, y) => game.world.rail.hasSignal(x, y));
     game.clock.events.on('month', () => this.chargeRunningCosts());
     game.clock.events.on('year', (ended) => {
       for (const m of TRAIN_MODELS) if (m.year === ended + 1) game.news(`Nový vlak k dispozici: ${m.name}.`);

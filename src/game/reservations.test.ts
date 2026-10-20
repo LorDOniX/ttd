@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEMOLISH_REFUND, SIGNAL_COST, TRACK_PIECE_COST } from './balance';
 import { Reservations } from './reservations';
 import type { Game } from './game';
 import type { Train } from './trains';
@@ -114,3 +115,60 @@ describe('vlaky s rezervací', () => {
     expect(news.some((n) => n.includes('čeká na volnou trať'))).toBe(true);
   });
 });
+
+describe('návěstidla', () => {
+  it('jdou jen na rovnou kolej bez výhybky, stojí peníze a demolice je vrátí', () => {
+    const { game, a } = buildLine();
+    const { rail } = game.world;
+    const tile = singleTrackTiles(game)[5];
+    expect(game.construction.toggleSignal(a.x, a.y)).toMatch(/rovnou kolej/);
+    const before = game.money;
+    expect(game.construction.toggleSignal(tile.x, tile.y)).toBeNull();
+    expect(rail.hasSignal(tile.x, tile.y)).toBe(true);
+    expect(before - game.money).toBe(SIGNAL_COST);
+    expect(game.construction.toggleSignal(tile.x, tile.y)).toBeNull();
+    expect(game.money - before).toBe(-SIGNAL_COST * (1 - DEMOLISH_REFUND));
+    game.construction.toggleSignal(tile.x, tile.y);
+    expect(game.construction.demolishPlan([tile]).cost).toBe(-(TRACK_PIECE_COST + SIGNAL_COST) * DEMOLISH_REFUND);
+    game.construction.demolish([tile]);
+    expect(rail.hasSignal(tile.x, tile.y)).toBe(false);
+  });
+
+  // Oba vlaky jedou zároveň po trati mezi A a B stejným směrem
+  function followOnLine(withSignals: boolean): boolean {
+    const { game, a, b, depot } = buildLine();
+    if (withSignals)
+      singleTrackTiles(game)
+        .filter((_, i) => i % 5 === 4)
+        .forEach((t) => game.world.rail.addSignal(t.x, t.y));
+    const first = buyTrain(game, depot);
+    const second = buyTrain(game, depot);
+    game.fleet.start(first, [a.id, b.id]);
+    game.fleet.start(second, [a.id, b.id]);
+    const onLine = (t: Train): boolean => {
+      if (t.state !== 'running' || game.fleet.isBlocked(t)) return false;
+      const head = t.path[segmentIndexAt(t.path, t.pos)];
+      return head.x > 13 && head.x < 37 && t.orders![t.target] === b.id;
+    };
+    for (let i = 0; i < 20_000; i++) {
+      game.update(200);
+      if (onLine(first) && onLine(second)) return true;
+    }
+    return false;
+  }
+
+  it('dělí trať na úseky, takže za sebou jede víc vlaků', () => {
+    expect(followOnLine(false)).toBe(false);
+    expect(followOnLine(true)).toBe(true);
+  });
+});
+
+// Dlaždice trati s jediným kusem koleje seřazené podle polohy
+function singleTrackTiles(game: Game): { x: number; y: number }[] {
+  const { map, rail } = game.world;
+  const tiles: { x: number; y: number }[] = [];
+  for (let x = 0; x < map.width; x++) {
+    for (let y = 0; y < map.height; y++) if (rail.canPlaceSignal(x, y)) tiles.push({ x, y });
+  }
+  return tiles;
+}

@@ -64,6 +64,10 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
     if (type === TileType.Rail || type === TileType.Crossing || type === TileType.Bridge) {
       const value = rail.pieceCount(x, y) * trackPieceCost(map, x, y);
       rows.push(['Kusů kolejí', String(rail.pieceCount(x, y))], ['Údržba', monthly(value)]);
+      if (rail.hasSignal(x, y)) rows.push(['Návěstidlo', 'ano']);
+      const owner = game.fleet.reservations.ownerAt(x, y);
+      const holder = game.fleet.trains.find((t) => t.id === owner);
+      if (holder) rows.push(['Rezervuje', holder.name]);
     }
 
     const station = rail.stationAt(x, y);

@@ -125,6 +125,8 @@ export class RailNetwork {
   readonly pieces: Uint8Array;
   readonly stations: Station[] = [];
   readonly depots: Depot[] = [];
+  // Dlaždice s návěstidlem (index y * šířka + x); dělí trať na úseky, před kterými vlak smí čekat
+  readonly signals = new Set<number>();
   // Id se nerecyklují, aby odkazy (např. trasy vlaků) po demolici neukazovaly jinam
   nextStationId = 0;
   nextDepotId = 0;
@@ -178,6 +180,7 @@ export class RailNetwork {
   // Odebere všechny kusy koleje z dlaždice
   removeTrack(x: number, y: number): void {
     this.pieces[y * this.map.width + x] = 0;
+    this.signals.delete(y * this.map.width + x);
     const type = this.map.get(x, y);
     if (type === TileType.Rail) this.map.set(x, y, TileType.Grass);
     if (type === TileType.Crossing) this.map.set(x, y, TileType.Road);
@@ -243,5 +246,22 @@ export class RailNetwork {
 
   depotAt(x: number, y: number): Depot | undefined {
     return this.depots.find((d) => d.x === x && d.y === y);
+  }
+
+  hasSignal(x: number, y: number): boolean {
+    return this.signals.has(y * this.map.width + x);
+  }
+
+  // Návěstidlo jen na samostatnou kolej bez výhybky – čekající vlak tak neblokuje křížení
+  canPlaceSignal(x: number, y: number): boolean {
+    return this.map.isType(x, y, TileType.Rail) && this.pieceCount(x, y) === 1 && !this.hasSignal(x, y);
+  }
+
+  addSignal(x: number, y: number): void {
+    this.signals.add(y * this.map.width + x);
+  }
+
+  removeSignal(x: number, y: number): void {
+    this.signals.delete(y * this.map.width + x);
   }
 }

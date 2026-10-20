@@ -47,9 +47,10 @@ export class BuildPreview {
   }
 
   // Zvýraznění dlaždic: demolice červeně, nová silnice šedě
-  showArea(tiles: TilePos[], kind: 'demolish' | 'road' | 'invalid'): void {
+  showArea(tiles: TilePos[], kind: 'demolish' | 'road' | 'valid' | 'invalid'): void {
     this.clear();
-    this.areaMaterial.color.set(kind === 'demolish' ? DEMOLISH : kind === 'road' ? ROAD : INVALID);
+    const colors = { demolish: DEMOLISH, road: ROAD, valid: VALID, invalid: INVALID };
+    this.areaMaterial.color.set(colors[kind]);
     this.areaMaterial.opacity = 0.45;
     this.setArea(tiles);
   }

@@ -6,6 +6,7 @@ import { IsoCamera } from './camera';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
 import { RailView } from './rail';
 import { RoadView } from './roads';
+import { SignalsView } from './signals';
 import { TerrainView } from './terrain';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
@@ -18,6 +19,7 @@ export class GameView {
   readonly terrain: TerrainView;
   private readonly labels: TownLabels;
   private readonly trains: TrainsView;
+  private readonly signals: SignalsView;
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
   private railDirty = false;
@@ -47,6 +49,8 @@ export class GameView {
     const trees = new TreesView(map);
     void trees.refresh();
     const railView = new RailView(world.rail);
+    this.signals = new SignalsView(world.rail);
+    this.signals.rebuild();
     this.trains = new TrainsView(game.fleet, map);
     this.labels = new TownLabels(container);
     this.labels.setSize(window.innerWidth, window.innerHeight);
@@ -58,6 +62,7 @@ export class GameView {
       buildings.object,
       trees.object,
       railView.object,
+      this.signals.object,
       this.trains.object,
       this.labels.object,
       stationLabels.object,
@@ -89,6 +94,7 @@ export class GameView {
       if (this.railDirty) {
         this.railDirty = false;
         railView.rebuild();
+        this.signals.rebuild();
         rebuildStationLabels();
       }
     };
@@ -113,6 +119,8 @@ export class GameView {
     this.game.update(dtMs);
     this.syncMap();
     this.trains.update();
+    const { reservations } = this.game.fleet;
+    this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
     this.floatingTexts.update(now);
     this.renderer.render(this.scene, this.camera.camera);
     this.labels.render(this.scene, this.camera.camera);
