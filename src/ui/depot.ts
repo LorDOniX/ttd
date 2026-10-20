@@ -4,21 +4,8 @@ import { trainModel, trainValue, type Train } from '../game/trains';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { h } from './dom';
+import { openTrain, stateText } from './trainWindow';
 import type { WindowManager } from './windows';
-
-function stateText(game: Game, train: Train): string {
-  const target = train.target === -1 ? 'depo' : train.orders ? game.fleet.stationName(train.orders[train.target]) : '';
-  switch (train.state) {
-    case 'depot':
-      return 'V depu';
-    case 'running':
-      return `Jede: ${target}`;
-    case 'loading':
-      return `Ve stanici, další cíl: ${train.orders ? game.fleet.stationName(train.orders[1 - train.target]) : ''}`;
-    case 'lost':
-      return `Nemůže najít cestu: ${target}`;
-  }
-}
 
 // Okno depa: nákup vlaků, vagony, vypravení na trať a prodej
 export function openDepot(
@@ -100,6 +87,9 @@ export function openDepot(
           { className: 'train__actions' },
           button('Do depa', () => fleet.sendToDepot(train), train.target === -1),
           button('Najít', () => focus(...pointAt(train.path, train.pos))),
+          button('Detail', () =>
+            openTrain(windows, game, train, { focus, openDepot: (d) => openDepot(windows, game, d, focus) }),
+          ),
         ),
       );
     }
@@ -134,7 +124,7 @@ export function openDepot(
   };
 
   const refresh = (): void => {
-    if (windows.isOpen(id)) windows.open(id, `Depo ${depot.id + 1}`, render(), options);
+    if (windows.isOpen(id)) windows.update(id, render());
   };
   const unsubscribe = [game.events.on('trainsChanged', refresh), game.events.on('railChanged', refresh)];
   const options = {

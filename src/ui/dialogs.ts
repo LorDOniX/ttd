@@ -96,6 +96,24 @@ export function openSaveLoad(windows: WindowManager, game: Game, seedText: strin
   });
 }
 
+// Historie zpráv od nejnovější
+export function openNewsLog(windows: WindowManager, game: Game): void {
+  const render = (): HTMLElement => {
+    if (game.newsLog.length === 0) return h('div', { className: 'form__hint' }, 'Zatím žádné zprávy.');
+    return h(
+      'div',
+      { className: 'news-log' },
+      ...[...game.newsLog]
+        .reverse()
+        .map((item) =>
+          h('div', { className: 'news-log__item' }, h('small', {}, formatDate(item.date)), h('div', {}, item.text)),
+        ),
+    );
+  };
+  const off = game.events.on('news', () => windows.update('news', render()));
+  windows.open('news', 'Zprávy', render(), { width: 420, onClose: off });
+}
+
 export function openTown(
   windows: WindowManager,
   game: Game,
@@ -113,7 +131,7 @@ export function openTown(
     );
 
   const off = game.events.on('townsChanged', () => {
-    if (windows.isOpen(id)) windows.open(id, town.name, render(), options);
+    if (windows.isOpen(id)) windows.update(id, render());
   });
   const options = { width: 240, onClose: off, locate: () => focus(town.x + 0.5, town.y + 0.5) };
   windows.open(id, town.name, render(), options);

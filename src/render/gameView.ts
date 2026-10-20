@@ -103,6 +103,11 @@ export class GameView {
     );
   }
 
+  // Id vlaku pod kurzorem
+  trainAt(clientX: number, clientY: number): number | null {
+    return this.trains.pick(this.camera.ray(clientX, clientY));
+  }
+
   // Jeden snímek: posun hry o reálný čas dtMs a vykreslení
   frame(now: number, dtMs: number): void {
     this.game.update(dtMs);

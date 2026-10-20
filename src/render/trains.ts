@@ -53,6 +53,20 @@ export class TrainsView {
     }
   }
 
+  // Id vlaku, jehož viditelný vůz paprsek zasáhne jako první
+  pick(raycaster: THREE.Raycaster): number | null {
+    const isShown = (o: THREE.Object3D | null): boolean => !o || (o.visible && isShown(o.parent));
+    for (const hit of raycaster.intersectObject(this.object, true)) {
+      if (!isShown(hit.object)) continue;
+      for (const [id, view] of this.views) {
+        let o: THREE.Object3D | null = hit.object;
+        while (o && o !== view.group) o = o.parent;
+        if (o) return id;
+      }
+    }
+    return null;
+  }
+
   private createView(train: Train): TrainView {
     const model = trainModel(train);
     const view: TrainView = { key: trainKey(train), group: new THREE.Group(), vehicles: [] };

@@ -7,16 +7,20 @@ import { GameView } from '../render/gameView';
 import { BuildPreview } from '../render/preview';
 import { BuildTools } from '../ui/buildTools';
 import { openDepot } from '../ui/depot';
-import { openSaveLoad, openSettings, openTown } from '../ui/dialogs';
+import { openNewsLog, openSaveLoad, openSettings, openTown } from '../ui/dialogs';
 import { h } from '../ui/dom';
 import { openFinance } from '../ui/finance';
 import { Hud, type ToolbarActions } from '../ui/hud';
 import { openMinimap } from '../ui/minimap';
 import { Shortcuts } from '../ui/shortcuts';
+import { openTileInfo } from '../ui/tileInfo';
+import { openTrain, openTrainList } from '../ui/trainWindow';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
 import { NO_OWNER, type TilePos } from '../world/map';
+import type { Depot } from '../world/rail';
 import { hashSeed } from '../world/rng';
+import type { Town } from '../world/town';
 
 const WATER_LEVELS = { low: 0.28, normal: 0.34, high: 0.42 } as const;
 const TOWN_DENSITY = { few: 0.6, normal: 1, many: 1.5 } as const;
@@ -71,6 +75,13 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     visible: () => terrain.gridVisible,
     setVisible: (visible: boolean) => terrain.setGridVisible(visible),
   };
+  const focus = (x: number, z: number): void => isoCamera.focus(x, z);
+  const links = {
+    focus,
+    openDepot: (depot: Depot) => openDepot(windows, game, depot, focus),
+    openTown: (town: Town) => openTown(windows, game, town, focus),
+  };
+  buildTools.onInspect = (tile) => openTileInfo(windows, game, tile, links);
   const actions: ToolbarActions = {
     openSaveLoad: () =>
       openSaveLoad(windows, game, seedText, {
@@ -86,8 +97,12 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openRoadBuild: () => buildTools.openRoadWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
+    openTrainList: () => openTrainList(windows, game, links),
+    openNews: () => openNewsLog(windows, game),
+    toggleInfo: () => buildTools.toggleTool('info'),
   };
-  new Hud(container, game, actions);
+  const hud = new Hud(container, game, actions);
+  buildTools.onToolChange = (tool) => hud.setInfoActive(tool === 'info');
 
   const { clock } = game;
   const shortcuts = new Shortcuts([
@@ -103,7 +118,10 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     { codes: ['KeyS'], key: 'S', label: 'Silnice', run: () => buildTools.toggleTool('road') },
     { codes: ['KeyX'], key: 'X', label: 'Demolice', run: () => buildTools.toggleTool('demolish') },
     { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště nebo depo', run: () => buildTools.rotate() },
+    { codes: ['KeyI'], key: 'I', label: 'Informace o dlaždici („?“)', run: actions.toggleInfo },
     { codes: ['KeyF'], key: 'F', label: 'Finance', run: actions.openFinance },
+    { codes: ['KeyV'], key: 'V', label: 'Seznam vlaků', run: actions.openTrainList },
+    { codes: ['KeyH'], key: 'H', label: 'Historie zpráv', run: actions.openNews },
     { codes: ['KeyM'], key: 'M', label: 'Minimapa', run: actions.openMinimap },
     { codes: ['KeyG'], key: 'G', label: 'Mřížka', run: () => grid.setVisible(!grid.visible()) },
     {
@@ -170,16 +188,21 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     const moved = Math.hypot(e.clientX - clickStart.x, e.clientY - clickStart.y);
     clickStart = null;
     if (moved > 4) return;
+    const trainId = view.trainAt(e.clientX, e.clientY);
+    const train = game.fleet.trains.find((t) => t.id === trainId);
+    if (train) {
+      openTrain(windows, game, train, links);
+      return;
+    }
     const tile = tileAt(e.clientX, e.clientY);
     if (!tile) return;
     const depot = world.rail.depotAt(tile.x, tile.y);
-    const focus = (x: number, z: number): void => isoCamera.focus(x, z);
     if (depot) {
-      openDepot(windows, game, depot, focus);
+      links.openDepot(depot);
       return;
     }
     const owner = map.getOwner(tile.x, tile.y);
-    if (owner !== NO_OWNER) openTown(windows, game, towns[owner], focus);
+    if (owner !== NO_OWNER) links.openTown(towns[owner]);
   });
 
   let lastFrame = performance.now();

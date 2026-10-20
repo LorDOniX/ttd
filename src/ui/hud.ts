@@ -12,6 +12,9 @@ export interface ToolbarActions {
   openRoadBuild: () => void;
   rotateView: (direction: 1 | -1) => void;
   openMinimap: () => void;
+  openTrainList: () => void;
+  openNews: () => void;
+  toggleInfo: () => void;
 }
 
 // Horní lišta s ikonami a spodní stavová lišta
@@ -20,6 +23,7 @@ export class Hud {
   private readonly companyEl = h('strong');
   private readonly newsEl = h('span', { className: 'statusbar__news' });
   private readonly moneyEl = h('span', { className: 'statusbar__money' });
+  private readonly infoButton: HTMLButtonElement;
   private newsTimer = 0;
 
   constructor(root: HTMLElement, game: Game, actions: ToolbarActions) {
@@ -57,6 +61,8 @@ export class Hud {
       actions.rotateView(-1);
     });
 
+    this.infoButton = button('❓', 'Informace o dlaždici a dosah nástupiště (I)', actions.toggleInfo);
+
     const toolbar = h(
       'div',
       { className: 'toolbar' },
@@ -65,19 +71,18 @@ export class Hud {
       button('💾', 'Uložit / načíst hru', actions.openSaveLoad),
       button('⚙️', 'Nastavení a klávesové zkratky', actions.openSettings),
       button('💰', 'Finance (F)', actions.openFinance),
+      button('🚆', 'Seznam vlaků (V)', actions.openTrainList),
+      button('📰', 'Historie zpráv (H)', actions.openNews),
       button('🚂', 'Stavba železnice (K, N, D, X)', actions.openRailBuild),
       button('🛣️', 'Stavba silnic (S)', actions.openRoadBuild),
+      this.infoButton,
       rotate,
       button('🗺️', 'Minimapa (M)', actions.openMinimap),
     );
 
-    const statusbar = h(
-      'div',
-      { className: 'statusbar' },
-      this.dateEl,
-      h('span', { className: 'statusbar__center' }, this.companyEl, this.newsEl),
-      this.moneyEl,
-    );
+    const center = h('span', { className: 'statusbar__center', title: 'Historie zpráv' }, this.companyEl, this.newsEl);
+    center.addEventListener('click', actions.openNews);
+    const statusbar = h('div', { className: 'statusbar' }, this.dateEl, center, this.moneyEl);
     root.append(toolbar, statusbar);
 
     game.clock.events.on('day', (date) => (this.dateEl.textContent = formatDate(date)));
@@ -88,6 +93,10 @@ export class Hud {
     this.dateEl.textContent = formatDate(game.clock.date);
     this.companyEl.textContent = game.companyName;
     this.renderMoney(game.money);
+  }
+
+  setInfoActive(active: boolean): void {
+    this.infoButton.classList.toggle('toolbar__button--active', active);
   }
 
   private renderMoney(money: number): void {

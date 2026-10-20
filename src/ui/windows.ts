@@ -3,6 +3,8 @@ interface OpenWindow {
   body: HTMLElement;
   onClose?: () => void;
   locate?: () => void;
+  // Obsah čekající, až uživatel pustí tlačítko myši v okně
+  pending: HTMLElement | null;
 }
 
 export interface WindowOptions {
@@ -16,11 +18,33 @@ export interface WindowOptions {
 export class WindowManager {
   private readonly windows = new Map<string, OpenWindow>();
   private zIndex = 10;
+  private pressed: OpenWindow | null = null;
 
-  constructor(private readonly root: HTMLElement) {}
+  constructor(private readonly root: HTMLElement) {
+    window.addEventListener('pointerup', () => {
+      const win = this.pressed;
+      this.pressed = null;
+      // Až po click, jinak by nahrazené tlačítko kliknutí nedostalo
+      if (win) setTimeout(() => this.flush(win));
+    });
+  }
 
   isOpen(id: string): boolean {
     return this.windows.has(id);
+  }
+
+  // Obnoví obsah otevřeného okna bez přenesení dopředu; během kliknutí do okna počká
+  update(id: string, content: HTMLElement): void {
+    const win = this.windows.get(id);
+    if (!win) return;
+    win.pending = content;
+    if (this.pressed !== win) this.flush(win);
+  }
+
+  private flush(win: OpenWindow): void {
+    if (!win.pending) return;
+    win.body.replaceChildren(win.pending);
+    win.pending = null;
   }
 
   // Otevře okno, případně nahradí obsah už otevřeného okna se stejným id
@@ -31,6 +55,7 @@ export class WindowManager {
       if (existing.onClose !== options.onClose) existing.onClose?.();
       existing.onClose = options.onClose;
       existing.locate = options.locate;
+      existing.pending = null;
       existing.body.replaceChildren(content);
       this.bringToFront(existing.el);
       return;
@@ -71,10 +96,14 @@ export class WindowManager {
     el.style.left = `${Math.max(8, (window.innerWidth - el.offsetWidth) / 2 + offset)}px`;
     el.style.top = `${80 + offset}px`;
 
-    el.addEventListener('pointerdown', () => this.bringToFront(el));
+    const win: OpenWindow = { el, body, onClose: options.onClose, locate: options.locate, pending: null };
+    el.addEventListener('pointerdown', () => {
+      this.pressed = win;
+      this.bringToFront(el);
+    });
     this.makeDraggable(el, header);
     this.bringToFront(el);
-    this.windows.set(id, { el, body, onClose: options.onClose, locate: options.locate });
+    this.windows.set(id, win);
   }
 
   close(id: string): void {

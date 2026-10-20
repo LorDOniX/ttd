@@ -81,15 +81,20 @@ export class IsoCamera {
     requestAnimationFrame(step);
   }
 
-  // Průsečík paprsku z kurzoru se zemí (y = 0)
-  groundPoint(clientX: number, clientY: number): THREE.Vector3 | null {
+  // Paprsek z kamery skrz bod obrazovky
+  ray(clientX: number, clientY: number): THREE.Raycaster {
     const rect = this.dom.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(ndc, this.camera);
-    return this.raycaster.ray.intersectPlane(this.groundPlane, new THREE.Vector3());
+    return this.raycaster;
+  }
+
+  // Průsečík paprsku z kurzoru se zemí (y = 0)
+  groundPoint(clientX: number, clientY: number): THREE.Vector3 | null {
+    return this.ray(clientX, clientY).ray.intersectPlane(this.groundPlane, new THREE.Vector3());
   }
 
   private updatePosition(): void {

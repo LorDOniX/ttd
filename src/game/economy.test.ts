@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TOWN_GROWTH_BASE, TOWN_GROWTH_SERVED } from './balance';
-import { fare } from './passengers';
+import { catchmentArea, fare, inArea } from './passengers';
 import { addBuilding, emptyGame, makeTown } from '../test/fixtures';
 import { defaultStationShape } from '../world/rail';
 import { growTown, townCapacity } from '../world/town';
@@ -24,6 +24,13 @@ describe('cestující', () => {
     const b = rail.addStation({ ...defaultStationShape(20, 24, 'x'), name: 'B', townId: 0 });
     expect(game.passengers.monthlyPassengers(a)).toBeCloseTo(45);
     expect(game.passengers.monthlyPassengers(b)).toBeCloseTo(45);
+  });
+
+  it('dosah sahá 4 dlaždice od okraje nástupiště', () => {
+    const area = catchmentArea(defaultStationShape(20, 20, 'x'));
+    expect(area).toEqual({ x0: 15, x1: 25, y0: 16, y1: 24 });
+    expect(inArea(area, 25, 24)).toBe(true);
+    expect(inArea(area, 26, 20)).toBe(false);
   });
 
   it('nástupiště mimo dosah města nic negeneruje', () => {

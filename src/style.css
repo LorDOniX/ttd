@@ -87,6 +87,29 @@ body {
   text-align: center;
   white-space: nowrap;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.news-log {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.news-log__item {
+  padding: 4px 0;
+  border-bottom: 1px solid #4a4a46;
+}
+
+.news-log__item small {
+  color: #bbb;
+}
+
+.table--clickable tr:not(:first-child) {
+  cursor: pointer;
+}
+
+.table--clickable tr:not(:first-child):hover {
+  background: #66665f;
 }
 
 .statusbar__news:not(:empty)::before {

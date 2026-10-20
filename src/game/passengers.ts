@@ -8,10 +8,33 @@ import {
 import { formatMoney, type Game } from './game';
 import type { Train } from './trains';
 import { TileType } from '../world/map';
-import { stationTiles, type Station } from '../world/rail';
+import { stationTiles, type Station, type StationShape } from '../world/rail';
 import type { Town } from '../world/town';
 
 const DAYS_PER_MONTH = 30;
+
+export interface Area {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+// Obdélník dosahu nástupiště včetně okrajů (může přesahovat mapu)
+export function catchmentArea(station: StationShape): Area {
+  const r = STATION_CATCHMENT_RADIUS;
+  const tiles = stationTiles(station);
+  return {
+    x0: Math.min(...tiles.map((t) => t.x)) - r,
+    x1: Math.max(...tiles.map((t) => t.x)) + r,
+    y0: Math.min(...tiles.map((t) => t.y)) - r,
+    y1: Math.max(...tiles.map((t) => t.y)) + r,
+  };
+}
+
+export function inArea(area: Area, x: number, y: number): boolean {
+  return x >= area.x0 && x <= area.x1 && y >= area.y0 && y <= area.y1;
+}
 
 export function fare(passengers: number, tiles: number, days: number): number {
   const tier = FARE_TIERS.find((t) => days <= t.maxDays)!;
@@ -38,13 +61,8 @@ export class Passengers {
     const cached = this.reachCache.get(station.id);
     if (cached) return cached;
 
-    const r = STATION_CATCHMENT_RADIUS;
     const found = new Set<number>();
-    const tiles = stationTiles(station);
-    const x0 = Math.min(...tiles.map((t) => t.x)) - r;
-    const x1 = Math.max(...tiles.map((t) => t.x)) + r;
-    const y0 = Math.min(...tiles.map((t) => t.y)) - r;
-    const y1 = Math.max(...tiles.map((t) => t.y)) + r;
+    const { x0, x1, y0, y1 } = catchmentArea(station);
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         if (map.isType(x, y, TileType.Building)) found.add(map.getOwner(x, y));

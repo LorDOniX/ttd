@@ -7,6 +7,7 @@ const VALID = 0x9fff9f;
 const INVALID = 0xff7070;
 const DEMOLISH = 0xff3030;
 const ROAD = 0x606068;
+const CATCHMENT = 0x4f8fff;
 const MAX_AREA = 4096;
 
 // Poloprůhledný náhled stavby pod kurzorem
@@ -49,6 +50,18 @@ export class BuildPreview {
   showArea(tiles: TilePos[], kind: 'demolish' | 'road' | 'invalid'): void {
     this.clear();
     this.areaMaterial.color.set(kind === 'demolish' ? DEMOLISH : kind === 'road' ? ROAD : INVALID);
+    this.areaMaterial.opacity = 0.45;
+    this.setArea(tiles);
+  }
+
+  // Dosah nástupiště; přidá se k ostatnímu náhledu (např. stavěnému nástupišti)
+  showCatchment(tiles: TilePos[]): void {
+    this.areaMaterial.color.set(CATCHMENT);
+    this.areaMaterial.opacity = 0.3;
+    this.setArea(tiles);
+  }
+
+  private setArea(tiles: TilePos[]): void {
     const m = new THREE.Matrix4();
     const count = Math.min(tiles.length, MAX_AREA);
     for (let i = 0; i < count; i++) this.area.setMatrixAt(i, m.makeTranslation(tiles[i].x, 0, tiles[i].y));

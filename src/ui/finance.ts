@@ -148,7 +148,7 @@ export function openFinance(windows: WindowManager, game: Game): void {
   };
 
   const refresh = (): void => {
-    if (windows.isOpen('finance')) windows.open('finance', 'Finance', render(), options);
+    if (windows.isOpen('finance')) windows.update('finance', render());
   };
   const unsubscribe = [
     game.events.on('money', refresh),

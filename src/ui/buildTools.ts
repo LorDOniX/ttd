@@ -9,6 +9,7 @@ import {
 } from '../game/balance';
 import { stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
+import { catchmentArea } from '../game/passengers';
 import type { BuildPreview } from '../render/preview';
 import { TileType, type TilePos } from '../world/map';
 import { EDGE_DELTA, Edge, PIECES, defaultStationShape, opposite, type Axis, type StationShape } from '../world/rail';
@@ -17,14 +18,16 @@ import { findRoadPath, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
-export type BuildTool = 'track' | 'station' | 'depot' | 'road' | 'demolish';
+export type BuildTool = 'track' | 'station' | 'depot' | 'road' | 'demolish' | 'info';
 
 // Největší strana obdélníku pro demolici
 const MAX_DEMOLISH_SIZE = 64;
 
-// Nástroje pro stavbu a demolici včetně náhledu a ceny u kurzoru
+// Nástroje pro stavbu a demolici včetně náhledu a ceny u kurzoru; „?“ jen zobrazuje informace
 export class BuildTools {
   tool: BuildTool | null = null;
+  onInspect: (tile: TilePos) => void = () => {};
+  onToolChange: (tool: BuildTool | null) => void = () => {};
   private axis: Axis = 'x';
   private entrance: Edge = Edge.E;
   private dragStart: TilePos | null = null;
@@ -99,12 +102,13 @@ export class BuildTools {
     this.roadPath = null;
     this.renderButtons();
     this.refresh();
+    this.onToolChange(tool);
   }
 
   // Zkratka: nástroj zapne i se zavřeným oknem (otevře ho), opakovaně vypne
   toggleTool(tool: BuildTool): void {
     const windowOpen = [...this.buttons.values()].some((buttons) => buttons.has(tool));
-    if (!windowOpen) {
+    if (!windowOpen && tool !== 'info') {
       if (tool === 'road') this.openRoadWindow();
       else this.openRailWindow();
     }
@@ -119,6 +123,10 @@ export class BuildTools {
 
   pointerDown(tile: TilePos | null): void {
     if (!tile || !this.tool) return;
+    if (this.tool === 'info') {
+      this.onInspect(tile);
+      return;
+    }
     if (this.tool === 'track' || this.tool === 'road' || this.tool === 'demolish' || this.tool === 'station') {
       this.dragStart = tile;
       this.updatePath();
@@ -216,6 +224,16 @@ export class BuildTools {
     if (error) this.game.news(error);
   }
 
+  private showCatchment(shape: StationShape): void {
+    const { map } = this.game.world;
+    const { x0, y0, x1, y1 } = catchmentArea(shape);
+    const tiles: TilePos[] = [];
+    for (let y = Math.max(0, y0); y <= Math.min(map.height - 1, y1); y++) {
+      for (let x = Math.max(0, x0); x <= Math.min(map.width - 1, x1); x++) tiles.push({ x, y });
+    }
+    this.preview.showCatchment(tiles);
+  }
+
   private renderButtons(): void {
     for (const buttons of this.buttons.values()) {
       for (const [tool, b] of buttons) b.classList.toggle('tool-button--active', tool === this.tool);
@@ -245,6 +263,7 @@ export class BuildTools {
         const ok = rail.canPlaceStation(shape);
         const cost = stationCost(shape);
         this.preview.showStation(shape, ok && this.game.money >= cost);
+        this.showCatchment(shape);
         text = ok
           ? `Nástupiště ${shape.tracks}×${shape.length} · ${formatMoney(cost)}`
           : 'Sem nástupiště postavit nelze';
@@ -261,6 +280,12 @@ export class BuildTools {
         text = `${tiles} dílků · ${formatMoney(cost)}`;
       } else {
         text = 'Silnici nelze vést';
+      }
+    } else if (this.tool === 'info' && tile) {
+      const station = rail.stationAt(tile.x, tile.y);
+      if (station) {
+        this.showCatchment(station);
+        text = `${station.name} – dosah nástupiště`;
       }
     } else if (this.tool === 'demolish' && tile) {
       const plan = this.game.construction.demolishPlan(this.demolishArea());

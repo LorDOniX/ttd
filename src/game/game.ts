@@ -1,7 +1,7 @@
 import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN, START_MONEY } from './balance';
 import { Construction, infrastructureValue } from './construction';
 import { Emitter } from './emitter';
-import { GameClock, formatDate } from './clock';
+import { GameClock, formatDate, type GameDate } from './clock';
 import { Passengers } from './passengers';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
@@ -9,6 +9,12 @@ import { Rng } from '../world/rng';
 import { growTown } from '../world/town';
 
 export const DEFAULT_COMPANY_NAME = 'Moje dopravní společnost';
+const MAX_NEWS_LOG = 200;
+
+export interface NewsItem {
+  date: GameDate;
+  text: string;
+}
 
 export type ExpenseKind = 'construction' | 'vehicles' | 'running' | 'maintenance' | 'interest';
 
@@ -71,6 +77,8 @@ export class Game {
   thisYear: YearStats = emptyYear();
   // Uzavřené roky od nejstaršího
   history: YearRecord[] = [];
+  // Poslední zprávy od nejstarší; neukládají se
+  readonly newsLog: NewsItem[] = [];
   // Cena staveb pro údržbu; počítá se z celé mapy, proto jen po změně kolejí
   private infrastructure: number | null = null;
 
@@ -143,6 +151,8 @@ export class Game {
   }
 
   news(text: string): void {
+    this.newsLog.push({ date: this.clock.date, text });
+    if (this.newsLog.length > MAX_NEWS_LOG) this.newsLog.shift();
     this.events.emit('news', text);
   }
 
