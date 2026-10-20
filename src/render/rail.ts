@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TileType } from '../world/map';
-import { EDGE_MID, Edge, PIECES, RailNetwork, isCorner, type Axis } from '../world/rail';
+import { EDGE_MID, Edge, PIECES, RailNetwork, isCorner, stationTiles, type Axis, type StationShape } from '../world/rail';
 
 const BALLAST = 0x8c8273;
 const SLEEPER = 0x5a3d26;
@@ -37,14 +37,13 @@ function pieceGeometry(length: number): THREE.BufferGeometry {
   return mergeGeometries(parts)!;
 }
 
-function stationGeometry(): THREE.BufferGeometry {
+// Jeden dílek nástupiště podél osy X: nástupní hrany po obou stranách koleje, volitelně přístřešek
+function stationTileGeometry(roof: boolean): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   for (const z of [-0.36, 0.36]) {
-    parts.push(box(3, 0.1, 0.26, PLATFORM, 0, 0, z));
-    parts.push(box(3, 0.005, 0.03, PLATFORM_EDGE, 0, 0.1, z - Math.sign(z) * 0.115));
-  }
-  // Přístřešek nad prostředním dílkem
-  for (const z of [-0.36, 0.36]) {
+    parts.push(box(1, 0.1, 0.26, PLATFORM, 0, 0, z));
+    parts.push(box(1, 0.005, 0.03, PLATFORM_EDGE, 0, 0.1, z - Math.sign(z) * 0.115));
+    if (!roof) continue;
     for (const x of [-0.35, 0.35]) parts.push(box(0.04, 0.35, 0.04, POST, x, 0.1, z + Math.sign(z) * 0.06));
     parts.push(box(0.9, 0.04, 0.3, ROOF, 0, 0.45, z));
   }
@@ -82,7 +81,8 @@ const CORNER = pieceGeometry(Math.SQRT1_2);
 // Na přejezdu jen kolejnice zapuštěné ve vozovce
 const CROSSING = mergeGeometries([-0.1, 0.1].map((z) => box(1, 0.02, 0.025, RAIL, 0, 0.004, z)))!;
 const BRIDGE_MESH = bridgeGeometry();
-const STATION = stationGeometry();
+const STATION_TILE = stationTileGeometry(false);
+const STATION_TILE_ROOF = stationTileGeometry(true);
 const DEPOT = depotGeometry();
 
 export function entranceRotation(entrance: Edge): number {
@@ -176,17 +176,22 @@ export function networkTrack(rail: RailNetwork): TrackItem[] {
   return items;
 }
 
-export function createStationMesh(material: THREE.Material): THREE.Mesh {
-  return new THREE.Mesh(STATION, material);
+// Nástupiště libovolné velikosti z dílků; přístřešek nad prostředním dílkem každé koleje
+export function createStationObject(shape: StationShape, material: THREE.Material): THREE.Group {
+  const group = new THREE.Group();
+  const middle = Math.floor(shape.length / 2);
+  stationTiles(shape).forEach((tile, i) => {
+    const roof = Math.floor(i / shape.tracks) === middle;
+    const mesh = new THREE.Mesh(roof ? STATION_TILE_ROOF : STATION_TILE, material);
+    mesh.position.set(tile.x + 0.5, 0, tile.y + 0.5);
+    mesh.rotation.y = axisRotation(shape.axis);
+    group.add(mesh);
+  });
+  return group;
 }
 
 export function createDepotMesh(material: THREE.Material): THREE.Mesh {
   return new THREE.Mesh(DEPOT, material);
-}
-
-export function placeStation(mesh: THREE.Object3D, x: number, y: number, axis: Axis): void {
-  mesh.position.set(x + 0.5, 0, y + 0.5);
-  mesh.rotation.y = axisRotation(axis);
 }
 
 export function placeDepot(mesh: THREE.Object3D, x: number, y: number, entrance: Edge): void {
@@ -209,11 +214,7 @@ export class RailView {
   rebuild(): void {
     this.track.update(networkTrack(this.rail));
     this.structures.clear();
-    for (const s of this.rail.stations) {
-      const mesh = createStationMesh(this.material);
-      placeStation(mesh, s.x, s.y, s.axis);
-      this.structures.add(mesh);
-    }
+    for (const s of this.rail.stations) this.structures.add(createStationObject(s, this.material));
     for (const d of this.rail.depots) {
       const mesh = createDepotMesh(this.material);
       placeDepot(mesh, d.x, d.y, d.entrance);

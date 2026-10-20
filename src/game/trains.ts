@@ -220,7 +220,7 @@ export class Fleet {
       if (depot && depot.x === x && depot.y === y) return `Depo patří vlaku ${train.name}.`;
       for (const id of train.orders ?? []) {
         const s = this.station(id);
-        if (s && stationTiles(s.x, s.y, s.axis).some((t) => t.x === x && t.y === y)) {
+        if (s && stationTiles(s).some((t) => t.x === x && t.y === y)) {
           return `Nástupiště ${s.name} obsluhuje ${train.name}.`;
         }
       }

@@ -29,7 +29,7 @@ export class Passengers {
     const { map, towns } = this.game.world;
     const r = STATION_CATCHMENT_RADIUS;
     const found = new Set<number>();
-    const tiles = stationTiles(station.x, station.y, station.axis);
+    const tiles = stationTiles(station);
     const x0 = Math.min(...tiles.map((t) => t.x)) - r;
     const x1 = Math.max(...tiles.map((t) => t.x)) + r;
     const y0 = Math.min(...tiles.map((t) => t.y)) - r;

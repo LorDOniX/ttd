@@ -1,9 +1,17 @@
-import { BRIDGE_PIECE_COST, DEPOT_COST, ROAD_TILE_COST, TRACK_PIECE_COST } from '../game/balance';
-import { STATION_COST, trackPieceCost } from '../game/construction';
+import {
+  BRIDGE_PIECE_COST,
+  DEPOT_COST,
+  MAX_STATION_LENGTH,
+  MAX_STATION_TRACKS,
+  PLATFORM_TILE_COST,
+  ROAD_TILE_COST,
+  TRACK_PIECE_COST,
+} from '../game/balance';
+import { stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
 import type { BuildPreview } from '../render/preview';
 import { TileType, type TilePos } from '../world/map';
-import { EDGE_DELTA, Edge, PIECES, opposite, type Axis } from '../world/rail';
+import { EDGE_DELTA, Edge, PIECES, defaultStationShape, opposite, type Axis, type StationShape } from '../world/rail';
 import { findTrackPath, type PathStep } from '../world/railPath';
 import { findRoadPath, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
@@ -43,7 +51,7 @@ export class BuildTools {
   openRailWindow(): void {
     this.openToolWindow('rail-build', 'Stavba železnice', [
       ['track', 'Koleje', `${formatMoney(TRACK_PIECE_COST)} / dílek, most ${formatMoney(BRIDGE_PIECE_COST)}`],
-      ['station', 'Nástupiště 1×3', formatMoney(STATION_COST)],
+      ['station', 'Nástupiště', `${formatMoney(PLATFORM_TILE_COST)} / dílek`],
       ['depot', 'Depo', formatMoney(DEPOT_COST)],
       ['demolish', 'Demolice', 'vrátí 50 %'],
     ]);
@@ -69,7 +77,8 @@ export class BuildTools {
       h(
         'div',
         { className: 'form__hint' },
-        'Koleje, silnice a demolice: táhněte levým tlačítkem. R – otočit, Esc – zrušit nástroj.',
+        'Koleje, silnice a demolice: táhněte levým tlačítkem. Nástupiště: kliknutím 1×3, tažením větší. ' +
+          'R – otočit, Esc – zrušit nástroj.',
       ),
     );
     this.windows.open(id, title, content, {
@@ -100,11 +109,9 @@ export class BuildTools {
 
   pointerDown(tile: TilePos | null): void {
     if (!tile || !this.tool) return;
-    if (this.tool === 'track' || this.tool === 'road' || this.tool === 'demolish') {
+    if (this.tool === 'track' || this.tool === 'road' || this.tool === 'demolish' || this.tool === 'station') {
       this.dragStart = tile;
       this.updatePath();
-    } else if (this.tool === 'station') {
-      this.report(this.game.construction.buildStation(tile.x, tile.y, this.axis));
     } else {
       this.report(this.game.construction.buildDepot(tile.x, tile.y, this.depotEntrance(tile)));
     }
@@ -126,6 +133,10 @@ export class BuildTools {
     if (this.tool === 'track' && this.path) construction.buildTrack(this.path);
     if (this.tool === 'road' && this.roadPath) construction.buildRoad(this.roadPath);
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
+    if (this.tool === 'station') {
+      const shape = this.stationShape();
+      if (shape) this.report(construction.buildStation(shape));
+    }
     this.dragStart = null;
     this.path = null;
     this.roadPath = null;
@@ -152,6 +163,29 @@ export class BuildTools {
     const tiles: TilePos[] = [];
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) tiles.push({ x, y });
     return tiles;
+  }
+
+  // Bez tažení výchozí 1×3 pod kurzorem; tažením obdélník, delší strana určí směr kolejí
+  private stationShape(): StationShape | null {
+    const start = this.dragStart;
+    const end = this.hover ?? start;
+    if (!start || !end || (start.x === end.x && start.y === end.y)) {
+      const tile = end ?? this.hover;
+      return tile ? defaultStationShape(tile.x, tile.y, this.axis) : null;
+    }
+    const sizeX = Math.abs(end.x - start.x) + 1;
+    const sizeY = Math.abs(end.y - start.y) + 1;
+    const axis: Axis = sizeX > sizeY ? 'x' : sizeY > sizeX ? 'y' : this.axis;
+    const length = Math.min(axis === 'x' ? sizeX : sizeY, MAX_STATION_LENGTH);
+    const tracks = Math.min(axis === 'x' ? sizeY : sizeX, MAX_STATION_TRACKS);
+    const [w, hgt] = axis === 'x' ? [length, tracks] : [tracks, length];
+    // Obdélník roste od začátku tažení směrem ke kurzoru
+    const x0 = end.x >= start.x ? start.x : start.x - w + 1;
+    const y0 = end.y >= start.y ? start.y : start.y - hgt + 1;
+    const [along, across] = [Math.floor(length / 2), Math.floor(tracks / 2)];
+    return axis === 'x'
+      ? { x: x0 + along, y: y0 + across, axis, length, tracks }
+      : { x: x0 + across, y: y0 + along, axis, length, tracks };
   }
 
   // Depo se natočí vjezdem ke kolejím na sousední dlaždici, jinak podle R
@@ -196,9 +230,15 @@ export class BuildTools {
         text = 'Trasu nelze vést';
       }
     } else if (this.tool === 'station' && tile) {
-      const ok = rail.canPlaceStation(tile.x, tile.y, this.axis);
-      this.preview.showStation(tile.x, tile.y, this.axis, ok && this.game.money >= STATION_COST);
-      text = ok ? formatMoney(STATION_COST) : 'Sem nástupiště postavit nelze';
+      const shape = this.stationShape();
+      if (shape) {
+        const ok = rail.canPlaceStation(shape);
+        const cost = stationCost(shape);
+        this.preview.showStation(shape, ok && this.game.money >= cost);
+        text = ok
+          ? `Nástupiště ${shape.tracks}×${shape.length} · ${formatMoney(cost)}`
+          : 'Sem nástupiště postavit nelze';
+      }
     } else if (this.tool === 'depot' && tile) {
       const ok = rail.canPlaceDepot(tile.x, tile.y);
       this.preview.showDepot(tile.x, tile.y, this.depotEntrance(tile), ok && this.game.money >= DEPOT_COST);

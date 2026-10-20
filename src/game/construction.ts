@@ -6,19 +6,21 @@ import {
   DEPOT_COST,
   PLATFORM_TILE_COST,
   ROAD_TILE_COST,
-  STATION_LENGTH,
   TRACK_PIECE_COST,
 } from './balance';
 import { formatMoney, type Game } from './game';
 import { NO_OWNER, TileType, type GameMap, type TilePos } from '../world/map';
-import { stationTiles, type Axis, type Edge } from '../world/rail';
+import { stationTiles, type Edge, type StationShape } from '../world/rail';
 import type { PathStep } from '../world/railPath';
 import type { RoadStep } from '../world/roadPath';
 import { buildingAt, buildingCapacity, demolishBuilding } from '../world/town';
 
 // Rychlost postupné výstavby kolejí a silnic
 const PIECES_PER_SECOND = 25;
-export const STATION_COST = PLATFORM_TILE_COST * STATION_LENGTH;
+
+export function stationCost(shape: StationShape): number {
+  return PLATFORM_TILE_COST * shape.length * shape.tracks;
+}
 
 // Cena nového dílku koleje: přes vodu se staví most
 export function trackPieceCost(map: GameMap, x: number, y: number): number {
@@ -56,10 +58,12 @@ export class Construction {
   }
 
   // Vrací chybovou hlášku, nebo null při úspěchu
-  buildStation(x: number, y: number, axis: Axis): string | null {
+  buildStation(shape: StationShape): string | null {
     const { rail, towns } = this.game.world;
-    if (!rail.canPlaceStation(x, y, axis)) return 'Sem nástupiště postavit nelze.';
-    if (this.game.money < STATION_COST) return `Nedostatek peněz (${formatMoney(STATION_COST)}).`;
+    const { x, y } = shape;
+    const cost = stationCost(shape);
+    if (!rail.canPlaceStation(shape)) return 'Sem nástupiště postavit nelze.';
+    if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
 
     const nearest = [...towns].sort(
       (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
@@ -67,8 +71,8 @@ export class Construction {
     const sameTown = rail.stations.filter((s) => s.townId === nearest.id).length;
     const name = sameTown === 0 ? nearest.name : `${nearest.name} ${sameTown + 1}`;
 
-    this.game.spend(STATION_COST);
-    rail.addStation({ name, x, y, axis, townId: nearest.id });
+    this.game.spend(cost);
+    rail.addStation({ ...shape, name, townId: nearest.id });
     this.game.news(`Postaveno nástupiště ${name}.`);
     this.game.events.emit('railChanged');
     return null;
@@ -111,8 +115,8 @@ export class Construction {
           const station = rail.stationAt(x, y);
           if (!station || stations.has(station.id)) break;
           stations.add(station.id);
-          cost -= STATION_COST * DEMOLISH_REFUND;
-          tiles.push(...stationTiles(station.x, station.y, station.axis));
+          cost -= stationCost(station) * DEMOLISH_REFUND;
+          tiles.push(...stationTiles(station));
           break;
         }
         case TileType.Depot:

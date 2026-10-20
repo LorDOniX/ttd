@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { TilePos } from '../world/map';
-import type { Axis, Edge } from '../world/rail';
-import { TrackView, createDepotMesh, createStationMesh, placeDepot, placeStation, type TrackItem } from './rail';
+import type { Edge, StationShape } from '../world/rail';
+import { TrackView, createDepotMesh, createStationObject, placeDepot, type TrackItem } from './rail';
 
 const VALID = 0x9fff9f;
 const INVALID = 0xff7070;
@@ -19,7 +19,7 @@ export class BuildPreview {
     depthWrite: false,
   });
   private readonly track = new TrackView(this.material);
-  private readonly station = createStationMesh(this.material);
+  private readonly station = new THREE.Group();
   private readonly depot = createDepotMesh(this.material);
   private readonly areaMaterial = new THREE.MeshBasicMaterial({
     transparent: true,
@@ -40,7 +40,7 @@ export class BuildPreview {
 
   clear(): void {
     this.track.update([]);
-    this.station.visible = false;
+    this.station.clear();
     this.depot.visible = false;
     this.area.count = 0;
   }
@@ -63,11 +63,10 @@ export class BuildPreview {
     this.track.update(items);
   }
 
-  showStation(x: number, y: number, axis: Axis, valid: boolean): void {
+  showStation(shape: StationShape, valid: boolean): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    placeStation(this.station, x, y, axis);
-    this.station.visible = true;
+    this.station.add(createStationObject(shape, this.material));
   }
 
   showDepot(x: number, y: number, entrance: Edge, valid: boolean): void {

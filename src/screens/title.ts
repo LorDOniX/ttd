@@ -7,7 +7,7 @@ import { GameView } from '../render/gameView';
 import { createLoadButton } from '../ui/dialogs';
 import { h } from '../ui/dom';
 import { generateWorld } from '../world/generator';
-import { Edge, type Station } from '../world/rail';
+import { Edge, defaultStationShape, type Station } from '../world/rail';
 import { findTrackPath } from '../world/railPath';
 import { hashSeed } from '../world/rng';
 import type { Town } from '../world/town';
@@ -25,8 +25,9 @@ function placeStationNear(game: Game, town: Town): Station | null {
       const x = Math.round(town.x + Math.cos((a / 64) * Math.PI * 2) * r);
       const y = Math.round(town.y + Math.sin((a / 64) * Math.PI * 2) * r);
       // Místo pro depo za západním koncem nástupiště
-      if (!rail.canPlaceStation(x, y, 'x') || !rail.canPlaceDepot(x - 2, y)) continue;
-      const station = rail.addStation({ name: town.name, x, y, axis: 'x', townId: town.id });
+      const shape = defaultStationShape(x, y, 'x');
+      if (!rail.canPlaceStation(shape) || !rail.canPlaceDepot(x - 2, y)) continue;
+      const station = rail.addStation({ ...shape, name: town.name, townId: town.id });
       if (game.passengers.townsInReach(station).includes(town)) return station;
       rail.removeStation(station);
     }

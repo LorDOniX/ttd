@@ -71,12 +71,18 @@ export function turnAllowed(h1: number, h2: number): boolean {
   return Math.min(d, 8 - d) <= 1;
 }
 
-export interface Station {
-  id: number;
-  name: string;
+// Obdélník nástupiště: střed (x, y), délka podél osy a počet kolejí vedle sebe
+export interface StationShape {
   x: number;
   y: number;
   axis: Axis;
+  length: number;
+  tracks: number;
+}
+
+export interface Station extends StationShape {
+  id: number;
+  name: string;
   townId: number;
   // Čekající cestující (necelé číslo kvůli průběžnému přírůstku)
   waiting: number;
@@ -89,11 +95,24 @@ export interface Depot {
   entrance: Edge;
 }
 
-export function stationTiles(x: number, y: number, axis: Axis): TilePos[] {
-  const half = Math.floor(STATION_LENGTH / 2);
-  return Array.from({ length: STATION_LENGTH }, (_, i) =>
-    axis === 'x' ? { x: x - half + i, y } : { x, y: y - half + i },
-  );
+export function defaultStationShape(x: number, y: number, axis: Axis): StationShape {
+  return { x, y, axis, length: STATION_LENGTH, tracks: 1 };
+}
+
+export function stationTiles(shape: StationShape): TilePos[] {
+  const along0 = -Math.floor(shape.length / 2);
+  const across0 = -Math.floor(shape.tracks / 2);
+  const tiles: TilePos[] = [];
+  for (let a = 0; a < shape.length; a++) {
+    for (let c = 0; c < shape.tracks; c++) {
+      tiles.push(
+        shape.axis === 'x'
+          ? { x: shape.x + along0 + a, y: shape.y + across0 + c }
+          : { x: shape.x + across0 + c, y: shape.y + along0 + a },
+      );
+    }
+  }
+  return tiles;
 }
 
 // Koleje, nástupiště a depa hráče
@@ -161,9 +180,9 @@ export class RailNetwork {
     if (type === TileType.Bridge) this.map.set(x, y, TileType.Water);
   }
 
-  canPlaceStation(x: number, y: number, axis: Axis): boolean {
-    const bit = 1 << axisPiece(axis);
-    return stationTiles(x, y, axis).every(
+  canPlaceStation(shape: StationShape): boolean {
+    const bit = 1 << axisPiece(shape.axis);
+    return stationTiles(shape).every(
       (t) =>
         this.map.isFree(t.x, t.y) ||
         (this.map.isType(t.x, t.y, TileType.Rail) && (this.mask(t.x, t.y) | bit) === bit),
@@ -172,7 +191,7 @@ export class RailNetwork {
 
   addStation(station: Omit<Station, 'id' | 'waiting'>): Station {
     const created = { ...station, id: this.nextStationId++, waiting: 0 };
-    for (const t of stationTiles(station.x, station.y, station.axis)) {
+    for (const t of stationTiles(station)) {
       this.map.set(t.x, t.y, TileType.Station);
       this.pieces[t.y * this.map.width + t.x] = 1 << axisPiece(station.axis);
     }
@@ -182,11 +201,11 @@ export class RailNetwork {
 
   stationAt(x: number, y: number): Station | undefined {
     if (!this.map.isType(x, y, TileType.Station)) return undefined;
-    return this.stations.find((s) => stationTiles(s.x, s.y, s.axis).some((t) => t.x === x && t.y === y));
+    return this.stations.find((s) => stationTiles(s).some((t) => t.x === x && t.y === y));
   }
 
   removeStation(station: Station): void {
-    for (const t of stationTiles(station.x, station.y, station.axis)) {
+    for (const t of stationTiles(station)) {
       this.map.set(t.x, t.y, TileType.Grass);
       this.pieces[t.y * this.map.width + t.x] = 0;
     }

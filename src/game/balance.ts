@@ -8,6 +8,9 @@ export const TRACK_PIECE_COST = 5_000;
 export const BRIDGE_PIECE_COST = 20_000;
 export const PLATFORM_TILE_COST = 25_000;
 export const STATION_LENGTH = 3;
+// Největší nástupiště postavené tažením
+export const MAX_STATION_LENGTH = 7;
+export const MAX_STATION_TRACKS = 4;
 export const DEPOT_COST = 50_000;
 export const ROAD_TILE_COST = 3_000;
 

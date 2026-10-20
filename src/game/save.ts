@@ -1,3 +1,4 @@
+import { STATION_LENGTH } from './balance';
 import { Game, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Train } from './trains';
@@ -113,7 +114,10 @@ export function restoreGame(data: SaveData): Game {
 
   const rail = new RailNetwork(map);
   rail.pieces.set(decode(data.rail.pieces, width * height));
-  rail.stations.push(...data.rail.stations);
+  // Starší uložení nezná velikost nástupišť, všechna byla 1×3
+  rail.stations.push(
+    ...data.rail.stations.map((s) => ({ ...s, length: s.length ?? STATION_LENGTH, tracks: s.tracks ?? 1 })),
+  );
   rail.depots.push(...data.rail.depots);
   rail.nextStationId = data.rail.nextStationId;
   rail.nextDepotId = data.rail.nextDepotId;
