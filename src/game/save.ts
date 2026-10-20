@@ -8,7 +8,6 @@ import type { Town } from '../world/town';
 
 const SAVE_VERSION = 1;
 const MAX_MAP_SIZE = 1024;
-export const PENDING_LOAD_KEY = 'ttd-pending-load';
 
 export interface SaveData {
   version: number;

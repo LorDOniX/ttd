@@ -1,6 +1,6 @@
 import { formatDate } from '../game/clock';
 import { Game, formatMoney } from '../game/game';
-import { PENDING_LOAD_KEY, parseSave, serializeGame } from '../game/save';
+import { parseSave, serializeGame } from '../game/save';
 import { trainModel } from '../game/trains';
 import type { Town } from '../world/town';
 import { h } from './dom';
@@ -117,7 +117,39 @@ export function openFinance(windows: WindowManager, game: Game): void {
   windows.open('finance', 'Finance', render(), options);
 }
 
-export function openSaveLoad(windows: WindowManager, game: Game, seedText: string): void {
+// Tlačítko pro výběr souboru s uloženou hrou; obsah se před předáním ověří
+export function createLoadButton(
+  onLoad: (text: string) => void,
+  status: HTMLElement,
+  confirmText: string | null,
+): HTMLElement {
+  const input = h('input', { type: 'file', accept: '.json,application/json' });
+  input.style.display = 'none';
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      parseSave(text);
+      if (confirmText && !window.confirm(confirmText)) return;
+      onLoad(text);
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : 'Hru se nepodařilo načíst.';
+    } finally {
+      input.value = '';
+    }
+  });
+  const load = h('button', { className: 'tool-button' }, h('span', {}, 'Načíst hru'), h('small', {}, 'JSON'));
+  load.addEventListener('click', () => input.click());
+  return h('div', { className: 'form' }, load, input);
+}
+
+export interface SaveLoadActions {
+  load: (save: string) => void;
+  toTitle: () => void;
+}
+
+export function openSaveLoad(windows: WindowManager, game: Game, seedText: string, actions: SaveLoadActions): void {
   const status = h('div', { className: 'form__hint' });
 
   const save = h('button', { className: 'tool-button' }, h('span', {}, 'Uložit hru'), h('small', {}, 'JSON'));
@@ -133,28 +165,11 @@ export function openSaveLoad(windows: WindowManager, game: Game, seedText: strin
     status.textContent = 'Hra uložena.';
   });
 
-  const input = h('input', { type: 'file', accept: '.json,application/json' });
-  input.style.display = 'none';
-  input.addEventListener('change', async () => {
-    const file = input.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      parseSave(text);
-      if (!window.confirm('Načíst uloženou hru? Neuložený postup se ztratí.')) return;
-      // Načtená hra se postaví po novém načtení stránky, aby nezůstal starý stav scény
-      sessionStorage.setItem(PENDING_LOAD_KEY, text);
-      location.reload();
-    } catch (error) {
-      status.textContent = error instanceof Error ? error.message : 'Hru se nepodařilo načíst.';
-    } finally {
-      input.value = '';
-    }
-  });
-  const load = h('button', { className: 'tool-button' }, h('span', {}, 'Načíst hru'), h('small', {}, 'JSON'));
-  load.addEventListener('click', () => input.click());
+  const load = createLoadButton(actions.load, status, 'Načíst uloženou hru? Neuložený postup se ztratí.');
+  const toTitle = h('button', { className: 'tool-button' }, h('span', {}, 'Hlavní menu'), h('small', {}, 'hra se uloží'));
+  toTitle.addEventListener('click', actions.toTitle);
 
-  windows.open('save-load', 'Uložit / načíst', h('div', { className: 'form' }, save, load, input, status), {
+  windows.open('save-load', 'Uložit / načíst', h('div', { className: 'form' }, save, load, toTitle, status), {
     width: 260,
   });
 }

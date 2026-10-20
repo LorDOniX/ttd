@@ -46,6 +46,13 @@ export class IsoCamera {
     this.updatePosition();
   }
 
+  // Plynulé kroužení (úvodní obrazovka): pootočí pohled o daný úhel bez animace
+  spin(radians: number): void {
+    this.azimuth += radians;
+    this.targetAzimuth = this.azimuth;
+    this.updatePosition();
+  }
+
   // Otočí pohled o 45° (direction 1 = po směru hodinových ručiček)
   rotate(direction: 1 | -1 = 1): void {
     this.targetAzimuth += direction * ROTATION_STEP;
