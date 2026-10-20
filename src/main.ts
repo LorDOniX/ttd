@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import './style.css';
 import { START_YEAR } from './game/clock';
-import { TRACK_PIECE_COST } from './game/balance';
-import { Game, formatMoney } from './game/game';
+import { Game } from './game/game';
 import { BuildingsView } from './render/buildings';
 import { IsoCamera } from './render/camera';
 import { TileCursor } from './render/cursor';
@@ -11,10 +10,10 @@ import { BuildPreview } from './render/preview';
 import { RailView } from './render/rail';
 import { RoadView } from './render/roads';
 import { TerrainView } from './render/terrain';
+import { BuildTools } from './ui/buildTools';
 import { openFinance, openSettings, openTown } from './ui/dialogs';
 import { h } from './ui/dom';
 import { Hud } from './ui/hud';
-import { RailTools } from './ui/railTools';
 import { WindowManager } from './ui/windows';
 import { generateWorld } from './world/generator';
 import { NO_OWNER, type TilePos } from './world/map';
@@ -81,7 +80,7 @@ window.addEventListener('resize', () => {
 });
 
 const windows = new WindowManager(container);
-const railTools = new RailTools(game, windows, preview, container);
+const buildTools = new BuildTools(game, windows, preview, container);
 const grid = {
   visible: () => terrain.gridVisible,
   setVisible: (visible: boolean) => terrain.setGridVisible(visible),
@@ -89,7 +88,8 @@ const grid = {
 new Hud(container, game, {
   openSettings: () => openSettings(windows, game, grid, seedText),
   openFinance: () => openFinance(windows, game),
-  openRailBuild: () => railTools.openWindow(),
+  openRailBuild: () => buildTools.openRailWindow(),
+  openRoadBuild: () => buildTools.openRoadWindow(),
 });
 
 game.events.on('townsChanged', () => {
@@ -99,13 +99,19 @@ game.events.on('townsChanged', () => {
   towns.forEach((town) => labels.update(town));
 });
 
-game.events.on('railChanged', () => railView.rebuild());
+game.events.on('railChanged', () => {
+  railView.rebuild();
+  // Demolice přejezdu mění i vzhled silnice
+  roads.rebuild();
+});
+
+game.events.on('roadsChanged', () => roads.rebuild());
 
 game.events.on('outOfMoney', () => {
   windows.open(
     'out-of-money',
     'Došly peníze',
-    h('p', {}, `Výstavba byla zastavena, na další dílek koleje (${formatMoney(TRACK_PIECE_COST)}) nemáte dost peněz.`),
+    h('p', {}, 'Výstavba byla zastavena, na další dílek nemáte dost peněz.'),
     { width: 300 },
   );
 });
@@ -123,7 +129,7 @@ function tileAt(clientX: number, clientY: number): TilePos | null {
 renderer.domElement.addEventListener('pointermove', (e) => {
   const tile = tileAt(e.clientX, e.clientY);
   cursor.show(tile);
-  if (railTools.tool) railTools.pointerMove(tile, e.clientX, e.clientY);
+  if (buildTools.tool) buildTools.pointerMove(tile, e.clientX, e.clientY);
 });
 
 renderer.domElement.addEventListener('pointerleave', () => cursor.show(null));
@@ -132,9 +138,9 @@ let clickStart: { x: number; y: number } | null = null;
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
-  if (railTools.tool) {
+  if (buildTools.tool) {
     renderer.domElement.setPointerCapture(e.pointerId);
-    railTools.pointerDown(tileAt(e.clientX, e.clientY));
+    buildTools.pointerDown(tileAt(e.clientX, e.clientY));
     return;
   }
   clickStart = { x: e.clientX, y: e.clientY };
@@ -142,8 +148,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (e.button !== 0) return;
-  if (railTools.tool) {
-    railTools.pointerUp();
+  if (buildTools.tool) {
+    buildTools.pointerUp();
     return;
   }
   if (!clickStart) return;

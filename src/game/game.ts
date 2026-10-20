@@ -19,6 +19,7 @@ type GameEvents = {
   company: [string];
   townsChanged: [];
   railChanged: [];
+  roadsChanged: [];
   outOfMoney: [];
 };
 
@@ -65,6 +66,11 @@ export class Game {
     this.money -= amount;
     this.thisYear.expenses += amount;
     this.events.emit('money', this.money);
+  }
+
+  // Vrácené peníze (např. z demolice) snižují výdaje, nejsou příjmem
+  refund(amount: number): void {
+    this.spend(-amount);
   }
 
   news(text: string): void {

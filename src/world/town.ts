@@ -114,7 +114,7 @@ function growRoads(map: GameMap, town: Town, radius: number): void {
     insideShape(town, x, y, radius) &&
     onRoadGrid(town, x, y) &&
     isFreeFor(map, town, x, y) &&
-    (map.get(x, y) === TileType.Grass || map.get(x, y) === TileType.Road);
+    (map.get(x, y) === TileType.Grass || map.isRoad(x, y));
 
   if (!canBeRoad(town.x, town.y)) return;
   const visited = new Set<number>([town.y * map.width + town.x]);
@@ -122,7 +122,7 @@ function growRoads(map: GameMap, town: Town, radius: number): void {
   while (queue.length > 0) {
     const y = queue.pop()!;
     const x = queue.pop()!;
-    map.set(x, y, TileType.Road);
+    if (map.get(x, y) === TileType.Grass) map.set(x, y, TileType.Road);
     map.setOwner(x, y, town.id);
     for (const n of NEIGHBOURS) {
       const nx = x + n.dx;
@@ -207,4 +207,16 @@ export function growTown(map: GameMap, town: Town, year: number, rng: Rng): void
   const rate = town.served ? TOWN_GROWTH_SERVED : TOWN_GROWTH_BASE;
   town.population = Math.round(town.population * (1 + rate));
   expandTown(map, town, year, rng);
+}
+
+export function buildingAt(town: Town, x: number, y: number): Building | undefined {
+  return town.buildings.find((b) => b.x === x && b.y === y);
+}
+
+// Zbourá budovu; obyvatelé nad zbylou kapacitu z města odejdou
+export function demolishBuilding(map: GameMap, town: Town, building: Building): void {
+  town.buildings.splice(town.buildings.indexOf(building), 1);
+  map.set(building.x, building.y, TileType.Grass);
+  map.setOwner(building.x, building.y, NO_OWNER);
+  town.population = Math.min(town.population, townCapacity(town));
 }

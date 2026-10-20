@@ -8,6 +8,7 @@ export interface ToolbarActions {
   openSettings: () => void;
   openFinance: () => void;
   openRailBuild: () => void;
+  openRoadBuild: () => void;
 }
 
 // Horní lišta s ikonami a spodní stavová lišta
@@ -43,6 +44,7 @@ export class Hud {
       button('⚙️', 'Nastavení', actions.openSettings),
       button('💰', 'Finance', actions.openFinance),
       button('🚂', 'Stavba železnice', actions.openRailBuild),
+      button('🛣️', 'Stavba silnic', actions.openRoadBuild),
     );
 
     const statusbar = h(

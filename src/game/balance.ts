@@ -7,6 +7,12 @@ export const TRACK_PIECE_COST = 5_000;
 export const PLATFORM_TILE_COST = 25_000;
 export const STATION_LENGTH = 3;
 export const DEPOT_COST = 50_000;
+export const ROAD_TILE_COST = 3_000;
+
+// Demolice: stavby hráče vrací část ceny, majetek měst se platí
+export const DEMOLISH_REFUND = 0.5;
+export const DEMOLISH_COST_PER_RESIDENT = 500;
+export const DEMOLISH_TOWN_ROAD_COST = 2_500;
 
 // Vlaky: rychlost v dlaždicích za herní den, provoz za rok
 export interface TrainModel {

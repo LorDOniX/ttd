@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GameMap, TileType } from '../world/map';
+import { GameMap } from '../world/map';
 
 // Bity propojení silnice se sousedy: S = y-1, V = x+1, J = y+1, Z = x-1
 const N = 1;
@@ -80,12 +80,12 @@ export class RoadView {
 
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
-        if (map.get(x, y) !== TileType.Road) continue;
+        if (!map.isRoad(x, y)) continue;
         const mask =
-          (map.isType(x, y - 1, TileType.Road) ? N : 0) |
-          (map.isType(x + 1, y, TileType.Road) ? E : 0) |
-          (map.isType(x, y + 1, TileType.Road) ? S : 0) |
-          (map.isType(x - 1, y, TileType.Road) ? W : 0);
+          (map.isRoad(x, y - 1) ? N : 0) |
+          (map.isRoad(x + 1, y) ? E : 0) |
+          (map.isRoad(x, y + 1) ? S : 0) |
+          (map.isRoad(x - 1, y) ? W : 0);
         const u0 = mask / VARIANTS + inset;
         const u1 = (mask + 1) / VARIANTS - inset;
         const v = positions.length / 3;

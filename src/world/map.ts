@@ -6,6 +6,8 @@ export enum TileType {
   Rail = 4,
   Station = 5,
   Depot = 6,
+  // Silnice křížená rovnou kolejí
+  Crossing = 7,
 }
 
 export interface TilePos {
@@ -51,5 +53,17 @@ export class GameMap {
 
   isType(x: number, y: number, type: TileType): boolean {
     return this.inBounds(x, y) && this.get(x, y) === type;
+  }
+
+  isRoad(x: number, y: number): boolean {
+    return this.isType(x, y, TileType.Road) || this.isType(x, y, TileType.Crossing);
+  }
+
+  // Směr silnice podle napojení na sousední silnice
+  roadAxis(x: number, y: number): 'x' | 'y' | 'junction' | 'none' {
+    const ns = this.isRoad(x, y - 1) || this.isRoad(x, y + 1);
+    const ew = this.isRoad(x - 1, y) || this.isRoad(x + 1, y);
+    if (ns && ew) return 'junction';
+    return ns ? 'y' : ew ? 'x' : 'none';
   }
 }

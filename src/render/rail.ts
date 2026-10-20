@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { TileType } from '../world/map';
 import { EDGE_MID, Edge, PIECES, RailNetwork, isCorner, type Axis } from '../world/rail';
 
 const BALLAST = 0x8c8273;
@@ -62,6 +63,8 @@ function depotGeometry(): THREE.BufferGeometry {
 
 const STRAIGHT = pieceGeometry(1);
 const CORNER = pieceGeometry(Math.SQRT1_2);
+// Na přejezdu jen kolejnice zapuštěné ve vozovce
+const CROSSING = mergeGeometries([-0.1, 0.1].map((z) => box(1, 0.02, 0.025, RAIL, 0, 0.004, z)))!;
 const STATION = stationGeometry();
 const DEPOT = depotGeometry();
 
@@ -85,25 +88,30 @@ export interface TrackItem {
   x: number;
   y: number;
   piece: number;
+  crossing?: boolean;
 }
 
-// Kusy kolejí jako dva instancované meshe (rovné a rohové)
+// Kusy kolejí jako instancované meshe (rovné, rohové, přejezdy)
 export class TrackView {
   readonly object = new THREE.Group();
   private straight: THREE.InstancedMesh;
   private corner: THREE.InstancedMesh;
+  private crossing: THREE.InstancedMesh;
 
   constructor(private readonly material: THREE.Material) {
     this.straight = new THREE.InstancedMesh(STRAIGHT, material, 0);
     this.corner = new THREE.InstancedMesh(CORNER, material, 0);
-    this.object.add(this.straight, this.corner);
+    this.crossing = new THREE.InstancedMesh(CROSSING, material, 0);
+    this.object.add(this.straight, this.corner, this.crossing);
   }
 
   update(items: TrackItem[]): void {
-    const straight = items.filter((i) => !isCorner(i.piece));
+    const straight = items.filter((i) => !isCorner(i.piece) && !i.crossing);
     const corner = items.filter((i) => isCorner(i.piece));
+    const crossing = items.filter((i) => i.crossing);
     this.straight = this.replace(this.straight, STRAIGHT, straight);
     this.corner = this.replace(this.corner, CORNER, corner);
+    this.crossing = this.replace(this.crossing, CROSSING, crossing);
   }
 
   private replace(old: THREE.InstancedMesh, geometry: THREE.BufferGeometry, items: TrackItem[]): THREE.InstancedMesh {
@@ -127,8 +135,11 @@ export function networkTrack(rail: RailNetwork): TrackItem[] {
   const items: TrackItem[] = [];
   const { width } = rail.map;
   rail.pieces.forEach((mask, i) => {
+    const x = i % width;
+    const y = Math.floor(i / width);
+    const crossing = mask !== 0 && rail.map.get(x, y) === TileType.Crossing;
     for (let piece = 0; mask >> piece; piece++) {
-      if (mask & (1 << piece)) items.push({ x: i % width, y: Math.floor(i / width), piece });
+      if (mask & (1 << piece)) items.push({ x, y, piece, crossing });
     }
   });
   return items;

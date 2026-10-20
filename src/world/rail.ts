@@ -51,6 +51,13 @@ export function axisPiece(axis: Axis): number {
   return axis === 'x' ? 1 : 0;
 }
 
+// Kolej přes silnici jen kolmo k rovné silnici, křižovatku křížit nelze
+export function crossingPiece(roadAxis: 'x' | 'y' | 'junction' | 'none'): number | null {
+  if (roadAxis === 'x') return axisPiece('y');
+  if (roadAxis === 'y') return axisPiece('x');
+  return null;
+}
+
 // Směr jízdy 0..7: 0 = +x, dál po krocích 45° k +y
 export function heading(from: Edge, to: Edge): number {
   const [ax, ay] = EDGE_MID[from];
@@ -93,6 +100,9 @@ export class RailNetwork {
   readonly pieces: Uint8Array;
   readonly stations: Station[] = [];
   readonly depots: Depot[] = [];
+  // Id se nerecyklují, aby odkazy (např. trasy vlaků) po demolici neukazovaly jinam
+  nextStationId = 0;
+  nextDepotId = 0;
 
   constructor(readonly map: GameMap) {
     this.pieces = new Uint8Array(map.width * map.height);
@@ -106,14 +116,21 @@ export class RailNetwork {
     return this.map.inBounds(x, y) && (this.mask(x, y) & (1 << piece)) !== 0;
   }
 
+  pieceCount(x: number, y: number): number {
+    return PIECES.filter((_, piece) => this.has(x, y, piece)).length;
+  }
+
   canPlace(x: number, y: number, piece: number): boolean {
     if (!this.map.inBounds(x, y)) return false;
     switch (this.map.get(x, y)) {
       case TileType.Grass:
       case TileType.Rail:
         return true;
+      case TileType.Road:
+        return piece === crossingPiece(this.map.roadAxis(x, y));
       case TileType.Station:
       case TileType.Depot:
+      case TileType.Crossing:
         return this.has(x, y, piece);
       default:
         return false;
@@ -122,7 +139,17 @@ export class RailNetwork {
 
   addPiece(x: number, y: number, piece: number): void {
     this.pieces[y * this.map.width + x] |= 1 << piece;
-    if (this.map.get(x, y) === TileType.Grass) this.map.set(x, y, TileType.Rail);
+    const type = this.map.get(x, y);
+    if (type === TileType.Grass) this.map.set(x, y, TileType.Rail);
+    if (type === TileType.Road) this.map.set(x, y, TileType.Crossing);
+  }
+
+  // Odebere všechny kusy koleje z dlaždice
+  removeTrack(x: number, y: number): void {
+    this.pieces[y * this.map.width + x] = 0;
+    const type = this.map.get(x, y);
+    if (type === TileType.Rail) this.map.set(x, y, TileType.Grass);
+    if (type === TileType.Crossing) this.map.set(x, y, TileType.Road);
   }
 
   canPlaceStation(x: number, y: number, axis: Axis): boolean {
@@ -135,7 +162,7 @@ export class RailNetwork {
   }
 
   addStation(station: Omit<Station, 'id'>): Station {
-    const created = { ...station, id: this.stations.length };
+    const created = { ...station, id: this.nextStationId++ };
     for (const t of stationTiles(station.x, station.y, station.axis)) {
       this.map.set(t.x, t.y, TileType.Station);
       this.pieces[t.y * this.map.width + t.x] = 1 << axisPiece(station.axis);
@@ -144,16 +171,35 @@ export class RailNetwork {
     return created;
   }
 
+  stationAt(x: number, y: number): Station | undefined {
+    if (!this.map.isType(x, y, TileType.Station)) return undefined;
+    return this.stations.find((s) => stationTiles(s.x, s.y, s.axis).some((t) => t.x === x && t.y === y));
+  }
+
+  removeStation(station: Station): void {
+    for (const t of stationTiles(station.x, station.y, station.axis)) {
+      this.map.set(t.x, t.y, TileType.Grass);
+      this.pieces[t.y * this.map.width + t.x] = 0;
+    }
+    this.stations.splice(this.stations.indexOf(station), 1);
+  }
+
   canPlaceDepot(x: number, y: number): boolean {
     return this.map.isType(x, y, TileType.Grass);
   }
 
   addDepot(x: number, y: number, entrance: Edge): Depot {
-    const depot = { id: this.depots.length, x, y, entrance };
+    const depot = { id: this.nextDepotId++, x, y, entrance };
     this.map.set(x, y, TileType.Depot);
     this.pieces[y * this.map.width + x] = 1 << axisPiece(entrance % 2 === 0 ? 'y' : 'x');
     this.depots.push(depot);
     return depot;
+  }
+
+  removeDepot(depot: Depot): void {
+    this.map.set(depot.x, depot.y, TileType.Grass);
+    this.pieces[depot.y * this.map.width + depot.x] = 0;
+    this.depots.splice(this.depots.indexOf(depot), 1);
   }
 
   depotAt(x: number, y: number): Depot | undefined {
