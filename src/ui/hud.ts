@@ -11,6 +11,7 @@ export interface ToolbarActions {
   openRailBuild: () => void;
   openRoadBuild: () => void;
   rotateView: (direction: 1 | -1) => void;
+  openMinimap: () => void;
 }
 
 // Horní lišta s ikonami a spodní stavová lišta
@@ -54,6 +55,7 @@ export class Hud {
       button('🚂', 'Stavba železnice', actions.openRailBuild),
       button('🛣️', 'Stavba silnic', actions.openRoadBuild),
       rotate,
+      button('🗺️', 'Minimapa', actions.openMinimap),
     );
 
     const statusbar = h(

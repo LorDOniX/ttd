@@ -123,6 +123,24 @@ body {
   flex: 1;
 }
 
+.minimap {
+  position: relative;
+  width: 256px;
+  height: 256px;
+}
+
+.minimap__canvas {
+  position: absolute;
+  inset: 0;
+  width: 256px;
+  height: 256px;
+  image-rendering: pixelated;
+}
+
+.minimap__canvas:last-child {
+  cursor: crosshair;
+}
+
 .window__locate {
   width: 20px;
   height: 20px;

@@ -10,6 +10,7 @@ import { openDepot } from '../ui/depot';
 import { openFinance, openSaveLoad, openSettings, openTown } from '../ui/dialogs';
 import { h } from '../ui/dom';
 import { Hud } from '../ui/hud';
+import { openMinimap } from '../ui/minimap';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
 import { NO_OWNER, type TilePos } from '../world/map';
@@ -80,6 +81,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openRailBuild: () => buildTools.openRailWindow(),
     openRoadBuild: () => buildTools.openRoadWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
+    openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
   });
 
   game.events.on('outOfMoney', () => {
