@@ -13,7 +13,7 @@ const POST = 0x4a4a4a;
 const WALL = 0x9c6b4a;
 const DOOR = 0x2a2420;
 const BRIDGE = 0x7a7066;
-const BRIDGE_RAIL = 0xb0a898;
+const BRIDGE_RAIL = 0xa8442c;
 
 // Kvádr s barvou ve vrcholech, posunutý na (x, y, z) dle spodní hrany
 function box(w: number, h: number, d: number, color: number, x: number, y: number, z: number): THREE.BufferGeometry {
@@ -67,7 +67,12 @@ function depotGeometry(): THREE.BufferGeometry {
 export const BRIDGE_DECK = 0.08;
 function bridgeGeometry(): THREE.BufferGeometry {
   const parts = [box(1, 0.05, 0.62, BRIDGE, 0, BRIDGE_DECK - 0.05, 0)];
-  for (const z of [-0.3, 0.3]) parts.push(box(1, 0.07, 0.025, BRIDGE_RAIL, 0, BRIDGE_DECK, z));
+  for (const z of [-0.29, 0.29]) {
+    // Ocelové zábradlí: sloupky, madlo a středová tyč
+    for (let i = 0; i < 5; i++) parts.push(box(0.03, 0.17, 0.03, BRIDGE_RAIL, -0.4 + i * 0.2, BRIDGE_DECK, z));
+    parts.push(box(1, 0.03, 0.035, BRIDGE_RAIL, 0, BRIDGE_DECK + 0.16, z));
+    parts.push(box(1, 0.02, 0.025, BRIDGE_RAIL, 0, BRIDGE_DECK + 0.08, z));
+  }
   for (const z of [-0.22, 0.22]) parts.push(box(0.12, BRIDGE_DECK - 0.05, 0.12, BRIDGE, 0, 0, z));
   return mergeGeometries(parts)!;
 }
