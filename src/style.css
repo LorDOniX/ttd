@@ -180,6 +180,39 @@ body {
   margin-top: 10px;
 }
 
+.tool-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 8px;
+  color: #fff;
+  background: #6b6b64;
+  border: 1px solid;
+  border-color: #8e8e86 #33332f #33332f #8e8e86;
+  cursor: pointer;
+}
+
+.tool-button small {
+  color: #ddd;
+}
+
+.tool-button--active {
+  background: #3c5a8a;
+  border-color: #33332f #8e8e86 #8e8e86 #33332f;
+}
+
+.tooltip {
+  position: fixed;
+  display: none;
+  padding: 2px 6px;
+  color: #fff;
+  background: rgba(20, 20, 20, 0.85);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1000;
+}
+
 .label-layer {
   position: absolute;
   top: 0;

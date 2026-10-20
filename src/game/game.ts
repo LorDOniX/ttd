@@ -1,4 +1,5 @@
 import { START_MONEY } from './balance';
+import { Construction } from './construction';
 import { Emitter } from './emitter';
 import { GameClock, formatDate } from './clock';
 import type { World } from '../world/generator';
@@ -17,6 +18,8 @@ type GameEvents = {
   news: [string];
   company: [string];
   townsChanged: [];
+  railChanged: [];
+  outOfMoney: [];
 };
 
 export function formatMoney(amount: number): string {
@@ -31,6 +34,7 @@ export function formatMoney(amount: number): string {
 export class Game {
   readonly events = new Emitter<GameEvents>();
   readonly clock = new GameClock();
+  readonly construction = new Construction(this);
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
   money = START_MONEY;
@@ -44,6 +48,11 @@ export class Game {
     this.clock.events.on('end', () =>
       this.news(`${formatDate(this.clock.date)}: konec hry. Konečný stav účtu ${formatMoney(this.money)}.`),
     );
+  }
+
+  update(dtMs: number): void {
+    this.clock.tick(dtMs);
+    this.construction.update(dtMs);
   }
 
   earn(amount: number): void {

@@ -2,6 +2,7 @@ import { TOWN_POPULATION } from '../game/balance';
 import { GameMap, TileType } from './map';
 import { CITY_NAMES, VILLAGE_NAMES } from './names';
 import { fbm } from './noise';
+import { RailNetwork } from './rail';
 import { Rng } from './rng';
 import { createTownShape, expandTown, type Town, type TownKind } from './town';
 
@@ -9,6 +10,7 @@ export interface World {
   seed: number;
   map: GameMap;
   towns: Town[];
+  rail: RailNetwork;
 }
 
 const WATER_LEVEL = 0.34;
@@ -86,5 +88,5 @@ export function generateWorld(seed: number, size: number, year: number): World {
   placeTowns(map, rng, 'city', rng.shuffle([...CITY_NAMES]), towns, year);
   placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year);
 
-  return { seed, map, towns };
+  return { seed, map, towns, rail: new RailNetwork(map) };
 }

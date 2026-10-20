@@ -7,6 +7,7 @@ const NEWS_VISIBLE_MS = 30_000;
 export interface ToolbarActions {
   openSettings: () => void;
   openFinance: () => void;
+  openRailBuild: () => void;
 }
 
 // Horní lišta s ikonami a spodní stavová lišta
@@ -41,7 +42,7 @@ export class Hud {
       button('💾', 'Uložit / načíst hru (fáze 7)'),
       button('⚙️', 'Nastavení', actions.openSettings),
       button('💰', 'Finance', actions.openFinance),
-      button('🚂', 'Stavba železnice (fáze 4)'),
+      button('🚂', 'Stavba železnice', actions.openRailBuild),
     );
 
     const statusbar = h(

@@ -1,15 +1,20 @@
 import * as THREE from 'three';
 import './style.css';
 import { START_YEAR } from './game/clock';
-import { Game } from './game/game';
+import { TRACK_PIECE_COST } from './game/balance';
+import { Game, formatMoney } from './game/game';
 import { BuildingsView } from './render/buildings';
 import { IsoCamera } from './render/camera';
 import { TileCursor } from './render/cursor';
 import { TownLabels } from './render/labels';
+import { BuildPreview } from './render/preview';
+import { RailView } from './render/rail';
 import { RoadView } from './render/roads';
 import { TerrainView } from './render/terrain';
 import { openFinance, openSettings, openTown } from './ui/dialogs';
+import { h } from './ui/dom';
 import { Hud } from './ui/hud';
+import { RailTools } from './ui/railTools';
 import { WindowManager } from './ui/windows';
 import { generateWorld } from './world/generator';
 import { NO_OWNER, type TilePos } from './world/map';
@@ -48,6 +53,12 @@ const buildings = new BuildingsView();
 scene.add(buildings.object);
 void buildings.rebuild(towns);
 
+const railView = new RailView(world.rail);
+scene.add(railView.object);
+
+const preview = new BuildPreview();
+scene.add(preview.object);
+
 const labels = new TownLabels(container);
 labels.setSize(window.innerWidth, window.innerHeight);
 labels.rebuild(towns);
@@ -70,6 +81,7 @@ window.addEventListener('resize', () => {
 });
 
 const windows = new WindowManager(container);
+const railTools = new RailTools(game, windows, preview, container);
 const grid = {
   visible: () => terrain.gridVisible,
   setVisible: (visible: boolean) => terrain.setGridVisible(visible),
@@ -77,6 +89,7 @@ const grid = {
 new Hud(container, game, {
   openSettings: () => openSettings(windows, game, grid, seedText),
   openFinance: () => openFinance(windows, game),
+  openRailBuild: () => railTools.openWindow(),
 });
 
 game.events.on('townsChanged', () => {
@@ -84,6 +97,17 @@ game.events.on('townsChanged', () => {
   roads.rebuild();
   void buildings.rebuild(towns);
   towns.forEach((town) => labels.update(town));
+});
+
+game.events.on('railChanged', () => railView.rebuild());
+
+game.events.on('outOfMoney', () => {
+  windows.open(
+    'out-of-money',
+    'Došly peníze',
+    h('p', {}, `Výstavba byla zastavena, na další dílek koleje (${formatMoney(TRACK_PIECE_COST)}) nemáte dost peněz.`),
+    { width: 300 },
+  );
 });
 
 game.news(`Vítejte v roce ${START_YEAR}! Začínáte s rozpočtem na stavbu železnice.`);
@@ -97,7 +121,9 @@ function tileAt(clientX: number, clientY: number): TilePos | null {
 }
 
 renderer.domElement.addEventListener('pointermove', (e) => {
-  cursor.show(tileAt(e.clientX, e.clientY));
+  const tile = tileAt(e.clientX, e.clientY);
+  cursor.show(tile);
+  if (railTools.tool) railTools.pointerMove(tile, e.clientX, e.clientY);
 });
 
 renderer.domElement.addEventListener('pointerleave', () => cursor.show(null));
@@ -105,11 +131,22 @@ renderer.domElement.addEventListener('pointerleave', () => cursor.show(null));
 let clickStart: { x: number; y: number } | null = null;
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (e.button === 0) clickStart = { x: e.clientX, y: e.clientY };
+  if (e.button !== 0) return;
+  if (railTools.tool) {
+    renderer.domElement.setPointerCapture(e.pointerId);
+    railTools.pointerDown(tileAt(e.clientX, e.clientY));
+    return;
+  }
+  clickStart = { x: e.clientX, y: e.clientY };
 });
 
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (e.button !== 0 || !clickStart) return;
+  if (e.button !== 0) return;
+  if (railTools.tool) {
+    railTools.pointerUp();
+    return;
+  }
+  if (!clickStart) return;
   const moved = Math.hypot(e.clientX - clickStart.x, e.clientY - clickStart.y);
   clickStart = null;
   if (moved > 4) return;
@@ -120,7 +157,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 
 let lastFrame = performance.now();
 renderer.setAnimationLoop((now: number) => {
-  game.clock.tick(now - lastFrame);
+  game.update(now - lastFrame);
   lastFrame = now;
   renderer.render(scene, isoCamera.camera);
   labels.render(scene, isoCamera.camera);

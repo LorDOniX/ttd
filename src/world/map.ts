@@ -3,6 +3,9 @@ export enum TileType {
   Water = 1,
   Road = 2,
   Building = 3,
+  Rail = 4,
+  Station = 5,
+  Depot = 6,
 }
 
 export interface TilePos {

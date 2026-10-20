@@ -1,0 +1,181 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { EDGE_MID, Edge, PIECES, RailNetwork, isCorner, type Axis } from '../world/rail';
+
+const BALLAST = 0x8c8273;
+const SLEEPER = 0x5a3d26;
+const RAIL = 0xb8bcc4;
+const PLATFORM = 0xb5b2a8;
+const PLATFORM_EDGE = 0xe0c040;
+const ROOF = 0x8a3c2c;
+const POST = 0x4a4a4a;
+const WALL = 0x9c6b4a;
+const DOOR = 0x2a2420;
+
+// Kvádr s barvou ve vrcholech, posunutý na (x, y, z) dle spodní hrany
+function box(w: number, h: number, d: number, color: number, x: number, y: number, z: number): THREE.BufferGeometry {
+  const geometry = new THREE.BoxGeometry(w, h, d).translate(x, y + h / 2, z);
+  const c = new THREE.Color(color);
+  const colors = new Float32Array(geometry.getAttribute('position').count * 3);
+  for (let i = 0; i < colors.length; i += 3) colors.set([c.r, c.g, c.b], i);
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
+// Kus koleje délky `length` podél osy X se středem v počátku
+function pieceGeometry(length: number): THREE.BufferGeometry {
+  const parts = [box(length, 0.03, 0.44, BALLAST, 0, 0, 0)];
+  const sleepers = Math.max(2, Math.round(length / 0.125));
+  for (let i = 0; i < sleepers; i++) {
+    const x = -length / 2 + (i + 0.5) * (length / sleepers);
+    parts.push(box(0.06, 0.025, 0.36, SLEEPER, x, 0.03, 0));
+  }
+  for (const z of [-0.1, 0.1]) parts.push(box(length, 0.03, 0.025, RAIL, 0, 0.055, z));
+  return mergeGeometries(parts)!;
+}
+
+function stationGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const z of [-0.36, 0.36]) {
+    parts.push(box(3, 0.1, 0.26, PLATFORM, 0, 0, z));
+    parts.push(box(3, 0.005, 0.03, PLATFORM_EDGE, 0, 0.1, z - Math.sign(z) * 0.115));
+  }
+  // Přístřešek nad prostředním dílkem
+  for (const z of [-0.36, 0.36]) {
+    for (const x of [-0.35, 0.35]) parts.push(box(0.04, 0.35, 0.04, POST, x, 0.1, z + Math.sign(z) * 0.06));
+    parts.push(box(0.9, 0.04, 0.3, ROOF, 0, 0.45, z));
+  }
+  return mergeGeometries(parts)!;
+}
+
+// Depo s vjezdem ve směru +X
+function depotGeometry(): THREE.BufferGeometry {
+  return mergeGeometries([
+    box(0.7, 0.42, 0.04, WALL, -0.05, 0, -0.36),
+    box(0.7, 0.42, 0.04, WALL, -0.05, 0, 0.36),
+    box(0.04, 0.42, 0.76, WALL, -0.4, 0, 0),
+    box(0.04, 0.12, 0.76, WALL, 0.3, 0.3, 0),
+    box(0.02, 0.3, 0.5, DOOR, 0.29, 0, 0),
+    box(0.82, 0.06, 0.86, ROOF, -0.05, 0.42, 0),
+  ])!;
+}
+
+const STRAIGHT = pieceGeometry(1);
+const CORNER = pieceGeometry(Math.SQRT1_2);
+const STATION = stationGeometry();
+const DEPOT = depotGeometry();
+
+export function entranceRotation(entrance: Edge): number {
+  return [Math.PI / 2, 0, -Math.PI / 2, Math.PI][entrance];
+}
+
+export function axisRotation(axis: Axis): number {
+  return axis === 'x' ? 0 : Math.PI / 2;
+}
+
+function pieceMatrix(x: number, y: number, piece: number, target: THREE.Matrix4): THREE.Matrix4 {
+  const [a, b] = PIECES[piece];
+  const [ax, az] = EDGE_MID[a];
+  const [bx, bz] = EDGE_MID[b];
+  const angle = Math.atan2(-(bz - az), bx - ax);
+  return target.makeRotationY(angle).setPosition(x + (ax + bx) / 2, 0.002, y + (az + bz) / 2);
+}
+
+export interface TrackItem {
+  x: number;
+  y: number;
+  piece: number;
+}
+
+// Kusy kolejí jako dva instancované meshe (rovné a rohové)
+export class TrackView {
+  readonly object = new THREE.Group();
+  private straight: THREE.InstancedMesh;
+  private corner: THREE.InstancedMesh;
+
+  constructor(private readonly material: THREE.Material) {
+    this.straight = new THREE.InstancedMesh(STRAIGHT, material, 0);
+    this.corner = new THREE.InstancedMesh(CORNER, material, 0);
+    this.object.add(this.straight, this.corner);
+  }
+
+  update(items: TrackItem[]): void {
+    const straight = items.filter((i) => !isCorner(i.piece));
+    const corner = items.filter((i) => isCorner(i.piece));
+    this.straight = this.replace(this.straight, STRAIGHT, straight);
+    this.corner = this.replace(this.corner, CORNER, corner);
+  }
+
+  private replace(old: THREE.InstancedMesh, geometry: THREE.BufferGeometry, items: TrackItem[]): THREE.InstancedMesh {
+    let mesh = old;
+    if (old.instanceMatrix.count < items.length) {
+      this.object.remove(old);
+      old.dispose();
+      mesh = new THREE.InstancedMesh(geometry, this.material, Math.max(64, items.length * 2));
+      this.object.add(mesh);
+    }
+    const m = new THREE.Matrix4();
+    items.forEach((item, i) => mesh.setMatrixAt(i, pieceMatrix(item.x, item.y, item.piece, m)));
+    mesh.count = items.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    return mesh;
+  }
+}
+
+export function networkTrack(rail: RailNetwork): TrackItem[] {
+  const items: TrackItem[] = [];
+  const { width } = rail.map;
+  rail.pieces.forEach((mask, i) => {
+    for (let piece = 0; mask >> piece; piece++) {
+      if (mask & (1 << piece)) items.push({ x: i % width, y: Math.floor(i / width), piece });
+    }
+  });
+  return items;
+}
+
+export function createStationMesh(material: THREE.Material): THREE.Mesh {
+  return new THREE.Mesh(STATION, material);
+}
+
+export function createDepotMesh(material: THREE.Material): THREE.Mesh {
+  return new THREE.Mesh(DEPOT, material);
+}
+
+export function placeStation(mesh: THREE.Object3D, x: number, y: number, axis: Axis): void {
+  mesh.position.set(x + 0.5, 0, y + 0.5);
+  mesh.rotation.y = axisRotation(axis);
+}
+
+export function placeDepot(mesh: THREE.Object3D, x: number, y: number, entrance: Edge): void {
+  mesh.position.set(x + 0.5, 0, y + 0.5);
+  mesh.rotation.y = entranceRotation(entrance);
+}
+
+// Koleje, nástupiště a depa hráče
+export class RailView {
+  readonly object = new THREE.Group();
+  private readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  private readonly track = new TrackView(this.material);
+  private readonly structures = new THREE.Group();
+
+  constructor(private readonly rail: RailNetwork) {
+    this.object.add(this.track.object, this.structures);
+    this.rebuild();
+  }
+
+  rebuild(): void {
+    this.track.update(networkTrack(this.rail));
+    this.structures.clear();
+    for (const s of this.rail.stations) {
+      const mesh = createStationMesh(this.material);
+      placeStation(mesh, s.x, s.y, s.axis);
+      this.structures.add(mesh);
+    }
+    for (const d of this.rail.depots) {
+      const mesh = createDepotMesh(this.material);
+      placeDepot(mesh, d.x, d.y, d.entrance);
+      this.structures.add(mesh);
+    }
+  }
+}
