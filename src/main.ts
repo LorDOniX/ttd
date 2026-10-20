@@ -11,10 +11,11 @@ import { NO_OWNER, type TilePos } from './world/map';
 import { hashSeed } from './world/rng';
 
 const MAP_SIZE = 256;
+const START_YEAR = 1950;
 
 // Seed z URL (?seed=...), jinak náhodný
 const seedText = new URLSearchParams(location.search).get('seed') ?? String(Date.now());
-const world = generateWorld(hashSeed(seedText), MAP_SIZE);
+const world = generateWorld(hashSeed(seedText), MAP_SIZE, START_YEAR);
 const { map, towns } = world;
 
 const container = document.getElementById('app')!;

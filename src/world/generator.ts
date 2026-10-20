@@ -43,7 +43,14 @@ function minDistance(kind: TownKind, other: TownKind): number {
   return kind === 'city' && other === 'city' ? 40 : 26;
 }
 
-function placeTowns(map: GameMap, rng: Rng, kind: TownKind, names: string[], towns: Town[]): void {
+function placeTowns(
+  map: GameMap,
+  rng: Rng,
+  kind: TownKind,
+  names: string[],
+  towns: Town[],
+  year: number,
+): void {
   const setup = KIND_SETUP[kind];
   const count = Math.max(1, Math.round((map.width * map.height) / setup.tilesPerTown));
   let placed = 0;
@@ -65,20 +72,20 @@ function placeTowns(map: GameMap, rng: Rng, kind: TownKind, names: string[], tow
       shape: createTownShape(rng),
       buildings: [],
     };
-    expandTown(map, town, rng);
+    expandTown(map, town, year, rng);
     towns.push(town);
     placed++;
   }
 }
 
-export function generateWorld(seed: number, size: number): World {
+export function generateWorld(seed: number, size: number, year: number): World {
   const rng = new Rng(seed);
   const map = new GameMap(size, size);
   generateWater(map, seed);
 
   const towns: Town[] = [];
-  placeTowns(map, rng, 'city', rng.shuffle([...CITY_NAMES]), towns);
-  placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns);
+  placeTowns(map, rng, 'city', rng.shuffle([...CITY_NAMES]), towns, year);
+  placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year);
 
   return { seed, map, towns };
 }

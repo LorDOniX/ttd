@@ -37,10 +37,16 @@ export const KIND_RULES: Record<TownKind, KindRules> = {
 };
 
 const SHAPE_SECTORS = 12;
+const SKYSCRAPER_YEAR = 2010;
 
-const SKYSCRAPERS = ['a', 'b', 'c', 'd', 'e'].map((s) => `building-skyscraper-${s}`);
-const OFFICES = 'abcdefghijklmn'.split('').map((s) => `building-${s}`);
-const LOW_OFFICES = 'abcdefghijklmn'.split('').map((s) => `low-detail-building-${s}`);
+// Rozdělení podle výšky po normalizaci na dlaždici: věže nad ~2 jednotky jsou mrakodrapy
+const SKYSCRAPERS = [
+  ...['a', 'b', 'c', 'd', 'e'].map((s) => `building-skyscraper-${s}`),
+  ...'abcdefghijklm'.split('').map((s) => `low-detail-building-${s}`),
+  'building-m',
+];
+const OFFICES = 'abcdefghijkln'.split('').map((s) => `building-${s}`);
+const LOW_OFFICES = ['low-detail-building-n', 'low-detail-building-wide-a', 'low-detail-building-wide-b'];
 const HOUSES = 'abcdefghijklmnopqrstu'.split('').map((s) => `building-type-${s}`);
 
 // Sousedé v pořadí S, V, J, Z a natočení budovy čelem k nim
@@ -124,16 +130,16 @@ function roadFacing(map: GameMap, town: Town, x: number, y: number): number | nu
   return null;
 }
 
-function pickModel(town: Town, distance: number, rng: Rng): string {
+function pickModel(town: Town, distance: number, year: number, rng: Rng): string {
   if (town.kind === 'village') return rng.pick(HOUSES);
   const ratio = distance / Math.max(town.radius, 4);
-  if (ratio < 0.35 && rng.chance(0.6)) return rng.pick(SKYSCRAPERS);
+  if (year >= SKYSCRAPER_YEAR && ratio < 0.35 && rng.chance(0.6)) return rng.pick(SKYSCRAPERS);
   if (ratio > 0.7 && rng.chance(0.5)) return rng.pick(LOW_OFFICES);
   return rng.pick(OFFICES);
 }
 
 // Doplní silnice a budovy, dokud počet budov neodpovídá populaci
-export function expandTown(map: GameMap, town: Town, rng: Rng): void {
+export function expandTown(map: GameMap, town: Town, year: number, rng: Rng): void {
   const rules = KIND_RULES[town.kind];
   const target = buildingTarget(town);
 
@@ -164,7 +170,7 @@ export function expandTown(map: GameMap, town: Town, rng: Rng): void {
         x: slot.x,
         y: slot.y,
         rotation: slot.rotation,
-        model: pickModel(town, slot.distance, rng),
+        model: pickModel(town, slot.distance, year, rng),
       });
     }
 
