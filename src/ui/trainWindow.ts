@@ -21,7 +21,7 @@ export function stateText(game: Game, train: Train): string {
     case 'depot':
       return 'V depu';
     case 'running':
-      return `Jede: ${target}`;
+      return game.fleet.isBlocked(train) ? `Čeká na volnou trať: ${target}` : `Jede: ${target}`;
     case 'loading':
       return `Ve stanici, další cíl: ${
         train.target === -1 ? 'depo' : train.orders ? game.fleet.stationName(train.orders[nextStop(train)]) : ''

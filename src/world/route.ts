@@ -81,12 +81,13 @@ export function segmentStillExists(rail: RailNetwork, s: Segment): boolean {
   return rail.has(s.x, s.y, s.piece);
 }
 
-// Nejkratší trasa po existujících kolejích k dlaždici, pro kterou platí `isGoal`
+// Nejkratší trasa po existujících kolejích k dlaždici, pro kterou platí `isGoal`; dlaždice `avoid` objede
 export function findRoute(
   rail: RailNetwork,
   start: RouteStart,
   isGoal: (x: number, y: number) => boolean,
   target: { x: number; y: number },
+  avoid?: (x: number, y: number) => boolean,
 ): Segment[] | null {
   const { map } = rail;
   const width = map.width;
@@ -103,7 +104,7 @@ export function findRoute(
     const [dx, dy] = EDGE_DELTA[from.exit];
     const nx = from.x + dx;
     const ny = from.y + dy;
-    if (!map.inBounds(nx, ny)) return;
+    if (!map.inBounds(nx, ny) || avoid?.(nx, ny)) return;
     const k = key(nx, ny, opposite(from.exit), from.heading);
     if (cost >= (g.get(k) ?? Infinity)) return;
     g.set(k, cost);

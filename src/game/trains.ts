@@ -12,6 +12,7 @@ import {
   type TrainModel,
 } from './balance';
 import { formatMoney, type Game } from './game';
+import { Reservations } from './reservations';
 import { axisPiece, opposite, stationTiles, type Depot, type Station } from '../world/rail';
 import {
   extendThroughStation,
@@ -31,6 +32,9 @@ const ACCELERATION = 2;
 const DECELERATION = 2;
 // Vlak bez cesty to zkusí znovu po této době
 const LOST_RETRY_DAYS = 5;
+// Vlak čekající na obsazenou trať po této době hledá jinou cestu (třeba volnou kolej nástupiště)
+const BLOCKED_REPLAN_DAYS = 3;
+const BLOCKED_WARN_DAYS = 30;
 
 export type TrainState = 'depot' | 'running' | 'loading' | 'lost';
 
@@ -123,8 +127,12 @@ export function ordersError(orders: number[]): string | null {
 export class Fleet {
   readonly trains: Train[] = [];
   nextId = 1;
+  readonly reservations: Reservations;
+  // Jak dlouho vlak stojí před obsazenou tratí: celkem a od posledního hledání jiné cesty
+  private readonly blocked = new Map<number, { total: number; sinceReplan: number }>();
 
   constructor(private readonly game: Game) {
+    this.reservations = new Reservations(game.world.map.width, () => false);
     game.clock.events.on('month', () => this.chargeRunningCosts());
     game.clock.events.on('year', (ended) => {
       for (const m of TRAIN_MODELS) if (m.year === ended + 1) game.news(`Nový vlak k dispozici: ${m.name}.`);
@@ -249,7 +257,7 @@ export class Fleet {
       entry: opposite(depot.entrance),
       exit: depot.entrance,
     };
-    const routes = stations.map((s) => this.routeTo(segmentStart(exitSegment), s!));
+    const routes = stations.map((s) => this.routeTo(segmentStart(exitSegment), s!, train));
     const options = routes
       .map((route, index) => ({ route, index }))
       .filter((o): o is { route: Segment[]; index: number } => o.route !== null)
@@ -264,6 +272,7 @@ export class Fleet {
     train.speed = 0;
     train.flipped = false;
     train.state = 'running';
+    this.reservations.reset(train, this.tail(train));
     this.changed();
     return null;
   }
@@ -296,12 +305,20 @@ export class Fleet {
   update(days: number): void {
     if (days <= 0) return;
     for (const train of this.trains) {
+      if (train.state === 'depot') continue;
+      // Po načtení hry rezervace neexistují, vlak si znovu vezme koleje pod sebou
+      if (!this.reservations.has(train)) this.reservations.reset(train, this.tail(train));
       if (train.state === 'running') this.move(train, days);
-      else if (train.state === 'loading' || train.state === 'lost') {
+      else {
         train.waitDays -= days;
         if (train.waitDays <= 0) this.replan(train);
       }
     }
+  }
+
+  // Vlak stojí před tratí obsazenou jiným vlakem
+  isBlocked(train: Train): boolean {
+    return this.blocked.has(train.id);
   }
 
   stationName(id: number): string {
@@ -330,8 +347,14 @@ export class Fleet {
 
   private move(train: Train, days: number): void {
     const model = trainModel(train);
-    const remaining = pathLength(train.path) - train.pos;
-    const brakeLimit = Math.sqrt(2 * DECELERATION * Math.max(0, remaining));
+    const { reservations } = this;
+    const pathEnd = pathLength(train.path);
+    // Rezervace musí sahat aspoň na brzdnou dráhu a krok tohoto snímku před hlavu
+    const needed = train.pos + (model.speed * model.speed) / (2 * DECELERATION) + model.speed * days + 1;
+    while (!reservations.fullyReserved(train) && reservations.limit(train) < needed && reservations.extend(train));
+    const limit = Math.min(pathEnd, reservations.limit(train));
+    const remaining = Math.max(0, limit - train.pos);
+    const brakeLimit = Math.sqrt(2 * DECELERATION * remaining);
     train.speed = Math.min(train.speed + ACCELERATION * days, model.speed, brakeLimit);
     // Minimální rychlost, aby brzdění vlak nezastavilo těsně před cílem
     train.speed = Math.max(train.speed, 0.15);
@@ -340,12 +363,40 @@ export class Fleet {
     if (step < remaining) {
       train.pos += step;
       train.tiles += segmentIndexAt(train.path, train.pos) - before;
+      this.blocked.delete(train.id);
+      reservations.sync(train, this.tail(train));
       return;
     }
     train.pos += remaining;
-    train.tiles += train.path.length - 1 - before;
+    train.tiles += segmentIndexAt(train.path, Math.max(0, train.pos - 1e-6)) - before;
     train.speed = 0;
+    if (limit < pathEnd - 1e-6) {
+      reservations.sync(train, this.tail(train));
+      this.wait(train, days);
+      return;
+    }
+    this.blocked.delete(train.id);
     this.arrive(train);
+  }
+
+  // Stojí před obsazenou tratí; občas zkusí jinou cestu a po delší době varuje hráče
+  private wait(train: Train, days: number): void {
+    const state = this.blocked.get(train.id) ?? { total: 0, sinceReplan: 0 };
+    const warned = state.total >= BLOCKED_WARN_DAYS;
+    state.total += days;
+    state.sinceReplan += days;
+    this.blocked.set(train.id, state);
+    if (!warned && state.total >= BLOCKED_WARN_DAYS) {
+      this.game.news(`${train.name} už měsíc čeká na volnou trať – jednokolejka potřebuje výhybny nebo víc kolejí.`);
+    }
+    if (state.sinceReplan >= BLOCKED_REPLAN_DAYS) {
+      state.sinceReplan = 0;
+      this.replan(train);
+    }
+  }
+
+  private tail(train: Train): number {
+    return train.pos - trainLength(train);
   }
 
   private arrive(train: Train): void {
@@ -353,6 +404,7 @@ export class Fleet {
     if (train.target === -1) {
       train.state = 'depot';
       train.path = [];
+      this.reservations.release(train);
       // Cestující v depu vystoupí bez zaplacení
       train.passengers = 0;
       this.game.news(`${train.name} dorazil do depa.`);
@@ -360,6 +412,7 @@ export class Fleet {
     } else {
       train.state = 'loading';
       train.waitDays = TRAIN_LOADING_DAYS;
+      this.reservations.reset(train, this.tail(train));
       const station = this.goal(train);
       if (station && !('entrance' in station)) this.game.passengers.exchange(train, station);
     }
@@ -377,11 +430,11 @@ export class Fleet {
 
     const body = this.body(train);
     const offset = train.pos - trainLength(train) - this.bodyStart(train);
-    const forward = this.routeTo(segmentStart(body[body.length - 1]), goal);
+    const forward = this.routeTo(segmentStart(body[body.length - 1]), goal, train);
     const reversed = body.map(reverseSegment).reverse();
     // Ve stanici nebo bez cesty vpřed se vlak může otočit
     const canReverse = train.state !== 'running' || !forward;
-    const backward = canReverse ? this.routeTo(segmentStart(reversed[reversed.length - 1]), goal) : null;
+    const backward = canReverse ? this.routeTo(segmentStart(reversed[reversed.length - 1]), goal, train) : null;
 
     const useBackward = backward && (!forward || pathLength(backward) < pathLength(forward));
     if (useBackward) {
@@ -398,6 +451,7 @@ export class Fleet {
       return;
     }
     train.state = 'running';
+    this.reservations.reset(train, this.tail(train));
     this.changed();
   }
 
@@ -414,12 +468,22 @@ export class Fleet {
     return train.orders ? (this.station(train.orders[train.target]) ?? null) : null;
   }
 
-  private routeTo(start: RouteStart, goal: Station | Depot): Segment[] | null {
+  // Přednostně trasa mimo koleje jiných vlaků (např. volná kolej nástupiště), jinak nejkratší a vlak počká
+  private routeTo(start: RouteStart, goal: Station | Depot, train?: Train): Segment[] | null {
+    const avoid = train ? (x: number, y: number) => this.reservations.blocks(train, x, y) : undefined;
+    return (avoid && this.findGoal(start, goal, avoid)) || this.findGoal(start, goal);
+  }
+
+  private findGoal(
+    start: RouteStart,
+    goal: Station | Depot,
+    avoid?: (x: number, y: number) => boolean,
+  ): Segment[] | null {
     const { rail } = this.game.world;
     if ('entrance' in goal) {
-      return findRoute(rail, start, (x, y) => x === goal.x && y === goal.y, goal);
+      return findRoute(rail, start, (x, y) => x === goal.x && y === goal.y, goal, avoid);
     }
-    const route = findRoute(rail, start, (x, y) => rail.stationAt(x, y)?.id === goal.id, goal);
+    const route = findRoute(rail, start, (x, y) => rail.stationAt(x, y)?.id === goal.id, goal, avoid);
     return route ? extendThroughStation(rail, route, goal) : null;
   }
 
