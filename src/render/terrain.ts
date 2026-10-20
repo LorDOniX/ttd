@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GameMap, TileType } from '../world/map';
+import { GameMap, MapChanges, TileType } from '../world/map';
 import type { Town } from '../world/town';
 
 const GRASS = new THREE.Color(0x5f9e3c);
@@ -19,11 +19,13 @@ export class TerrainView {
   readonly object = new THREE.Group();
   private readonly geometry: THREE.BufferGeometry;
   private readonly grid: THREE.LineSegments;
+  private readonly changes: MapChanges;
 
   constructor(
     private readonly map: GameMap,
     private readonly towns: readonly Town[],
   ) {
+    this.changes = new MapChanges(map);
     this.geometry = this.buildGeometry();
     const mesh = new THREE.Mesh(
       this.geometry,
@@ -47,11 +49,29 @@ export class TerrainView {
     colors.needsUpdate = true;
   }
 
+  // Přebarví jen dlaždice změněné od posledního volání
+  sync(): void {
+    const changes = this.changes.take();
+    if (changes === null) {
+      this.refresh();
+      return;
+    }
+    if (changes.length === 0) return;
+    const colors = this.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const { width } = this.map;
+    for (const i of new Set(changes)) {
+      this.writeTileColor(colors.array as Float32Array, i % width, Math.floor(i / width));
+      colors.addUpdateRange(i * 12, 12);
+    }
+    colors.needsUpdate = true;
+  }
+
   refresh(): void {
     const colors = this.geometry.getAttribute('color') as THREE.BufferAttribute;
     for (let y = 0; y < this.map.height; y++) {
       for (let x = 0; x < this.map.width; x++) this.writeTileColor(colors.array as Float32Array, x, y);
     }
+    colors.clearUpdateRanges();
     colors.needsUpdate = true;
   }
 

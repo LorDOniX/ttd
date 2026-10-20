@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GameMap } from '../world/map';
+import { GameMap, MapChanges } from '../world/map';
 
 // Bity propojení silnice se sousedy: S = y-1, V = x+1, J = y+1, Z = x-1
 const N = 1;
@@ -61,17 +61,34 @@ function createRoadAtlas(): THREE.CanvasTexture {
 
 export class RoadView {
   readonly object: THREE.Mesh;
+  // Které dlaždice byly silnicí při poslední přestavbě
+  private readonly roadTiles: Uint8Array;
+  private readonly changes: MapChanges;
 
   constructor(private readonly map: GameMap) {
     this.object = new THREE.Mesh(
       new THREE.BufferGeometry(),
       new THREE.MeshLambertMaterial({ map: createRoadAtlas(), alphaTest: 0.5 }),
     );
+    this.roadTiles = new Uint8Array(map.width * map.height);
+    this.changes = new MapChanges(map);
     this.rebuild();
+  }
+
+  // Přestavba jen při změně silniční sítě, ne při každé změně mapy
+  sync(): void {
+    const changes = this.changes.take();
+    const { map } = this;
+    const width = map.width;
+    const roadChanged =
+      changes === null ||
+      changes.some((i) => this.roadTiles[i] !== Number(map.isRoad(i % width, Math.floor(i / width))));
+    if (roadChanged) this.rebuild();
   }
 
   rebuild(): void {
     const { map } = this;
+    this.roadTiles.fill(0);
     const positions: number[] = [];
     const uvs: number[] = [];
     const indices: number[] = [];
@@ -81,6 +98,7 @@ export class RoadView {
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         if (!map.isRoad(x, y)) continue;
+        this.roadTiles[y * map.width + x] = 1;
         const mask =
           (map.isRoad(x, y - 1) ? N : 0) |
           (map.isRoad(x + 1, y) ? E : 0) |

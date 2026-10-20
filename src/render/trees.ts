@@ -1,8 +1,10 @@
 import * as THREE from 'three';
-import { TileType, type GameMap } from '../world/map';
+import { MapChanges, TileType, type GameMap } from '../world/map';
 import { loadPrototype } from './buildings';
 
 const MODELS = ['tree-large', 'tree-small'];
+// Vykácený strom: nulové měřítko instanci schová
+const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
 function tileHash(x: number, y: number, salt: number): number {
   let h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(salt, 83492791);
@@ -13,55 +15,86 @@ function tileHash(x: number, y: number, salt: number): number {
 // Stromy jako instancované modely ze suburban kitu; rozmístění je dané dlaždicí, takže je stabilní
 export class TreesView {
   readonly object = new THREE.Group();
-  private treeTiles = -1;
   private generation = 0;
+  private built = false;
+  // Instance po modelech a pro každou dlaždici její instance (model, index), aby šly skrýt jednotlivě
+  private meshesByModel: THREE.InstancedMesh[][] = [];
+  private instancesByTile = new Map<number, [number, number][]>();
+  private readonly changes: MapChanges;
 
-  constructor(private readonly map: GameMap) {}
+  constructor(private readonly map: GameMap) {
+    this.changes = new MapChanges(map);
+  }
 
-  // Stromy jen ubývají, takže stačí přestavět při změně jejich počtu
+  // Stromy jen ubývají: vykácené dlaždice se skryjí bez přestavby celé vrstvy
+  sync(): void {
+    if (!this.built) return;
+    const changes = this.changes.take();
+    if (changes === null) {
+      void this.refresh();
+      return;
+    }
+    const touched = new Set<THREE.InstancedMesh>();
+    for (const i of changes) {
+      const instances = this.instancesByTile.get(i);
+      if (!instances || this.map.tiles[i] === TileType.Trees) continue;
+      this.instancesByTile.delete(i);
+      for (const [model, index] of instances) {
+        for (const mesh of this.meshesByModel[model]) {
+          mesh.setMatrixAt(index, HIDDEN);
+          mesh.instanceMatrix.addUpdateRange(index * 16, 16);
+          touched.add(mesh);
+        }
+      }
+    }
+    for (const mesh of touched) mesh.instanceMatrix.needsUpdate = true;
+  }
+
   async refresh(): Promise<void> {
     const { map } = this;
-    const tiles: number[] = [];
-    for (let i = 0; i < map.tiles.length; i++) if (map.tiles[i] === TileType.Trees) tiles.push(i);
-    if (tiles.length === this.treeTiles) return;
-    this.treeTiles = tiles.length;
     const generation = ++this.generation;
-
     const matrices: THREE.Matrix4[][] = MODELS.map(() => []);
+    const instancesByTile = new Map<number, [number, number][]>();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
-    for (const i of tiles) {
+    for (let i = 0; i < map.tiles.length; i++) {
+      if (map.tiles[i] !== TileType.Trees) continue;
       const x = i % map.width;
       const y = Math.floor(i / map.width);
       const count = 1 + Math.floor(tileHash(x, y, 1) * 3);
+      const instances: [number, number][] = [];
       for (let k = 0; k < count; k++) {
         const model = tileHash(x, y, 10 + k) < 0.5 ? 0 : 1;
         const scale = 0.35 + tileHash(x, y, 20 + k) * 0.25;
         const px = x + 0.2 + tileHash(x, y, 30 + k) * 0.6;
         const pz = y + 0.2 + tileHash(x, y, 40 + k) * 0.6;
         q.setFromAxisAngle(up, tileHash(x, y, 50 + k) * Math.PI * 2);
+        instances.push([model, matrices[model].length]);
         matrices[model].push(
           new THREE.Matrix4().compose(new THREE.Vector3(px, 0, pz), q, new THREE.Vector3(scale, scale, scale)),
         );
       }
+      instancesByTile.set(i, instances);
     }
 
-    const meshes: THREE.InstancedMesh[] = [];
     const prototypes = await Promise.all(MODELS.map((m) => loadPrototype('city kit suburban', m)));
     if (generation !== this.generation) return;
-    prototypes.forEach((parts, model) => {
-      for (const part of parts) {
+    const meshesByModel = prototypes.map((parts, model) =>
+      parts.map((part) => {
         const mesh = new THREE.InstancedMesh(part.geometry, part.material, Math.max(1, matrices[model].length));
         const m = new THREE.Matrix4();
         matrices[model].forEach((placement, i) => mesh.setMatrixAt(i, m.multiplyMatrices(placement, part.matrix)));
         mesh.count = matrices[model].length;
         mesh.computeBoundingSphere();
-        meshes.push(mesh);
-      }
-    });
+        return mesh;
+      }),
+    );
 
     for (const old of this.object.children as THREE.InstancedMesh[]) old.dispose();
     this.object.clear();
-    this.object.add(...meshes);
+    this.object.add(...meshesByModel.flat());
+    this.meshesByModel = meshesByModel;
+    this.instancesByTile = instancesByTile;
+    this.built = true;
   }
 }

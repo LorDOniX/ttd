@@ -19,6 +19,8 @@ export class GameView {
   private readonly labels: TownLabels;
   private readonly trains: TrainsView;
   private readonly floatingTexts = new FloatingTexts();
+  private readonly syncMap: () => void;
+  private railDirty = false;
 
   constructor(
     container: HTMLElement,
@@ -79,26 +81,23 @@ export class GameView {
       stationLabels.rebuild(world.rail.stations, (s) => game.passengers.townsInReach(s).length > 0);
     rebuildStationLabels();
 
-    // Stavba, růst měst i demolice může vykácet stromy
-    for (const event of ['railChanged', 'roadsChanged', 'townsChanged', 'treesChanged'] as const) {
-      game.events.on(event, () => {
-        this.terrain.refresh();
-        void trees.refresh();
-      });
-    }
+    // Terén, silnice a stromy čtou změny mapy samy jednou za snímek; koleje se přestaví nejvýš jednou za snímek
+    this.syncMap = () => {
+      this.terrain.sync();
+      roads.sync();
+      trees.sync();
+      if (this.railDirty) {
+        this.railDirty = false;
+        railView.rebuild();
+        rebuildStationLabels();
+      }
+    };
     game.events.on('townsChanged', () => {
-      roads.rebuild();
       void buildings.rebuild(towns);
       towns.forEach((town) => this.labels.update(town));
     });
-    game.events.on('railChanged', () => {
-      railView.rebuild();
-      // Demolice přejezdu mění i vzhled silnice
-      roads.rebuild();
-      rebuildStationLabels();
-    });
+    game.events.on('railChanged', () => (this.railDirty = true));
     game.events.on('stationsChanged', rebuildStationLabels);
-    game.events.on('roadsChanged', () => roads.rebuild());
     game.events.on('income', (amount, x, z) =>
       this.floatingTexts.show(`+${formatMoney(amount)}`, x, z, 'income-label'),
     );
@@ -107,6 +106,7 @@ export class GameView {
   // Jeden snímek: posun hry o reálný čas dtMs a vykreslení
   frame(now: number, dtMs: number): void {
     this.game.update(dtMs);
+    this.syncMap();
     this.trains.update();
     this.floatingTexts.update(now);
     this.renderer.render(this.scene, this.camera.camera);

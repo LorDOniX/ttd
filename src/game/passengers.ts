@@ -20,6 +20,10 @@ export function fare(passengers: number, tiles: number, days: number): number {
 
 // Cestující: vznikají ve městech u nástupišť, vlaky je vozí a dostávají za ně zaplaceno
 export class Passengers {
+  // Dosah se mění jen se změnou mapy (stavba, budovy), proto je platný do další změny
+  private readonly reachCache = new Map<number, Town[]>();
+  private reachVersion = -1;
+
   constructor(private readonly game: Game) {
     game.clock.events.on('day', () => this.generate());
   }
@@ -27,6 +31,13 @@ export class Passengers {
   // Města, jejichž zástavba leží v dosahu nástupiště
   townsInReach(station: Station): Town[] {
     const { map, towns } = this.game.world;
+    if (this.reachVersion !== map.changeCursor) {
+      this.reachCache.clear();
+      this.reachVersion = map.changeCursor;
+    }
+    const cached = this.reachCache.get(station.id);
+    if (cached) return cached;
+
     const r = STATION_CATCHMENT_RADIUS;
     const found = new Set<number>();
     const tiles = stationTiles(station);
@@ -39,7 +50,9 @@ export class Passengers {
         if (map.isType(x, y, TileType.Building)) found.add(map.getOwner(x, y));
       }
     }
-    return [...found].map((id) => towns[id]);
+    const result = [...found].map((id) => towns[id]);
+    this.reachCache.set(station.id, result);
+    return result;
   }
 
   // Měsíční příliv cestujících na nástupiště; město se dělí mezi všechna svá nástupiště

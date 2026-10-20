@@ -1,6 +1,6 @@
 import type { Game } from '../game/game';
 import type { IsoCamera } from '../render/camera';
-import { TileType } from '../world/map';
+import { MapChanges, TileType } from '../world/map';
 import { pointAt } from '../world/route';
 import { h } from './dom';
 import type { WindowManager } from './windows';
@@ -36,6 +36,19 @@ export function openMinimap(windows: WindowManager, game: Game, camera: IsoCamer
       image.data.set([r, g, b, 255], i * 4);
     }
     ctx.putImageData(image, 0, 0);
+  };
+
+  // Jen změněné dlaždice od posledního kreslení
+  const changes = new MapChanges(map);
+  const syncTerrain = (): void => {
+    const changed = changes.take();
+    if (changed === null) return drawTerrain();
+    const ctx = terrain.getContext('2d')!;
+    for (const i of new Set(changed)) {
+      const [r, g, b] = COLORS[map.tiles[i] as TileType] ?? COLORS[TileType.Grass];
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(i % map.width, Math.floor(i / map.width), 1, 1);
+    }
   };
 
   const drawOverlay = (): void => {
@@ -76,16 +89,13 @@ export function openMinimap(windows: WindowManager, game: Game, camera: IsoCamer
 
   drawTerrain();
   drawOverlay();
-  const timer = window.setInterval(drawOverlay, OVERLAY_MS);
-  const unsubscribe = (['railChanged', 'roadsChanged', 'townsChanged', 'treesChanged'] as const).map((event) =>
-    game.events.on(event, drawTerrain),
-  );
+  const timer = window.setInterval(() => {
+    syncTerrain();
+    drawOverlay();
+  }, OVERLAY_MS);
 
   windows.open('minimap', 'Minimapa', h('div', { className: 'minimap' }, terrain, overlay), {
     width: DISPLAY_SIZE + 18,
-    onClose: () => {
-      window.clearInterval(timer);
-      unsubscribe.forEach((off) => off());
-    },
+    onClose: () => window.clearInterval(timer),
   });
 }
