@@ -14,11 +14,12 @@ export const DEMOLISH_REFUND = 0.5;
 export const DEMOLISH_COST_PER_RESIDENT = 500;
 export const DEMOLISH_TOWN_ROAD_COST = 2_500;
 
-// Vlaky: rychlost v dlaždicích za herní den, provoz za rok
+// Vlaky: rychlost v dlaždicích za herní den, provoz za rok; model a vagon z train kitu
 export interface TrainModel {
   id: string;
   name: string;
   model: string;
+  wagonModel: string;
   year: number;
   price: number;
   speed: number;
@@ -26,14 +27,14 @@ export interface TrainModel {
 }
 
 export const TRAIN_MODELS: readonly TrainModel[] = [
-  { id: 'steam', name: 'Parní lokomotiva', model: 'train-locomotive-a', year: 1950, price: 250_000, speed: 3.0, runningCost: 30_000 },
-  { id: 'steam-express', name: 'Parní rychlík', model: 'train-locomotive-passenger-a', year: 1962, price: 300_000, speed: 3.6, runningCost: 37_500 },
-  { id: 'diesel', name: 'Motorová', model: 'train-diesel-a', year: 1974, price: 360_000, speed: 4.3, runningCost: 47_000 },
-  { id: 'diesel-box', name: 'Motorová skříňová', model: 'train-diesel-box-a', year: 1984, price: 432_000, speed: 5.2, runningCost: 59_000 },
-  { id: 'electric', name: 'Elektrická', model: 'train-electric-square-a', year: 1994, price: 518_000, speed: 6.2, runningCost: 73_000 },
-  { id: 'electric-double', name: 'Elektrická patrová', model: 'train-electric-double-a', year: 2003, price: 622_000, speed: 7.5, runningCost: 92_000 },
-  { id: 'electric-city', name: 'Městská jednotka', model: 'train-electric-city-a', year: 2012, price: 746_000, speed: 9.0, runningCost: 114_000 },
-  { id: 'bullet', name: 'Rychlovlak', model: 'train-electric-bullet-a', year: 2022, price: 896_000, speed: 10.8, runningCost: 143_000 },
+  { id: 'steam', name: 'Parní lokomotiva', model: 'train-locomotive-a', wagonModel: 'train-locomotive-passenger-a', year: 1950, price: 250_000, speed: 3.0, runningCost: 30_000 },
+  { id: 'steam-express', name: 'Parní rychlík', model: 'train-locomotive-c', wagonModel: 'train-locomotive-passenger-b', year: 1962, price: 300_000, speed: 3.6, runningCost: 37_500 },
+  { id: 'diesel', name: 'Motorová', model: 'train-diesel-a', wagonModel: 'train-locomotive-passenger-b', year: 1974, price: 360_000, speed: 4.3, runningCost: 47_000 },
+  { id: 'diesel-box', name: 'Motorová skříňová', model: 'train-diesel-box-a', wagonModel: 'train-diesel-box-b', year: 1984, price: 432_000, speed: 5.2, runningCost: 59_000 },
+  { id: 'electric', name: 'Elektrická', model: 'train-electric-square-a', wagonModel: 'train-electric-square-b', year: 1994, price: 518_000, speed: 6.2, runningCost: 73_000 },
+  { id: 'electric-double', name: 'Elektrická patrová', model: 'train-electric-double-a', wagonModel: 'train-electric-double-b', year: 2003, price: 622_000, speed: 7.5, runningCost: 92_000 },
+  { id: 'electric-city', name: 'Městská jednotka', model: 'train-electric-city-a', wagonModel: 'train-electric-city-b', year: 2012, price: 746_000, speed: 9.0, runningCost: 114_000 },
+  { id: 'bullet', name: 'Rychlovlak', model: 'train-electric-bullet-a', wagonModel: 'train-electric-bullet-b', year: 2022, price: 896_000, speed: 10.8, runningCost: 143_000 },
 ];
 
 export const WAGON_PRICE = 50_000;
@@ -41,6 +42,11 @@ export const WAGON_CAPACITY = 30;
 export const WAGON_RUNNING_COST = 4_000;
 // Lokomotiva a 5 vagonů po půl dlaždici vyplní nástupiště 1×3
 export const MAX_WAGONS = 5;
+export const VEHICLE_LENGTH = 0.5;
+// Prodej vlaku nebo vagonu vrací část kupní ceny
+export const TRAIN_SELL_REFUND = 0.5;
+// Staniční pobyt na vykložení a naložení
+export const TRAIN_LOADING_DAYS = 2;
 
 // Sazba za cestujícího a ujetou dlaždici podle doby přepravy
 export const FARE_TIERS: readonly { maxDays: number; rate: number }[] = [

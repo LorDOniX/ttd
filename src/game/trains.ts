@@ -1,0 +1,346 @@
+import {
+  MAX_WAGONS,
+  TRAIN_LOADING_DAYS,
+  TRAIN_MODELS,
+  TRAIN_SELL_REFUND,
+  VEHICLE_LENGTH,
+  WAGON_PRICE,
+  WAGON_RUNNING_COST,
+  type TrainModel,
+} from './balance';
+import { formatMoney, type Game } from './game';
+import { axisPiece, opposite, stationTiles, type Depot, type Station } from '../world/rail';
+import {
+  extendThroughStation,
+  findRoute,
+  pathLength,
+  reverseSegment,
+  segmentLength,
+  segmentStart,
+  segmentStillExists,
+  type RouteStart,
+  type Segment,
+} from '../world/route';
+
+// Zrychlení a brzdění v dlaždicích za den za den
+const ACCELERATION = 2;
+const DECELERATION = 2;
+// Vlak bez cesty to zkusí znovu po této době
+const LOST_RETRY_DAYS = 5;
+
+export type TrainState = 'depot' | 'running' | 'loading' | 'lost';
+
+export interface Train {
+  id: number;
+  name: string;
+  modelId: string;
+  wagons: number;
+  depotId: number;
+  // Dvě nástupiště, mezi kterými vlak kyvadlově jezdí
+  orders: [number, number] | null;
+  // Index cíle v orders, -1 = návrat do depa
+  target: number;
+  state: TrainState;
+  // Kusy koleje pod vlakem a trasa před ním; hlava je ve vzdálenosti pos od začátku
+  path: Segment[];
+  pos: number;
+  speed: number;
+  waitDays: number;
+  // Lokomotiva je na konci soupravy (po otočení směru jízdy)
+  flipped: boolean;
+}
+
+export function trainModel(train: Train): TrainModel {
+  return TRAIN_MODELS.find((m) => m.id === train.modelId)!;
+}
+
+export function trainLength(train: Train): number {
+  return (train.wagons + 1) * VEHICLE_LENGTH;
+}
+
+export function trainValue(train: Train): number {
+  return trainModel(train).price + train.wagons * WAGON_PRICE;
+}
+
+// Vlaky společnosti: nákup, jízdní řád a pohyb po kolejích
+export class Fleet {
+  readonly trains: Train[] = [];
+  nextId = 1;
+
+  constructor(private readonly game: Game) {
+    game.clock.events.on('month', () => this.chargeRunningCosts());
+    game.clock.events.on('year', (ended) => {
+      for (const m of TRAIN_MODELS) if (m.year === ended + 1) game.news(`Nový vlak k dispozici: ${m.name}.`);
+    });
+    game.events.on('railChanged', () => this.revalidate());
+  }
+
+  available(): TrainModel[] {
+    return TRAIN_MODELS.filter((m) => m.year <= this.game.clock.date.year);
+  }
+
+  inDepot(depot: Depot): Train[] {
+    return this.trains.filter((t) => t.depotId === depot.id);
+  }
+
+  buy(depot: Depot, model: TrainModel): string | null {
+    if (this.game.money < model.price) return `Nedostatek peněz (${formatMoney(model.price)}).`;
+    this.game.spend(model.price);
+    const id = this.nextId++;
+    this.trains.push({
+      id,
+      name: `Vlak ${id}`,
+      modelId: model.id,
+      wagons: 0,
+      depotId: depot.id,
+      orders: null,
+      target: 0,
+      state: 'depot',
+      path: [],
+      pos: 0,
+      speed: 0,
+      waitDays: 0,
+      flipped: false,
+    });
+    this.changed();
+    return null;
+  }
+
+  addWagon(train: Train): string | null {
+    if (train.state !== 'depot') return 'Vagony lze měnit jen v depu.';
+    if (train.wagons >= MAX_WAGONS) return `Vlak může mít nejvýš ${MAX_WAGONS} vagonů.`;
+    if (this.game.money < WAGON_PRICE) return `Nedostatek peněz (${formatMoney(WAGON_PRICE)}).`;
+    this.game.spend(WAGON_PRICE);
+    train.wagons++;
+    this.changed();
+    return null;
+  }
+
+  removeWagon(train: Train): void {
+    if (train.state !== 'depot' || train.wagons === 0) return;
+    train.wagons--;
+    this.game.refund(WAGON_PRICE * TRAIN_SELL_REFUND);
+    this.changed();
+  }
+
+  sell(train: Train): void {
+    if (train.state !== 'depot') return;
+    this.game.refund(trainValue(train) * TRAIN_SELL_REFUND);
+    this.trains.splice(this.trains.indexOf(train), 1);
+    this.changed();
+  }
+
+  // Vypraví vlak z depa; nejdřív jede k bližšímu z obou nástupišť
+  start(train: Train, orders: [number, number]): string | null {
+    if (orders[0] === orders[1]) return 'Vyberte dvě různá nástupiště.';
+    const depot = this.depot(train);
+    const stations = orders.map((id) => this.station(id));
+    if (!depot || stations.some((s) => !s)) return 'Nástupiště nebo depo neexistuje.';
+
+    const exitSegment: Segment = {
+      x: depot.x,
+      y: depot.y,
+      piece: axisPiece(depot.entrance % 2 === 0 ? 'y' : 'x'),
+      entry: opposite(depot.entrance),
+      exit: depot.entrance,
+    };
+    const routes = stations.map((s) => this.routeTo(segmentStart(exitSegment), s!));
+    const options = routes
+      .map((route, index) => ({ route, index }))
+      .filter((o): o is { route: Segment[]; index: number } => o.route !== null)
+      .sort((a, b) => pathLength(a.route) - pathLength(b.route));
+    if (options.length === 0) return 'Z depa nevede kolej k vybraným nástupištím.';
+
+    train.orders = orders;
+    train.target = options[0].index;
+    train.path = [exitSegment, ...options[0].route];
+    // Hlava ve středu depa, zbytek soupravy je ještě uvnitř
+    train.pos = 0.5;
+    train.speed = 0;
+    train.flipped = false;
+    train.state = 'running';
+    this.changed();
+    return null;
+  }
+
+  sendToDepot(train: Train): void {
+    if (train.state === 'depot') return;
+    train.target = -1;
+    if (train.state === 'running' || train.state === 'lost') this.replan(train);
+    this.changed();
+  }
+
+  update(days: number): void {
+    if (days <= 0) return;
+    for (const train of this.trains) {
+      if (train.state === 'running') this.move(train, days);
+      else if (train.state === 'loading' || train.state === 'lost') {
+        train.waitDays -= days;
+        if (train.waitDays <= 0) this.replan(train);
+      }
+    }
+  }
+
+  stationName(id: number): string {
+    return this.station(id)?.name ?? '?';
+  }
+
+  // Důvod, proč dlaždici nejde zbourat, nebo null
+  demolitionBlocker(x: number, y: number): string | null {
+    for (const train of this.trains) {
+      if (train.state !== 'depot' && this.body(train).some((s) => s.x === x && s.y === y)) {
+        return `Na koleji stojí ${train.name}.`;
+      }
+      const depot = this.depot(train);
+      if (depot && depot.x === x && depot.y === y) return `Depo patří vlaku ${train.name}.`;
+      for (const id of train.orders ?? []) {
+        const s = this.station(id);
+        if (s && stationTiles(s.x, s.y, s.axis).some((t) => t.x === x && t.y === y)) {
+          return `Nástupiště ${s.name} obsluhuje ${train.name}.`;
+        }
+      }
+    }
+    return null;
+  }
+
+  private move(train: Train, days: number): void {
+    const model = trainModel(train);
+    const remaining = pathLength(train.path) - train.pos;
+    const brakeLimit = Math.sqrt(2 * DECELERATION * Math.max(0, remaining));
+    train.speed = Math.min(train.speed + ACCELERATION * days, model.speed, brakeLimit);
+    // Minimální rychlost, aby brzdění vlak nezastavilo těsně před cílem
+    train.speed = Math.max(train.speed, 0.15);
+    const step = train.speed * days;
+    if (step < remaining) {
+      train.pos += step;
+      return;
+    }
+    train.pos += remaining;
+    train.speed = 0;
+    this.arrive(train);
+  }
+
+  private arrive(train: Train): void {
+    this.trimToBody(train);
+    if (train.target === -1) {
+      train.state = 'depot';
+      train.path = [];
+      train.orders = null;
+      this.game.news(`${train.name} dorazil do depa.`);
+    } else {
+      train.state = 'loading';
+      train.waitDays = TRAIN_LOADING_DAYS;
+    }
+    this.changed();
+  }
+
+  // Naplánuje cestu k dalšímu cíli; vlak může pokračovat vpřed, nebo se otočit
+  private replan(train: Train): void {
+    if (train.state === 'loading' && train.orders && train.target !== -1) train.target = 1 - train.target;
+    const goal = this.goal(train);
+    if (!goal) {
+      this.lose(train);
+      return;
+    }
+
+    const body = this.body(train);
+    const offset = train.pos - trainLength(train) - this.bodyStart(train);
+    const forward = this.routeTo(segmentStart(body[body.length - 1]), goal);
+    const reversed = body.map(reverseSegment).reverse();
+    // Ve stanici nebo bez cesty vpřed se vlak může otočit
+    const canReverse = train.state !== 'running' || !forward;
+    const backward = canReverse ? this.routeTo(segmentStart(reversed[reversed.length - 1]), goal) : null;
+
+    const useBackward = backward && (!forward || pathLength(backward) < pathLength(forward));
+    if (useBackward) {
+      train.path = [...reversed, ...backward];
+      train.pos = pathLength(body) - Math.max(0, offset);
+      train.flipped = !train.flipped;
+      train.speed = 0;
+    } else if (forward) {
+      const keep = pathLength(train.path.slice(0, train.path.indexOf(body[0])));
+      train.path = [...body, ...forward];
+      train.pos -= keep;
+    } else {
+      this.lose(train);
+      return;
+    }
+    train.state = 'running';
+    this.changed();
+  }
+
+  private lose(train: Train): void {
+    if (train.state !== 'lost') this.game.news(`${train.name} nemůže najít cestu.`);
+    train.state = 'lost';
+    train.speed = 0;
+    train.waitDays = LOST_RETRY_DAYS;
+    this.changed();
+  }
+
+  private goal(train: Train): Station | Depot | null {
+    if (train.target === -1) return this.depot(train) ?? null;
+    return train.orders ? (this.station(train.orders[train.target]) ?? null) : null;
+  }
+
+  private routeTo(start: RouteStart, goal: Station | Depot): Segment[] | null {
+    const { rail } = this.game.world;
+    if ('entrance' in goal) {
+      return findRoute(rail, start, (x, y) => x === goal.x && y === goal.y, goal);
+    }
+    const route = findRoute(rail, start, (x, y) => rail.stationAt(x, y)?.id === goal.id, goal);
+    return route ? extendThroughStation(rail, route, goal) : null;
+  }
+
+  // Kusy koleje, na kterých souprava právě stojí
+  private body(train: Train): Segment[] {
+    const tail = train.pos - trainLength(train);
+    const body: Segment[] = [];
+    let d = 0;
+    for (const s of train.path) {
+      const len = segmentLength(s);
+      if (d + len > tail && d < train.pos) body.push(s);
+      d += len;
+      if (d >= train.pos) break;
+    }
+    return body.length > 0 ? body : train.path.slice(0, 1);
+  }
+
+  private bodyStart(train: Train): number {
+    const first = this.body(train)[0];
+    return pathLength(train.path.slice(0, train.path.indexOf(first)));
+  }
+
+  private trimToBody(train: Train): void {
+    const start = this.bodyStart(train);
+    train.path = train.path.slice(train.path.indexOf(this.body(train)[0]));
+    train.pos -= start;
+  }
+
+  // Po změně kolejí ověří trasy jedoucích vlaků a případně je přeplánuje
+  private revalidate(): void {
+    const { rail } = this.game.world;
+    for (const train of this.trains) {
+      if (train.state !== 'running') continue;
+      if (!this.goal(train) || !train.path.every((s) => segmentStillExists(rail, s))) this.replan(train);
+    }
+  }
+
+  private chargeRunningCosts(): void {
+    for (const train of this.trains) {
+      const yearly = trainModel(train).runningCost + train.wagons * WAGON_RUNNING_COST;
+      this.game.spend(yearly / 12);
+    }
+  }
+
+  private depot(train: Train): Depot | undefined {
+    return this.game.world.rail.depots.find((d) => d.id === train.depotId);
+  }
+
+  private station(id: number): Station | undefined {
+    return this.game.world.rail.stations.find((s) => s.id === id);
+  }
+
+  private changed(): void {
+    this.game.events.emit('trainsChanged');
+  }
+}

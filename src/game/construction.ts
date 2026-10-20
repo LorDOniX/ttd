@@ -25,6 +25,8 @@ export interface DemolishPlan {
   tiles: TilePos[];
   // Kladná částka se platí, záporná se vrací
   cost: number;
+  // Důvod, proč demolici nelze provést (např. na koleji stojí vlak)
+  blocked: string | null;
 }
 
 // Stavba a demolice za peníze společnosti
@@ -80,10 +82,18 @@ export class Construction {
     const tiles: TilePos[] = [];
     const stations = new Set<number>();
     let cost = 0;
+    let blocked: string | null = null;
 
     for (const { x, y } of area) {
       if (!map.inBounds(x, y)) continue;
-      switch (map.get(x, y)) {
+      const type = map.get(x, y);
+      const railway = [TileType.Rail, TileType.Crossing, TileType.Station, TileType.Depot].includes(type);
+      const blocker = railway ? this.game.fleet.demolitionBlocker(x, y) : null;
+      if (blocker) {
+        blocked ??= blocker;
+        continue;
+      }
+      switch (type) {
         case TileType.Rail:
         case TileType.Crossing:
           cost -= rail.pieceCount(x, y) * TRACK_PIECE_COST * DEMOLISH_REFUND;
@@ -114,11 +124,12 @@ export class Construction {
         }
       }
     }
-    return { tiles, cost };
+    return { tiles, cost, blocked };
   }
 
   demolish(area: TilePos[]): string | null {
     const plan = this.demolishPlan(area);
+    if (plan.blocked) return plan.blocked;
     if (plan.tiles.length === 0) return null;
     if (plan.cost > this.game.money) return `Nedostatek peněz na demolici (${formatMoney(plan.cost)}).`;
 

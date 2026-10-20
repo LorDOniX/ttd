@@ -2,6 +2,7 @@ import { START_MONEY } from './balance';
 import { Construction } from './construction';
 import { Emitter } from './emitter';
 import { GameClock, formatDate } from './clock';
+import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
 import { growTown } from '../world/town';
@@ -20,6 +21,7 @@ type GameEvents = {
   townsChanged: [];
   railChanged: [];
   roadsChanged: [];
+  trainsChanged: [];
   outOfMoney: [];
 };
 
@@ -36,6 +38,7 @@ export class Game {
   readonly events = new Emitter<GameEvents>();
   readonly clock = new GameClock();
   readonly construction = new Construction(this);
+  readonly fleet: Fleet;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
   money = START_MONEY;
@@ -45,6 +48,7 @@ export class Game {
   constructor(readonly world: World) {
     // Vlastní proud náhody pro průběh hry, oddělený od generování mapy
     this.rng = new Rng(world.seed ^ 0x5bd1e995);
+    this.fleet = new Fleet(this);
     this.clock.events.on('year', (year) => this.onYearEnd(year));
     this.clock.events.on('end', () =>
       this.news(`${formatDate(this.clock.date)}: konec hry. Konečný stav účtu ${formatMoney(this.money)}.`),
@@ -52,7 +56,7 @@ export class Game {
   }
 
   update(dtMs: number): void {
-    this.clock.tick(dtMs);
+    this.fleet.update(this.clock.tick(dtMs));
     this.construction.update(dtMs);
   }
 

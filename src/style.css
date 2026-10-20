@@ -201,6 +201,40 @@ body {
   border-color: #33332f #8e8e86 #8e8e86 #33332f;
 }
 
+.small-button {
+  padding: 2px 8px;
+  color: #fff;
+  background: #6b6b64;
+  border: 1px solid;
+  border-color: #8e8e86 #33332f #33332f #8e8e86;
+  cursor: pointer;
+}
+
+.small-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.window select {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.train {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: #4a4a46;
+}
+
+.train__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
 .tooltip {
   position: fixed;
   display: none;

@@ -10,7 +10,9 @@ import { BuildPreview } from './render/preview';
 import { RailView } from './render/rail';
 import { RoadView } from './render/roads';
 import { TerrainView } from './render/terrain';
+import { TrainsView } from './render/trains';
 import { BuildTools } from './ui/buildTools';
+import { openDepot } from './ui/depot';
 import { openFinance, openSettings, openTown } from './ui/dialogs';
 import { h } from './ui/dom';
 import { Hud } from './ui/hud';
@@ -54,6 +56,9 @@ void buildings.rebuild(towns);
 
 const railView = new RailView(world.rail);
 scene.add(railView.object);
+
+const trainsView = new TrainsView(game.fleet, map);
+scene.add(trainsView.object);
 
 const preview = new BuildPreview();
 scene.add(preview.object);
@@ -157,7 +162,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   clickStart = null;
   if (moved > 4) return;
   const tile = tileAt(e.clientX, e.clientY);
-  const owner = tile ? map.getOwner(tile.x, tile.y) : NO_OWNER;
+  if (!tile) return;
+  const depot = world.rail.depotAt(tile.x, tile.y);
+  if (depot) {
+    openDepot(windows, game, depot);
+    return;
+  }
+  const owner = map.getOwner(tile.x, tile.y);
   if (owner !== NO_OWNER) openTown(windows, game, towns[owner]);
 });
 
@@ -165,6 +176,7 @@ let lastFrame = performance.now();
 renderer.setAnimationLoop((now: number) => {
   game.update(now - lastFrame);
   lastFrame = now;
+  trainsView.update();
   renderer.render(scene, isoCamera.camera);
   labels.render(scene, isoCamera.camera);
 });

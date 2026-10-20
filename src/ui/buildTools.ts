@@ -213,7 +213,9 @@ export class BuildTools {
     } else if (this.tool === 'demolish' && tile) {
       const plan = this.game.construction.demolishPlan(this.demolishArea());
       this.preview.showArea(plan.tiles, 'demolish');
-      if (plan.tiles.length > 0) {
+      if (plan.blocked) {
+        text = plan.blocked;
+      } else if (plan.tiles.length > 0) {
         text = plan.cost > 0 ? `Demolice: ${formatMoney(plan.cost)}` : `Vrátí se: ${formatMoney(-plan.cost)}`;
       }
     }
