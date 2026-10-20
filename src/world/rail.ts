@@ -131,9 +131,13 @@ export class RailNetwork {
         return true;
       case TileType.Road:
         return piece === crossingPiece(this.map.roadAxis(x, y));
+      // Most vede jen rovně
+      case TileType.Water:
+        return !isCorner(piece);
       case TileType.Station:
       case TileType.Depot:
       case TileType.Crossing:
+      case TileType.Bridge:
         return this.has(x, y, piece);
       default:
         return false;
@@ -145,6 +149,7 @@ export class RailNetwork {
     const type = this.map.get(x, y);
     if (this.map.isFree(x, y)) this.map.set(x, y, TileType.Rail);
     if (type === TileType.Road) this.map.set(x, y, TileType.Crossing);
+    if (type === TileType.Water) this.map.set(x, y, TileType.Bridge);
   }
 
   // Odebere všechny kusy koleje z dlaždice
@@ -153,6 +158,7 @@ export class RailNetwork {
     const type = this.map.get(x, y);
     if (type === TileType.Rail) this.map.set(x, y, TileType.Grass);
     if (type === TileType.Crossing) this.map.set(x, y, TileType.Road);
+    if (type === TileType.Bridge) this.map.set(x, y, TileType.Water);
   }
 
   canPlaceStation(x: number, y: number, axis: Axis): boolean {

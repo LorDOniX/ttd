@@ -1,4 +1,5 @@
 import {
+  BRIDGE_PIECE_COST,
   DEMOLISH_COST_PER_RESIDENT,
   DEMOLISH_REFUND,
   DEMOLISH_TOWN_ROAD_COST,
@@ -9,7 +10,7 @@ import {
   TRACK_PIECE_COST,
 } from './balance';
 import { formatMoney, type Game } from './game';
-import { NO_OWNER, TileType, type TilePos } from '../world/map';
+import { NO_OWNER, TileType, type GameMap, type TilePos } from '../world/map';
 import { stationTiles, type Axis, type Edge } from '../world/rail';
 import type { PathStep } from '../world/railPath';
 import type { RoadStep } from '../world/roadPath';
@@ -18,6 +19,12 @@ import { buildingAt, buildingCapacity, demolishBuilding } from '../world/town';
 // Rychlost postupné výstavby kolejí a silnic
 const PIECES_PER_SECOND = 25;
 export const STATION_COST = PLATFORM_TILE_COST * STATION_LENGTH;
+
+// Cena nového dílku koleje: přes vodu se staví most
+export function trackPieceCost(map: GameMap, x: number, y: number): number {
+  const type = map.get(x, y);
+  return type === TileType.Water || type === TileType.Bridge ? BRIDGE_PIECE_COST : TRACK_PIECE_COST;
+}
 
 type Job = { kind: 'track'; step: PathStep } | { kind: 'road'; step: RoadStep };
 
@@ -87,7 +94,7 @@ export class Construction {
     for (const { x, y } of area) {
       if (!map.inBounds(x, y)) continue;
       const type = map.get(x, y);
-      const railway = [TileType.Rail, TileType.Crossing, TileType.Station, TileType.Depot].includes(type);
+      const railway = [TileType.Rail, TileType.Crossing, TileType.Bridge, TileType.Station, TileType.Depot].includes(type);
       const blocker = railway ? this.game.fleet.demolitionBlocker(x, y) : null;
       if (blocker) {
         blocked ??= blocker;
@@ -96,7 +103,8 @@ export class Construction {
       switch (type) {
         case TileType.Rail:
         case TileType.Crossing:
-          cost -= rail.pieceCount(x, y) * TRACK_PIECE_COST * DEMOLISH_REFUND;
+        case TileType.Bridge:
+          cost -= rail.pieceCount(x, y) * trackPieceCost(map, x, y) * DEMOLISH_REFUND;
           tiles.push({ x, y });
           break;
         case TileType.Station: {
@@ -150,6 +158,7 @@ export class Construction {
           break;
         case TileType.Rail:
         case TileType.Crossing:
+        case TileType.Bridge:
           rail.removeTrack(x, y);
           railChanged = true;
           break;
@@ -203,7 +212,8 @@ export class Construction {
         this.queue.shift();
         continue;
       }
-      const cost = job.kind === 'track' ? TRACK_PIECE_COST : ROAD_TILE_COST;
+      const cost =
+        job.kind === 'track' ? trackPieceCost(this.game.world.map, job.step.x, job.step.y) : ROAD_TILE_COST;
       if (this.game.money < cost) {
         this.queue = [];
         this.game.events.emit('outOfMoney');

@@ -1,8 +1,8 @@
-import { DEPOT_COST, ROAD_TILE_COST, TRACK_PIECE_COST } from '../game/balance';
-import { STATION_COST } from '../game/construction';
+import { BRIDGE_PIECE_COST, DEPOT_COST, ROAD_TILE_COST, TRACK_PIECE_COST } from '../game/balance';
+import { STATION_COST, trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
 import type { BuildPreview } from '../render/preview';
-import type { TilePos } from '../world/map';
+import { TileType, type TilePos } from '../world/map';
 import { EDGE_DELTA, Edge, PIECES, opposite, type Axis } from '../world/rail';
 import { findTrackPath, type PathStep } from '../world/railPath';
 import { findRoadPath, type RoadStep } from '../world/roadPath';
@@ -42,7 +42,7 @@ export class BuildTools {
 
   openRailWindow(): void {
     this.openToolWindow('rail-build', 'Stavba železnice', [
-      ['track', 'Koleje', `${formatMoney(TRACK_PIECE_COST)} / dílek`],
+      ['track', 'Koleje', `${formatMoney(TRACK_PIECE_COST)} / dílek, most ${formatMoney(BRIDGE_PIECE_COST)}`],
       ['station', 'Nástupiště 1×3', formatMoney(STATION_COST)],
       ['depot', 'Depo', formatMoney(DEPOT_COST)],
       ['demolish', 'Demolice', 'vrátí 50 %'],
@@ -186,10 +186,12 @@ export class BuildTools {
 
     if (this.tool === 'track' && this.dragStart) {
       if (this.path) {
-        const pieces = this.path.filter((s) => s.isNew).length;
-        const cost = pieces * TRACK_PIECE_COST;
+        const fresh = this.path.filter((s) => s.isNew);
+        const { map } = this.game.world;
+        const cost = fresh.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y), 0);
+        const bridges = fresh.filter((s) => map.get(s.x, s.y) === TileType.Water).length;
         this.preview.showTrack(this.path, cost <= this.game.money);
-        text = `${pieces} dílků · ${formatMoney(cost)}`;
+        text = `${fresh.length} dílků${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoney(cost)}`;
       } else if (tile && (tile.x !== this.dragStart.x || tile.y !== this.dragStart.y)) {
         text = 'Trasu nelze vést';
       }

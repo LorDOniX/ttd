@@ -12,6 +12,8 @@ const ROOF = 0x8a3c2c;
 const POST = 0x4a4a4a;
 const WALL = 0x9c6b4a;
 const DOOR = 0x2a2420;
+const BRIDGE = 0x7a7066;
+const BRIDGE_RAIL = 0xb0a898;
 
 // Kvádr s barvou ve vrcholech, posunutý na (x, y, z) dle spodní hrany
 function box(w: number, h: number, d: number, color: number, x: number, y: number, z: number): THREE.BufferGeometry {
@@ -61,10 +63,20 @@ function depotGeometry(): THREE.BufferGeometry {
   ])!;
 }
 
+// Mostovka se zábradlím a pilíři podél osy X; kolej leží na její horní hraně
+export const BRIDGE_DECK = 0.08;
+function bridgeGeometry(): THREE.BufferGeometry {
+  const parts = [box(1, 0.05, 0.62, BRIDGE, 0, BRIDGE_DECK - 0.05, 0)];
+  for (const z of [-0.3, 0.3]) parts.push(box(1, 0.07, 0.025, BRIDGE_RAIL, 0, BRIDGE_DECK, z));
+  for (const z of [-0.22, 0.22]) parts.push(box(0.12, BRIDGE_DECK - 0.05, 0.12, BRIDGE, 0, 0, z));
+  return mergeGeometries(parts)!;
+}
+
 const STRAIGHT = pieceGeometry(1);
 const CORNER = pieceGeometry(Math.SQRT1_2);
 // Na přejezdu jen kolejnice zapuštěné ve vozovce
 const CROSSING = mergeGeometries([-0.1, 0.1].map((z) => box(1, 0.02, 0.025, RAIL, 0, 0.004, z)))!;
+const BRIDGE_MESH = bridgeGeometry();
 const STATION = stationGeometry();
 const DEPOT = depotGeometry();
 
@@ -76,12 +88,12 @@ export function axisRotation(axis: Axis): number {
   return axis === 'x' ? 0 : Math.PI / 2;
 }
 
-function pieceMatrix(x: number, y: number, piece: number, target: THREE.Matrix4): THREE.Matrix4 {
+function pieceMatrix(x: number, y: number, piece: number, lift: number, target: THREE.Matrix4): THREE.Matrix4 {
   const [a, b] = PIECES[piece];
   const [ax, az] = EDGE_MID[a];
   const [bx, bz] = EDGE_MID[b];
   const angle = Math.atan2(-(bz - az), bx - ax);
-  return target.makeRotationY(angle).setPosition(x + (ax + bx) / 2, 0.002, y + (az + bz) / 2);
+  return target.makeRotationY(angle).setPosition(x + (ax + bx) / 2, 0.002 + lift, y + (az + bz) / 2);
 }
 
 export interface TrackItem {
@@ -89,32 +101,42 @@ export interface TrackItem {
   y: number;
   piece: number;
   crossing?: boolean;
+  bridge?: boolean;
 }
 
-// Kusy kolejí jako instancované meshe (rovné, rohové, přejezdy)
+// Kusy kolejí jako instancované meshe (rovné, rohové, přejezdy, mostovky)
 export class TrackView {
   readonly object = new THREE.Group();
   private straight: THREE.InstancedMesh;
   private corner: THREE.InstancedMesh;
   private crossing: THREE.InstancedMesh;
+  private bridge: THREE.InstancedMesh;
 
   constructor(private readonly material: THREE.Material) {
     this.straight = new THREE.InstancedMesh(STRAIGHT, material, 0);
     this.corner = new THREE.InstancedMesh(CORNER, material, 0);
     this.crossing = new THREE.InstancedMesh(CROSSING, material, 0);
-    this.object.add(this.straight, this.corner, this.crossing);
+    this.bridge = new THREE.InstancedMesh(BRIDGE_MESH, material, 0);
+    this.object.add(this.straight, this.corner, this.crossing, this.bridge);
   }
 
   update(items: TrackItem[]): void {
     const straight = items.filter((i) => !isCorner(i.piece) && !i.crossing);
     const corner = items.filter((i) => isCorner(i.piece));
     const crossing = items.filter((i) => i.crossing);
+    const bridge = items.filter((i) => i.bridge);
     this.straight = this.replace(this.straight, STRAIGHT, straight);
     this.corner = this.replace(this.corner, CORNER, corner);
     this.crossing = this.replace(this.crossing, CROSSING, crossing);
+    this.bridge = this.replace(this.bridge, BRIDGE_MESH, bridge, true);
   }
 
-  private replace(old: THREE.InstancedMesh, geometry: THREE.BufferGeometry, items: TrackItem[]): THREE.InstancedMesh {
+  private replace(
+    old: THREE.InstancedMesh,
+    geometry: THREE.BufferGeometry,
+    items: TrackItem[],
+    deck = false,
+  ): THREE.InstancedMesh {
     let mesh = old;
     if (old.instanceMatrix.count < items.length) {
       this.object.remove(old);
@@ -123,7 +145,10 @@ export class TrackView {
       this.object.add(mesh);
     }
     const m = new THREE.Matrix4();
-    items.forEach((item, i) => mesh.setMatrixAt(i, pieceMatrix(item.x, item.y, item.piece, m)));
+    items.forEach((item, i) => {
+      const lift = item.bridge && !deck ? BRIDGE_DECK : 0;
+      mesh.setMatrixAt(i, pieceMatrix(item.x, item.y, item.piece, deck ? -0.002 : lift, m));
+    });
     mesh.count = items.length;
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
@@ -138,8 +163,9 @@ export function networkTrack(rail: RailNetwork): TrackItem[] {
     const x = i % width;
     const y = Math.floor(i / width);
     const crossing = mask !== 0 && rail.map.get(x, y) === TileType.Crossing;
+    const bridge = mask !== 0 && rail.map.get(x, y) === TileType.Bridge;
     for (let piece = 0; mask >> piece; piece++) {
-      if (mask & (1 << piece)) items.push({ x, y, piece, crossing });
+      if (mask & (1 << piece)) items.push({ x, y, piece, crossing, bridge });
     }
   });
   return items;

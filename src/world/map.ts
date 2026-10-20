@@ -10,6 +10,8 @@ export enum TileType {
   Crossing = 7,
   // Tráva se stromy; stavba stromy sama vykácí
   Trees = 8,
+  // Železniční most nad vodou
+  Bridge = 9,
 }
 
 export interface TilePos {

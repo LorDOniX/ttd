@@ -4,6 +4,8 @@ export const START_MONEY = 1_000_000;
 
 // Stavby
 export const TRACK_PIECE_COST = 5_000;
+// Dílek koleje na mostě přes vodu
+export const BRIDGE_PIECE_COST = 20_000;
 export const PLATFORM_TILE_COST = 25_000;
 export const STATION_LENGTH = 3;
 export const DEPOT_COST = 50_000;

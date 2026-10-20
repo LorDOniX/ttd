@@ -4,6 +4,7 @@ import { VEHICLE_LENGTH } from '../game/balance';
 import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
 import { pointAt } from '../world/route';
+import { BRIDGE_DECK } from './rail';
 
 // Modely z train kitu jsou dlouhé ~2,6 jednotky podél +Z
 const SCALE = VEHICLE_LENGTH / 2.75;
@@ -76,7 +77,7 @@ export class TrainsView {
       const [bx, bz] = pointAt(train.path, center - BOGIE);
       const x = (fx + bx) / 2;
       const z = (fz + bz) / 2;
-      vehicle.position.set(x, RAIL_TOP, z);
+      vehicle.position.set(x, RAIL_TOP + (this.map.isType(Math.floor(x), Math.floor(z), TileType.Bridge) ? BRIDGE_DECK : 0), z);
       vehicle.rotation.y = Math.atan2(fx - bx, fz - bz) + (train.flipped ? Math.PI : 0);
       // Vozy ještě (nebo už) v depu nejsou vidět
       vehicle.visible = center > 0 && this.map.get(Math.floor(x), Math.floor(z)) !== TileType.Depot;

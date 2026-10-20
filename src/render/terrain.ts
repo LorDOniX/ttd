@@ -84,6 +84,7 @@ export class TerrainView {
   private tileColor(x: number, y: number): THREE.Color {
     switch (this.map.get(x, y)) {
       case TileType.Water:
+      case TileType.Bridge:
         return WATER;
       case TileType.Trees:
         return FOREST;

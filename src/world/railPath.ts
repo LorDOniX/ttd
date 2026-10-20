@@ -1,5 +1,6 @@
+import { BRIDGE_PIECE_COST, TRACK_PIECE_COST } from '../game/balance';
 import { MinHeap } from './heap';
-import type { TilePos } from './map';
+import { TileType, type TilePos } from './map';
 import {
   EDGE_DELTA,
   PIECES,
@@ -25,6 +26,8 @@ const TURN_PENALTY = 0.15;
 const REUSE_FACTOR = 0.1;
 // Rohový kus je kratší, bez penalizace by jimi začínala i rovná trasa
 const END_CORNER_PENALTY = 0.5;
+// Most je dražší, trasa vede přes vodu jen když se objíždění nevyplatí
+const BRIDGE_FACTOR = BRIDGE_PIECE_COST / TRACK_PIECE_COST;
 
 interface Parent {
   prev: number;
@@ -53,7 +56,8 @@ export function findTrackPath(rail: RailNetwork, from: TilePos, to: TilePos): Pa
     return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
   };
   const stepCost = (x: number, y: number, piece: number): number =>
-    pieceLength(piece) * (rail.has(x, y, piece) ? REUSE_FACTOR : 1);
+    pieceLength(piece) *
+    (rail.has(x, y, piece) ? REUSE_FACTOR : map.get(x, y) === TileType.Water ? BRIDGE_FACTOR : 1);
   const endCost = (x: number, y: number, piece: number): number =>
     isCorner(piece) && !rail.has(x, y, piece) ? END_CORNER_PENALTY : 0;
 
