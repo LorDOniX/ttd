@@ -50,6 +50,11 @@ body {
   background: #8a5a2a;
 }
 
+.toolbar__button--text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .toolbar__button:disabled {
   opacity: 0.4;
   cursor: default;
@@ -227,6 +232,24 @@ body {
 
 .tool-button small {
   color: #ddd;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 14px;
+  margin-left: 6px;
+  padding: 0 3px;
+  font: 11px/14px monospace;
+  text-align: center;
+  color: #ddd;
+  background: #3a3a36;
+  border: 1px solid #2a2a28;
+  border-radius: 2px;
+}
+
+.shortcuts td:first-child {
+  padding-right: 10px;
+  white-space: nowrap;
 }
 
 .tool-button--active {

@@ -12,19 +12,12 @@ export interface WindowOptions {
   locate?: () => void;
 }
 
-// Okna nad 3D scénou; klávesa Delete zavře všechna
+// Okna nad 3D scénou
 export class WindowManager {
   private readonly windows = new Map<string, OpenWindow>();
   private zIndex = 10;
 
-  constructor(private readonly root: HTMLElement) {
-    window.addEventListener('keydown', (e) => {
-      if (e.key !== 'Delete') return;
-      const target = e.target as HTMLElement;
-      if (target.closest('input, textarea')) return;
-      this.closeAll();
-    });
-  }
+  constructor(private readonly root: HTMLElement) {}
 
   isOpen(id: string): boolean {
     return this.windows.has(id);
@@ -95,6 +88,19 @@ export class WindowManager {
   closeAll(): void {
     // Mazání z Map během iterace je v JS bezpečné
     for (const id of this.windows.keys()) this.close(id);
+  }
+
+  // Zavře okno navrchu; vrací false, když žádné otevřené není
+  closeTop(): boolean {
+    let top: string | null = null;
+    let topZ = -1;
+    for (const [id, win] of this.windows) {
+      const z = Number(win.el.style.zIndex);
+      if (z > topZ) [top, topZ] = [id, z];
+    }
+    if (top === null) return false;
+    this.close(top);
+    return true;
   }
 
   private bringToFront(el: HTMLElement): void {

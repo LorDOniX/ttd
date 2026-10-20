@@ -1,4 +1,4 @@
-import { formatDate } from '../game/clock';
+import { GAME_SPEEDS, formatDate, type GameSpeed } from '../game/clock';
 import { Game, formatMoney } from '../game/game';
 import { h } from './dom';
 
@@ -32,6 +32,18 @@ export class Hud {
     game.clock.events.on('pause', renderPause);
     renderPause(game.clock.paused);
 
+    const speed = h('button', { className: 'toolbar__button toolbar__button--text', title: 'Rychlost hry (1, 2, 3)' });
+    const renderSpeed = (value: GameSpeed): void => {
+      speed.textContent = `×${value}`;
+      speed.classList.toggle('toolbar__button--active', value > 1);
+    };
+    speed.addEventListener('click', () => {
+      const next = (GAME_SPEEDS.indexOf(game.clock.speed) + 1) % GAME_SPEEDS.length;
+      game.clock.speed = GAME_SPEEDS[next];
+    });
+    game.clock.events.on('speed', renderSpeed);
+    renderSpeed(game.clock.speed);
+
     const button = (icon: string, title: string, onClick?: () => void): HTMLButtonElement => {
       const b = h('button', { className: 'toolbar__button', title, textContent: icon });
       if (onClick) b.addEventListener('click', onClick);
@@ -39,7 +51,7 @@ export class Hud {
       return b;
     };
 
-    const rotate = button('🔄', 'Otočit pohled o 90° (pravé tlačítko opačně)', () => actions.rotateView(1));
+    const rotate = button('🔄', 'Otočit pohled o 90° (Q/E, pravé tlačítko opačně)', () => actions.rotateView(1));
     rotate.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       actions.rotateView(-1);
@@ -49,13 +61,14 @@ export class Hud {
       'div',
       { className: 'toolbar' },
       pause,
+      speed,
       button('💾', 'Uložit / načíst hru', actions.openSaveLoad),
-      button('⚙️', 'Nastavení', actions.openSettings),
-      button('💰', 'Finance', actions.openFinance),
-      button('🚂', 'Stavba železnice', actions.openRailBuild),
-      button('🛣️', 'Stavba silnic', actions.openRoadBuild),
+      button('⚙️', 'Nastavení a klávesové zkratky', actions.openSettings),
+      button('💰', 'Finance (F)', actions.openFinance),
+      button('🚂', 'Stavba železnice (K, N, D, X)', actions.openRailBuild),
+      button('🛣️', 'Stavba silnic (S)', actions.openRoadBuild),
       rotate,
-      button('🗺️', 'Minimapa', actions.openMinimap),
+      button('🗺️', 'Minimapa (M)', actions.openMinimap),
     );
 
     const statusbar = h(
@@ -66,12 +79,6 @@ export class Hud {
       this.moneyEl,
     );
     root.append(toolbar, statusbar);
-
-    window.addEventListener('keydown', (e) => {
-      if (e.code !== 'Space' || (e.target as HTMLElement).closest('input, textarea, button')) return;
-      e.preventDefault();
-      game.clock.paused = !game.clock.paused;
-    });
 
     game.clock.events.on('day', (date) => (this.dateEl.textContent = formatDate(date)));
     game.events.on('money', (money) => this.renderMoney(money));

@@ -11,7 +11,13 @@ export interface GridToggle {
   setVisible: (visible: boolean) => void;
 }
 
-export function openSettings(windows: WindowManager, game: Game, grid: GridToggle, seed: string): void {
+export function openSettings(
+  windows: WindowManager,
+  game: Game,
+  grid: GridToggle,
+  seed: string,
+  shortcutsHelp: HTMLElement,
+): void {
   const gridInput = h('input', { type: 'checkbox', checked: grid.visible() });
   gridInput.addEventListener('change', () => grid.setVisible(gridInput.checked));
 
@@ -28,6 +34,8 @@ export function openSettings(windows: WindowManager, game: Game, grid: GridToggl
     h('label', { className: 'form__row' }, gridInput, ' Zobrazit mřížku'),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),
     h('div', { className: 'form__hint' }, `Seed mapy: ${seed}`),
+    h('h4', {}, 'Klávesové zkratky'),
+    shortcutsHelp,
   );
   windows.open('settings', 'Nastavení', content, { width: 300 });
 }

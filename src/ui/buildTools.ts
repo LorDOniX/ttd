@@ -41,34 +41,34 @@ export class BuildTools {
     root: HTMLElement,
   ) {
     root.append(this.tooltip);
-    window.addEventListener('keydown', (e) => {
-      if ((e.target as HTMLElement).closest('input, textarea')) return;
-      if (e.key === 'Escape') this.setTool(null);
-      if (e.key === 'r' || e.key === 'R') this.rotate();
-    });
   }
 
   openRailWindow(): void {
     this.openToolWindow('rail-build', 'Stavba železnice', [
-      ['track', 'Koleje', `${formatMoney(TRACK_PIECE_COST)} / dílek, most ${formatMoney(BRIDGE_PIECE_COST)}`],
-      ['station', 'Nástupiště', `${formatMoney(PLATFORM_TILE_COST)} / dílek`],
-      ['depot', 'Depo', formatMoney(DEPOT_COST)],
-      ['demolish', 'Demolice', 'vrátí 50 %'],
+      ['track', 'Koleje', 'K', `${formatMoney(TRACK_PIECE_COST)} / dílek, most ${formatMoney(BRIDGE_PIECE_COST)}`],
+      ['station', 'Nástupiště', 'N', `${formatMoney(PLATFORM_TILE_COST)} / dílek`],
+      ['depot', 'Depo', 'D', formatMoney(DEPOT_COST)],
+      ['demolish', 'Demolice', 'X', 'vrátí 50 %'],
     ]);
   }
 
   openRoadWindow(): void {
     this.openToolWindow('road-build', 'Stavba silnic', [
-      ['road', 'Silnice', `${formatMoney(ROAD_TILE_COST)} / dílek`],
-      ['demolish', 'Demolice', 'vrátí 50 %'],
+      ['road', 'Silnice', 'S', `${formatMoney(ROAD_TILE_COST)} / dílek`],
+      ['demolish', 'Demolice', 'X', 'vrátí 50 %'],
     ]);
   }
 
-  private openToolWindow(id: string, title: string, tools: [BuildTool, string, string][]): void {
+  private openToolWindow(id: string, title: string, tools: [BuildTool, string, string, string][]): void {
     const buttons = new Map<BuildTool, HTMLButtonElement>();
     const content = h('div', { className: 'form' });
-    for (const [tool, label, price] of tools) {
-      const b = h('button', { className: 'tool-button' }, h('span', {}, label), h('small', {}, price));
+    for (const [tool, label, key, price] of tools) {
+      const b = h(
+        'button',
+        { className: 'tool-button' },
+        h('span', {}, label, h('kbd', {}, key)),
+        h('small', {}, price),
+      );
       b.addEventListener('click', () => this.setTool(this.tool === tool ? null : tool));
       buttons.set(tool, b);
       content.append(b);
@@ -99,6 +99,16 @@ export class BuildTools {
     this.roadPath = null;
     this.renderButtons();
     this.refresh();
+  }
+
+  // Zkratka: nástroj zapne i se zavřeným oknem (otevře ho), opakovaně vypne
+  toggleTool(tool: BuildTool): void {
+    const windowOpen = [...this.buttons.values()].some((buttons) => buttons.has(tool));
+    if (!windowOpen) {
+      if (tool === 'road') this.openRoadWindow();
+      else this.openRailWindow();
+    }
+    this.setTool(this.tool === tool ? null : tool);
   }
 
   rotate(): void {

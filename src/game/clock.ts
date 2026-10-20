@@ -36,7 +36,11 @@ type ClockEvents = {
   year: [number];
   end: [];
   pause: [boolean];
+  speed: [GameSpeed];
 };
+
+export const GAME_SPEEDS = [1, 2, 4] as const;
+export type GameSpeed = (typeof GAME_SPEEDS)[number];
 
 // Herní kalendář: 1 rok = 15 minut reálného času
 export class GameClock {
@@ -47,6 +51,16 @@ export class GameClock {
   // Rozpracovaná část aktuálního dne 0..1
   dayProgress = 0;
   private _paused = false;
+  private _speed: GameSpeed = 1;
+
+  get speed(): GameSpeed {
+    return this._speed;
+  }
+
+  set speed(value: GameSpeed) {
+    this._speed = value;
+    this.events.emit('speed', value);
+  }
 
   get paused(): boolean {
     return this._paused;
@@ -70,7 +84,7 @@ export class GameClock {
   tick(dtMs: number): number {
     if (this._paused || this.ended) return 0;
     const msPerDay = REAL_MS_PER_YEAR / daysInYear(this.date.year);
-    const days = Math.min(dtMs, MAX_FRAME_MS) / msPerDay;
+    const days = (Math.min(dtMs, MAX_FRAME_MS) * this._speed) / msPerDay;
     this.dayProgress += days;
     while (this.dayProgress >= 1 && !this.ended) {
       this.dayProgress -= 1;

@@ -9,8 +9,9 @@ import { BuildTools } from '../ui/buildTools';
 import { openDepot } from '../ui/depot';
 import { openFinance, openSaveLoad, openSettings, openTown } from '../ui/dialogs';
 import { h } from '../ui/dom';
-import { Hud } from '../ui/hud';
+import { Hud, type ToolbarActions } from '../ui/hud';
 import { openMinimap } from '../ui/minimap';
+import { Shortcuts } from '../ui/shortcuts';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
 import { NO_OWNER, type TilePos } from '../world/map';
@@ -18,6 +19,8 @@ import { hashSeed } from '../world/rng';
 
 const WATER_LEVELS = { low: 0.28, normal: 0.34, high: 0.42 } as const;
 const TOWN_DENSITY = { few: 0.6, normal: 1, many: 1.5 } as const;
+// Posun šipkami ve výškách obrazovky za sekundu
+const KEY_PAN_SPEED = 0.8;
 
 export const DEFAULT_OPTIONS: Omit<NewGameOptions, 'seedText'> = { size: 256, water: 'normal', towns: 'normal' };
 
@@ -67,7 +70,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     visible: () => terrain.gridVisible,
     setVisible: (visible: boolean) => terrain.setGridVisible(visible),
   };
-  new Hud(container, game, {
+  const actions: ToolbarActions = {
     openSaveLoad: () =>
       openSaveLoad(windows, game, seedText, {
         load: (save) => launch({ mode: 'load', save }),
@@ -76,13 +79,40 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
           returnToTitle();
         },
       }),
-    openSettings: () => openSettings(windows, game, grid, seedText),
+    openSettings: () => openSettings(windows, game, grid, seedText, shortcuts.help()),
     openFinance: () => openFinance(windows, game),
     openRailBuild: () => buildTools.openRailWindow(),
     openRoadBuild: () => buildTools.openRoadWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
-  });
+  };
+  new Hud(container, game, actions);
+
+  const { clock } = game;
+  const shortcuts = new Shortcuts([
+    { codes: ['Space'], key: 'Mezerník', label: 'Pauza', run: () => (clock.paused = !clock.paused) },
+    { codes: ['Digit1', 'Numpad1'], key: '1', label: 'Rychlost ×1', run: () => (clock.speed = 1) },
+    { codes: ['Digit2', 'Numpad2'], key: '2', label: 'Rychlost ×2', run: () => (clock.speed = 2) },
+    { codes: ['Digit3', 'Numpad3'], key: '3', label: 'Rychlost ×4', run: () => (clock.speed = 4) },
+    { codes: ['KeyQ'], key: 'Q', label: 'Otočit pohled doleva', run: () => isoCamera.rotate(-1) },
+    { codes: ['KeyE'], key: 'E', label: 'Otočit pohled doprava', run: () => isoCamera.rotate(1) },
+    { codes: ['KeyK'], key: 'K', label: 'Koleje', run: () => buildTools.toggleTool('track') },
+    { codes: ['KeyN'], key: 'N', label: 'Nástupiště', run: () => buildTools.toggleTool('station') },
+    { codes: ['KeyD'], key: 'D', label: 'Depo', run: () => buildTools.toggleTool('depot') },
+    { codes: ['KeyS'], key: 'S', label: 'Silnice', run: () => buildTools.toggleTool('road') },
+    { codes: ['KeyX'], key: 'X', label: 'Demolice', run: () => buildTools.toggleTool('demolish') },
+    { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště nebo depo', run: () => buildTools.rotate() },
+    { codes: ['KeyF'], key: 'F', label: 'Finance', run: actions.openFinance },
+    { codes: ['KeyM'], key: 'M', label: 'Minimapa', run: actions.openMinimap },
+    { codes: ['KeyG'], key: 'G', label: 'Mřížka', run: () => grid.setVisible(!grid.visible()) },
+    {
+      codes: ['Escape'],
+      key: 'Esc',
+      label: 'Zrušit nástroj, jinak zavřít horní okno',
+      run: () => (buildTools.tool ? buildTools.setTool(null) : windows.closeTop()),
+    },
+    { codes: ['Delete'], key: 'Delete', label: 'Zavřít všechna okna', run: () => windows.closeAll() },
+  ]);
 
   game.events.on('outOfMoney', () => {
     windows.open(
@@ -153,7 +183,13 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
 
   let lastFrame = performance.now();
   renderer.setAnimationLoop((now: number) => {
-    view.frame(now, now - lastFrame);
+    const dt = now - lastFrame;
+    const [panX, panY] = shortcuts.panDirection();
+    if (panX || panY) {
+      const step = (KEY_PAN_SPEED * Math.min(dt, 100)) / 1000;
+      isoCamera.pan(panX * step, panY * step);
+    }
+    view.frame(now, dt);
     lastFrame = now;
   });
 }

@@ -31,4 +31,11 @@ describe('herní kalendář', () => {
     expect(clock.tick(10_000)).toBe(0);
     expect(clock.day).toBe(0);
   });
+
+  it('zrychlení ×4 zkrátí rok na čtvrtinu', () => {
+    const clock = new GameClock();
+    clock.speed = 4;
+    for (let ms = 0; ms <= (15 * 60 * 1000) / 4; ms += 250) clock.tick(250);
+    expect(clock.date).toEqual({ year: 1951, month: 0, day: 1 });
+  });
 });

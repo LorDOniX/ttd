@@ -46,6 +46,17 @@ export class IsoCamera {
     this.updatePosition();
   }
 
+  // Posun pohledu o zlomky výšky obrazovky (kladné dx doprava, dy nahoru), nezávisle na otočení a zoomu
+  pan(dx: number, dy: number): void {
+    const span = (2 * this.viewSize) / this.camera.zoom;
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0).setY(0).normalize();
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1).setY(0);
+    // Svislý posun na obrazovce je na zemi delší o 1 / sin(elevace) = 1 / |up|
+    up.divideScalar(up.lengthSq());
+    this.target.addScaledVector(right, dx * span).addScaledVector(up, dy * span);
+    this.updatePosition();
+  }
+
   // Plynulé kroužení (úvodní obrazovka): pootočí pohled o daný úhel bez animace
   spin(radians: number): void {
     this.azimuth += radians;
