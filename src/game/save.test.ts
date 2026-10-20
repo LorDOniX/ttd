@@ -100,4 +100,18 @@ describe('uložení a načtení', () => {
     const [a] = restoreGame(parseSave(JSON.stringify(data))).world.rail.stations;
     expect([a.rating, a.lastVisit, a.lastSpeed]).toEqual([0.5, -1, 0]);
   });
+
+  it('uložení verze 3 načte vlaky jako koupené na začátku hry', () => {
+    const { game, depot } = buildLine();
+    buyTrain(game, depot);
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.version = 3;
+    for (const train of data.fleet.trains) {
+      delete train.builtDay;
+      delete train.agingWarned;
+      delete train.renewing;
+    }
+    const [train] = restoreGame(parseSave(JSON.stringify(data))).fleet.trains;
+    expect([train.builtDay, train.agingWarned, train.renewing]).toEqual([0, false, false]);
+  });
 });

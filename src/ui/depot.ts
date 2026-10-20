@@ -1,10 +1,10 @@
-import { MAX_WAGONS, TRAIN_SELL_REFUND, WAGON_CAPACITY, WAGON_PRICE } from '../game/balance';
+import { MAX_WAGONS, WAGON_CAPACITY, WAGON_PRICE } from '../game/balance';
 import { Game, formatMoney } from '../game/game';
-import { ordersError, trainModel, trainValue, type Train } from '../game/trains';
+import { isOld, ordersError, sellPrice, trainAge, trainModel, type Train } from '../game/trains';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { h } from './dom';
-import { openTrain, stateText } from './trainWindow';
+import { formatYears, openTrain, stateText } from './trainWindow';
 import type { WindowManager } from './windows';
 
 // Okno depa: nákup vlaků, vagony, vypravení na trať a prodej
@@ -49,6 +49,7 @@ export function openDepot(
       h('strong', {}, train.name),
       ` · ${model.name} · ${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'}`,
       ` · ${train.passengers}/${train.wagons * WAGON_CAPACITY} cestujících`,
+      h('span', { className: isOld(train, game.clock.day) ? 'warning' : '' }, ` · ${formatYears(trainAge(train, game.clock.day))}`),
       h('div', { className: 'form__hint' }, stateText(game, train)),
     );
     const row = h('div', { className: 'train' }, info);
@@ -62,7 +63,8 @@ export function openDepot(
           { className: 'train__actions' },
           button(`+ vagon (${formatMoney(WAGON_PRICE)})`, () => report(fleet.addWagon(train)), train.wagons >= MAX_WAGONS),
           button('− vagon', () => fleet.removeWagon(train), train.wagons === 0),
-          button(`Prodat (${formatMoney(trainValue(train) * TRAIN_SELL_REFUND)})`, () => fleet.sell(train)),
+          button(`Prodat (${formatMoney(sellPrice(train, game.clock.day))})`, () => fleet.sell(train)),
+          button(`Obnovit (${formatMoney(fleet.renewalOffer(train).cost)})`, () => report(fleet.renew(train))),
         ),
       );
       const orders = train.orders;

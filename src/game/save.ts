@@ -7,8 +7,8 @@ import { GameMap } from '../world/map';
 import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
-// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť
-const SAVE_VERSION = 3;
+// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků
+const SAVE_VERSION = 4;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -112,7 +112,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -177,7 +177,15 @@ export function restoreGame(data: SaveData): Game {
   game.clock.date = data.clock.date;
   game.clock.day = data.clock.day;
   game.clock.dayProgress = data.clock.dayProgress;
-  game.fleet.trains.push(...data.fleet.trains);
+  // Starší uložení nezná stáří vlaků; nejstarší možný je vlak koupený na začátku hry
+  game.fleet.trains.push(
+    ...data.fleet.trains.map((t) => ({
+      ...t,
+      builtDay: t.builtDay ?? 0,
+      agingWarned: t.agingWarned ?? false,
+      renewing: t.renewing ?? false,
+    })),
+  );
   game.fleet.nextId = data.fleet.nextId;
   return game;
 }

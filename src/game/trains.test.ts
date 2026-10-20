@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { TRAIN_MODELS, TRAIN_SELL_REFUND, WAGON_PRICE, WAGON_RUNNING_COST } from './balance';
+import {
+  OLD_TRAIN_COST_FACTOR,
+  TRAIN_MIN_SELL,
+  TRAIN_MODELS,
+  TRAIN_SELL_REFUND,
+  WAGON_PRICE,
+  WAGON_RUNNING_COST,
+} from './balance';
 import type { Game } from './game';
-import { ordersError, type Train } from './trains';
+import { ordersError, sellFactor, sellPrice, trainAge, type Train } from './trains';
 import { addBuilding, buildLine, buyTrain, layTrack, makeTown, runDays } from '../test/fixtures';
 import { defaultStationShape } from '../world/rail';
 
@@ -58,7 +65,7 @@ describe('vlaky', () => {
     expect(game.construction.demolish([{ x: depot.x, y: depot.y }])).toMatch(/Depo/);
   });
 
-  it('vrátí se do depa a prodá se za polovinu', () => {
+  it('vrátí se do depa a prodá se zhruba za polovinu', () => {
     const { game, a, b, depot } = buildLine();
     const train = buyTrain(game, depot, 2);
     game.fleet.start(train, [a.id, b.id]);
@@ -67,9 +74,62 @@ describe('vlaky', () => {
     for (let i = 0; i < 20_000 && train.state !== 'depot'; i++) game.update(200);
     expect(train.state).toBe('depot');
     const before = game.money;
+    const price = sellPrice(train, game.clock.day);
+    // Pár dní stáří cenu jen nepatrně sníží
+    expect(price / ((TRAIN_MODELS[0].price + 2 * WAGON_PRICE) * TRAIN_SELL_REFUND)).toBeCloseTo(1, 2);
     game.fleet.sell(train);
-    expect(game.money - before).toBe((TRAIN_MODELS[0].price + 2 * WAGON_PRICE) * TRAIN_SELL_REFUND);
+    expect(game.money - before).toBe(price);
     expect(game.fleet.trains).toHaveLength(0);
+  });
+});
+
+describe('stárnutí vlaků', () => {
+  const YEAR = 365.25;
+
+  it('prodejní cena klesá lineárně z poloviny na 10 % za 25 let', () => {
+    expect(sellFactor(0)).toBe(TRAIN_SELL_REFUND);
+    expect(sellFactor(12.5)).toBeCloseTo(0.3);
+    expect(sellFactor(25)).toBeCloseTo(TRAIN_MIN_SELL);
+    expect(sellFactor(40)).toBeCloseTo(TRAIN_MIN_SELL);
+  });
+
+  it('po životnosti stojí provoz o polovinu víc a hráč dostane jedno upozornění', () => {
+    const { game, depot } = buildLine();
+    const train = buyTrain(game, depot, 1);
+    train.builtDay = game.clock.day - 26 * YEAR;
+    const news: string[] = [];
+    game.events.on('news', (text) => news.push(text));
+    runDays(game, 62);
+    const base = TRAIN_MODELS[0].runningCost + WAGON_RUNNING_COST;
+    expect(game.thisYear.costs.running).toBeCloseTo((2 * base * OLD_TRAIN_COST_FACTOR) / 12);
+    expect(news.filter((n) => n.includes('konce životnosti'))).toHaveLength(1);
+  });
+
+  it('obnova v depu vymění lokomotivu za nejnovější model a zachová vagony i řád', () => {
+    const { game, a, b, depot } = buildLine();
+    const train = buyTrain(game, depot, 3);
+    game.fleet.setOrders(train, [a.id, b.id]);
+    train.builtDay = -20 * YEAR;
+    game.clock.date = { ...game.clock.date, year: 1975 };
+    const { model, cost } = game.fleet.renewalOffer(train);
+    expect(model.id).toBe('diesel');
+    const before = game.money;
+    expect(game.fleet.renew(train)).toBeNull();
+    expect(before - game.money).toBe(cost);
+    expect([train.modelId, train.wagons, train.orders, train.builtDay]).toEqual(['diesel', 3, [a.id, b.id], 0]);
+  });
+
+  it('jedoucí vlak zajede na obnovu do depa a pak pokračuje podle řádu', () => {
+    const { game, a, b, depot } = buildLine();
+    const train = buyTrain(game, depot);
+    game.fleet.start(train, [a.id, b.id]);
+    runDays(game, 5);
+    train.builtDay = game.clock.day - 30 * YEAR;
+    expect(game.fleet.requestRenewal(train)).toBeNull();
+    for (let i = 0; i < 20_000 && train.renewing; i++) game.update(200);
+    expect(trainAge(train, game.clock.day)).toBeLessThan(0.1);
+    expect(train.state).toBe('running');
+    expect(train.orders).toEqual([a.id, b.id]);
   });
 });
 

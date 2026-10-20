@@ -1,6 +1,15 @@
-import { TRAIN_SELL_REFUND, WAGON_CAPACITY } from '../game/balance';
+import { TRAIN_LIFETIME_YEARS, WAGON_CAPACITY } from '../game/balance';
 import { Game, formatMoney } from '../game/game';
-import { nextStop, ordersError, trainModel, trainValue, type Train } from '../game/trains';
+import {
+  isOld,
+  nextStop,
+  ordersError,
+  sellPrice,
+  trainAge,
+  trainModel,
+  yearlyRunningCost,
+  type Train,
+} from '../game/trains';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { h } from './dom';
@@ -25,6 +34,11 @@ export function stateText(game: Game, train: Train): string {
 export interface TrainLinks {
   focus: (x: number, z: number) => void;
   openDepot: (depot: Depot) => void;
+}
+
+export function formatYears(age: number): string {
+  const n = Math.floor(age);
+  return `${n} ${n === 1 ? 'rok' : n >= 2 && n <= 4 ? 'roky' : 'let'}`;
 }
 
 function depotOf(game: Game, train: Train): Depot | undefined {
@@ -102,18 +116,26 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
     const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
       h('tr', {}, h('td', {}, label), h('td', { className }, value));
     const speed = (v: number): string => v.toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
+    const today = game.clock.day;
+    const old = isOld(train, today);
     const table = h(
       'table',
       { className: 'table' },
       row('Model', `${model.name} (${model.year})`),
-      row('Stav', stateText(game, train)),
+      row('Stav', train.renewing ? `${stateText(game, train)} (na obnovu)` : stateText(game, train)),
       row('Cestující', `${train.passengers} / ${capacity}`, 'num'),
       row('Rychlost', `${speed(train.speed)} / ${speed(model.speed)} dlaždic/den`, 'num'),
+      row(
+        'Stáří',
+        `${formatYears(trainAge(train, today))} z ${TRAIN_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
+        old ? 'num warning' : 'num',
+      ),
+      row('Provoz ročně', formatMoney(0 - yearlyRunningCost(train, today)), 'num'),
       row('Příjmy letos', formatMoney(train.income), 'num'),
       row('Provoz letos', formatMoney(0 - train.costs), 'num'),
       row('Zisk letos', formatMoney(train.income - train.costs), 'num strong'),
       row('Zisk loni', formatMoney(train.lastIncome - train.lastCosts), 'num'),
-      row('Prodejní cena', formatMoney(trainValue(train) * TRAIN_SELL_REFUND), 'num'),
+      row('Prodejní cena', formatMoney(sellPrice(train, today)), 'num'),
     );
 
     const toDepot = h('button', { className: 'small-button', textContent: 'Do depa' });
@@ -124,11 +146,22 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
       const d = depotOf(game, train);
       if (d) links.openDepot(d);
     });
+    const offer = game.fleet.renewalOffer(train);
+    const renew = h('button', {
+      className: 'small-button',
+      textContent: `Obnovit (${formatMoney(offer.cost)})`,
+      title: `Nová lokomotiva ${offer.model.name}, vagony a jízdní řád zůstanou. Jedoucí vlak zajede do depa a pak pokračuje.`,
+      disabled: train.renewing,
+    });
+    renew.addEventListener('click', () => {
+      const error = game.fleet.requestRenewal(train);
+      if (error) game.news(error);
+    });
     return h(
       'div',
       { className: 'form' },
       table,
-      h('div', { className: 'train__actions' }, toDepot, depot),
+      h('div', { className: 'train__actions' }, toDepot, depot, renew),
       h('h4', {}, 'Jízdní řád'),
       ordersEditor(game, train, choice),
     );
@@ -164,15 +197,18 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
         {},
         h('th', {}, 'Vlak'),
         h('th', {}, 'Stav'),
+        h('th', { className: 'num' }, 'Stáří'),
         h('th', { className: 'num' }, 'Cestující'),
         h('th', { className: 'num' }, 'Zisk letos'),
       ),
       ...trains.map((t) => {
+        const today = game.clock.day;
         const tr = h(
           'tr',
           { title: 'Otevřít okno vlaku' },
           h('td', {}, t.name),
           h('td', {}, stateText(game, t)),
+          h('td', { className: isOld(t, today) ? 'num warning' : 'num' }, formatYears(trainAge(t, today))),
           h('td', { className: 'num' }, `${t.passengers} / ${t.wagons * WAGON_CAPACITY}`),
           h('td', { className: 'num' }, formatMoney(t.income - t.costs)),
         );

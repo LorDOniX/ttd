@@ -1,6 +1,9 @@
 import {
   MAX_WAGONS,
+  OLD_TRAIN_COST_FACTOR,
+  TRAIN_LIFETIME_YEARS,
   TRAIN_LOADING_DAYS,
+  TRAIN_MIN_SELL,
   TRAIN_MODELS,
   TRAIN_SELL_REFUND,
   VEHICLE_LENGTH,
@@ -59,7 +62,15 @@ export interface Train {
   costs: number;
   lastIncome: number;
   lastCosts: number;
+  // Herní den nákupu nebo poslední obnovy
+  builtDay: number;
+  // Hráč už dostal zprávu o konci životnosti
+  agingWarned: boolean;
+  // Po příjezdu do depa se obnoví a vyjede podle jízdního řádu
+  renewing: boolean;
 }
+
+const DAYS_PER_YEAR = 365.25;
 
 export function trainModel(train: Train): TrainModel {
   return TRAIN_MODELS.find((m) => m.id === train.modelId)!;
@@ -69,8 +80,29 @@ export function trainLength(train: Train): number {
   return (train.wagons + 1) * VEHICLE_LENGTH;
 }
 
-export function trainValue(train: Train): number {
-  return trainModel(train).price + train.wagons * WAGON_PRICE;
+// Stáří vlaku v letech
+export function trainAge(train: Train, today: number): number {
+  return Math.max(0, today - train.builtDay) / DAYS_PER_YEAR;
+}
+
+export function isOld(train: Train, today: number): boolean {
+  return trainAge(train, today) >= TRAIN_LIFETIME_YEARS;
+}
+
+// Podíl kupní ceny, který vrátí prodej: nový vlak polovinu, na konci životnosti TRAIN_MIN_SELL
+export function sellFactor(age: number): number {
+  const worn = Math.min(1, age / TRAIN_LIFETIME_YEARS);
+  return TRAIN_SELL_REFUND - (TRAIN_SELL_REFUND - TRAIN_MIN_SELL) * worn;
+}
+
+export function sellPrice(train: Train, today: number): number {
+  const price = trainModel(train).price + train.wagons * WAGON_PRICE;
+  return Math.round(price * sellFactor(trainAge(train, today)));
+}
+
+export function yearlyRunningCost(train: Train, today: number): number {
+  const base = trainModel(train).runningCost + train.wagons * WAGON_RUNNING_COST;
+  return isOld(train, today) ? base * OLD_TRAIN_COST_FACTOR : base;
 }
 
 // Index zastávky, kam vlak pojede po té aktuální
@@ -140,6 +172,9 @@ export class Fleet {
       costs: 0,
       lastIncome: 0,
       lastCosts: 0,
+      builtDay: this.game.clock.day,
+      agingWarned: false,
+      renewing: false,
     });
     this.changed();
     return null;
@@ -158,15 +193,45 @@ export class Fleet {
   removeWagon(train: Train): void {
     if (train.state !== 'depot' || train.wagons === 0) return;
     train.wagons--;
-    this.game.refund(WAGON_PRICE * TRAIN_SELL_REFUND, 'vehicles');
+    this.game.refund(Math.round(WAGON_PRICE * sellFactor(trainAge(train, this.game.clock.day))), 'vehicles');
     this.changed();
   }
 
   sell(train: Train): void {
     if (train.state !== 'depot') return;
-    this.game.refund(trainValue(train) * TRAIN_SELL_REFUND, 'vehicles');
+    this.game.refund(sellPrice(train, this.game.clock.day), 'vehicles');
     this.trains.splice(this.trains.indexOf(train), 1);
     this.changed();
+  }
+
+  // Nejnovější dostupný model a doplatek za něj po započtení staré lokomotivy
+  renewalOffer(train: Train): { model: TrainModel; cost: number } {
+    const models = this.available();
+    const model = models[models.length - 1];
+    const tradeIn = trainModel(train).price * sellFactor(trainAge(train, this.game.clock.day));
+    return { model, cost: Math.round(model.price - tradeIn) };
+  }
+
+  // Obnova v depu: nová lokomotiva nejnovějšího modelu, vagony a jízdní řád zůstanou
+  renew(train: Train): string | null {
+    if (train.state !== 'depot') return 'Obnovit lze jen vlak v depu.';
+    const { model, cost } = this.renewalOffer(train);
+    if (this.game.money < cost) return `Nedostatek peněz na obnovu (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'vehicles');
+    train.modelId = model.id;
+    train.builtDay = this.game.clock.day;
+    train.agingWarned = false;
+    this.game.news(`${train.name} obnoven: ${model.name}.`);
+    this.changed();
+    return null;
+  }
+
+  // Obnoví hned v depu, jinak vlak pošle do depa a po obnově znovu vyjede
+  requestRenewal(train: Train): string | null {
+    if (train.state === 'depot') return this.renew(train);
+    train.renewing = true;
+    this.sendToDepot(train);
+    return null;
   }
 
   // Vypraví vlak z depa; nejdřív jede k nejbližší zastávce jízdního řádu
@@ -291,6 +356,7 @@ export class Fleet {
       // Cestující v depu vystoupí bez zaplacení
       train.passengers = 0;
       this.game.news(`${train.name} dorazil do depa.`);
+      if (train.renewing) this.finishRenewal(train);
     } else {
       train.state = 'loading';
       train.waitDays = TRAIN_LOADING_DAYS;
@@ -396,11 +462,22 @@ export class Fleet {
     }
   }
 
+  private finishRenewal(train: Train): void {
+    train.renewing = false;
+    const error = this.renew(train) ?? (train.orders ? this.start(train, train.orders) : null);
+    if (error) this.game.news(`${train.name}: ${error}`);
+  }
+
   private chargeRunningCosts(): void {
+    const today = this.game.clock.day;
     for (const train of this.trains) {
-      const yearly = trainModel(train).runningCost + train.wagons * WAGON_RUNNING_COST;
-      this.game.spend(yearly / 12, 'running');
-      train.costs += yearly / 12;
+      const monthly = yearlyRunningCost(train, today) / 12;
+      this.game.spend(monthly, 'running');
+      train.costs += monthly;
+      if (!train.agingWarned && isOld(train, today)) {
+        train.agingWarned = true;
+        this.game.news(`${train.name} dosáhl konce životnosti – provoz je dražší, zvažte obnovu.`);
+      }
     }
   }
 

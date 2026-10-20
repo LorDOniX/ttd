@@ -55,8 +55,12 @@ export const WAGON_RUNNING_COST = 4_000;
 // Lokomotiva a 5 vagonů po půl dlaždici vyplní nástupiště 1×3
 export const MAX_WAGONS = 5;
 export const VEHICLE_LENGTH = 0.5;
-// Prodej vlaku nebo vagonu vrací část kupní ceny
+// Prodej vlaku nebo vagonu vrací část kupní ceny; s věkem klesá lineárně až na TRAIN_MIN_SELL na konci životnosti
 export const TRAIN_SELL_REFUND = 0.5;
+export const TRAIN_MIN_SELL = 0.1;
+export const TRAIN_LIFETIME_YEARS = 25;
+// Provoz vlaku po životnosti je dražší
+export const OLD_TRAIN_COST_FACTOR = 1.5;
 // Staniční pobyt na vykložení a naložení
 export const TRAIN_LOADING_DAYS = 2;
 

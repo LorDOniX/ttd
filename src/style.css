@@ -259,6 +259,11 @@ body {
   font-weight: 600;
 }
 
+.warning,
+.table .warning {
+  color: #ffb74d;
+}
+
 .tabs {
   display: flex;
   gap: 2px;
