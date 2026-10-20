@@ -1,3 +1,4 @@
+import { TOWN_POPULATION } from '../game/balance';
 import { GameMap, TileType } from './map';
 import { CITY_NAMES, VILLAGE_NAMES } from './names';
 import { fbm } from './noise';
@@ -14,10 +15,7 @@ const WATER_LEVEL = 0.34;
 const WATER_SCALE = 1 / 28;
 const EDGE_MARGIN = 14;
 
-const KIND_SETUP: Record<TownKind, { tilesPerTown: number; minPop: number; maxPop: number }> = {
-  city: { tilesPerTown: 9000, minPop: 1000, maxPop: 5000 },
-  village: { tilesPerTown: 4500, minPop: 100, maxPop: 1000 },
-};
+const TILES_PER_TOWN: Record<TownKind, number> = { city: 9000, village: 4500 };
 
 function generateWater(map: GameMap, seed: number): void {
   for (let y = 0; y < map.height; y++) {
@@ -51,8 +49,8 @@ function placeTowns(
   towns: Town[],
   year: number,
 ): void {
-  const setup = KIND_SETUP[kind];
-  const count = Math.max(1, Math.round((map.width * map.height) / setup.tilesPerTown));
+  const population = TOWN_POPULATION[kind];
+  const count = Math.max(1, Math.round((map.width * map.height) / TILES_PER_TOWN[kind]));
   let placed = 0;
 
   for (let attempt = 0; attempt < 600 && placed < count && names.length > 0; attempt++) {
@@ -67,10 +65,11 @@ function placeTowns(
       kind,
       x,
       y,
-      population: rng.int(setup.minPop, setup.maxPop),
+      population: rng.int(population.min, population.max),
       radius: 2,
       shape: createTownShape(rng),
       buildings: [],
+      served: false,
     };
     expandTown(map, town, year, rng);
     towns.push(town);

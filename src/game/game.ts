@@ -1,10 +1,10 @@
+import { START_MONEY } from './balance';
 import { Emitter } from './emitter';
 import { GameClock, formatDate } from './clock';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
 import { growTown } from '../world/town';
 
-export const START_MONEY = 1_000_000;
 export const DEFAULT_COMPANY_NAME = 'Moje dopravní společnost';
 
 export interface YearStats {

@@ -1,3 +1,10 @@
+import {
+  BUILDING_CAPACITY,
+  REDEVELOP_CHANCE,
+  SKYSCRAPER_YEAR,
+  TOWN_GROWTH_BASE,
+  TOWN_GROWTH_SERVED,
+} from '../game/balance';
 import { GameMap, NO_OWNER, TileType } from './map';
 import type { Rng } from './rng';
 
@@ -21,10 +28,11 @@ export interface Town {
   // Násobky poloměru pro jednotlivé směry, dávají městu nepravidelný tvar
   shape: number[];
   buildings: Building[];
+  // Obsluhové vlakem za poslední rok, zrychluje růst
+  served: boolean;
 }
 
 interface KindRules {
-  peoplePerBuilding: number;
   roadSpacing: number;
   maxRadius: number;
   // Podíl volných míst u silnice, která zůstanou jako zahrady
@@ -32,12 +40,11 @@ interface KindRules {
 }
 
 export const KIND_RULES: Record<TownKind, KindRules> = {
-  city: { peoplePerBuilding: 40, roadSpacing: 3, maxRadius: 16, gardenRatio: 0 },
-  village: { peoplePerBuilding: 12, roadSpacing: 4, maxRadius: 12, gardenRatio: 0.3 },
+  city: { roadSpacing: 3, maxRadius: 16, gardenRatio: 0 },
+  village: { roadSpacing: 4, maxRadius: 12, gardenRatio: 0.3 },
 };
 
 const SHAPE_SECTORS = 12;
-const SKYSCRAPER_YEAR = 2010;
 
 // Rozdělení podle výšky po normalizaci na dlaždici: věže nad ~2 jednotky jsou mrakodrapy
 const SKYSCRAPERS = [
@@ -61,8 +68,15 @@ export function createTownShape(rng: Rng): number[] {
   return Array.from({ length: SHAPE_SECTORS }, () => 0.7 + rng.next() * 0.6);
 }
 
-export function buildingTarget(town: Town): number {
-  return Math.max(3, Math.ceil(town.population / KIND_RULES[town.kind].peoplePerBuilding));
+export function buildingCapacity(model: string): number {
+  if (SKYSCRAPERS.includes(model)) return BUILDING_CAPACITY.skyscraper;
+  if (LOW_OFFICES.includes(model)) return BUILDING_CAPACITY.low;
+  if (HOUSES.includes(model)) return BUILDING_CAPACITY.house;
+  return BUILDING_CAPACITY.office;
+}
+
+export function townCapacity(town: Town): number {
+  return town.buildings.reduce((sum, b) => sum + buildingCapacity(b.model), 0);
 }
 
 function tileHash(x: number, y: number, salt: number): number {
@@ -138,12 +152,12 @@ function pickModel(town: Town, distance: number, year: number, rng: Rng): string
   return rng.pick(OFFICES);
 }
 
-// Doplní silnice a budovy, dokud počet budov neodpovídá populaci
+// Doplní silnice a budovy, dokud kapacita budov nestačí na populaci; populaci pak omezí kapacitou
 export function expandTown(map: GameMap, town: Town, year: number, rng: Rng): void {
   const rules = KIND_RULES[town.kind];
-  const target = buildingTarget(town);
+  let capacity = townCapacity(town);
 
-  while (town.buildings.length < target && town.radius <= rules.maxRadius) {
+  while (capacity < town.population && town.radius <= rules.maxRadius) {
     growRoads(map, town, town.radius);
 
     const slots: { x: number; y: number; rotation: number; distance: number }[] = [];
@@ -163,24 +177,19 @@ export function expandTown(map: GameMap, town: Town, year: number, rng: Rng): vo
     slots.sort((a, b) => a.distance - b.distance);
 
     for (const slot of slots) {
-      if (town.buildings.length >= target) break;
+      if (capacity >= town.population) break;
       map.set(slot.x, slot.y, TileType.Building);
       map.setOwner(slot.x, slot.y, town.id);
-      town.buildings.push({
-        x: slot.x,
-        y: slot.y,
-        rotation: slot.rotation,
-        model: pickModel(town, slot.distance, year, rng),
-      });
+      const model = pickModel(town, slot.distance, year, rng);
+      town.buildings.push({ x: slot.x, y: slot.y, rotation: slot.rotation, model });
+      capacity += buildingCapacity(model);
     }
 
-    if (town.buildings.length < target) town.radius++;
+    if (capacity < town.population) town.radius++;
   }
-}
 
-const YEARLY_GROWTH = 1.05;
-// Pravděpodobnost, že se budova v centru během roku přestaví na mrakodrap
-const REDEVELOP_CHANCE = 0.12;
+  town.population = Math.min(town.population, capacity);
+}
 
 // Přestavba budov v centru města na mrakodrapy
 function redevelopCentre(town: Town, year: number, rng: Rng): void {
@@ -192,9 +201,10 @@ function redevelopCentre(town: Town, year: number, rng: Rng): void {
   }
 }
 
-// Roční růst: přírůstek obyvatel, nové budovy na okraji, přestavba centra
+// Roční růst: přestavba centra, přírůstek obyvatel a nové budovy na okraji
 export function growTown(map: GameMap, town: Town, year: number, rng: Rng): void {
-  town.population = Math.round(town.population * YEARLY_GROWTH);
-  expandTown(map, town, year, rng);
   redevelopCentre(town, year, rng);
+  const rate = town.served ? TOWN_GROWTH_SERVED : TOWN_GROWTH_BASE;
+  town.population = Math.round(town.population * (1 + rate));
+  expandTown(map, town, year, rng);
 }
