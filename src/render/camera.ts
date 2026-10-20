@@ -4,7 +4,7 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 // Dimetrie 2:1 jako v OpenTTD: kamera z rohu mapy pod elevací 30°
 const ISO_DIRECTION = new THREE.Vector3(1, Math.SQRT2 * Math.tan(Math.PI / 6), 1).normalize();
-const ROTATION_STEP = Math.PI / 4;
+const ROTATION_STEP = Math.PI / 2;
 const ROTATION_MS = 300;
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -14,7 +14,7 @@ export class IsoCamera {
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly raycaster = new THREE.Raycaster();
   private panAnchor: THREE.Vector3 | null = null;
-  // Natočení pohledu kolem svislé osy; cílové se mění po 45°, aktuální k němu plynule dobíhá
+  // Natočení pohledu kolem svislé osy; cílové se mění po 90°, aktuální k němu plynule dobíhá
   private azimuth = 0;
   private targetAzimuth = 0;
 
@@ -53,7 +53,7 @@ export class IsoCamera {
     this.updatePosition();
   }
 
-  // Otočí pohled o 45° (direction 1 = po směru hodinových ručiček)
+  // Otočí pohled o 90° (direction 1 = po směru hodinových ručiček)
   rotate(direction: 1 | -1 = 1): void {
     this.targetAzimuth += direction * ROTATION_STEP;
     const from = this.azimuth;

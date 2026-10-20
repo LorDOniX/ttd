@@ -38,7 +38,7 @@ export class Hud {
       return b;
     };
 
-    const rotate = button('🔄', 'Otočit pohled o 45° (pravé tlačítko opačně)', () => actions.rotateView(1));
+    const rotate = button('🔄', 'Otočit pohled o 90° (pravé tlačítko opačně)', () => actions.rotateView(1));
     rotate.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       actions.rotateView(-1);
