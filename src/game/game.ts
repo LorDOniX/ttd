@@ -26,6 +26,8 @@ type GameEvents = {
   trainsChanged: [];
   stationsChanged: [];
   treesChanged: [];
+  // Výdělek za přepravu a místo, kde vznikl
+  income: [number, number, number];
   outOfMoney: [];
 };
 

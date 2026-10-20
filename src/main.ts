@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import './style.css';
 import { START_YEAR, formatDate } from './game/clock';
-import { Game } from './game/game';
+import { Game, formatMoney } from './game/game';
 import { PENDING_LOAD_KEY, parseSave, restoreGame } from './game/save';
 import { BuildingsView } from './render/buildings';
 import { IsoCamera } from './render/camera';
 import { TileCursor } from './render/cursor';
-import { StationLabels, TownLabels } from './render/labels';
+import { FloatingTexts, StationLabels, TownLabels } from './render/labels';
 import { BuildPreview } from './render/preview';
 import { RailView } from './render/rail';
 import { RoadView } from './render/roads';
@@ -99,6 +99,10 @@ scene.add(labels.object);
 
 const stationLabels = new StationLabels();
 scene.add(stationLabels.object);
+
+const floatingTexts = new FloatingTexts();
+scene.add(floatingTexts.object);
+game.events.on('income', (amount, x, z) => floatingTexts.show(`+${formatMoney(amount)}`, x, z, 'income-label'));
 
 const cursor = new TileCursor();
 scene.add(cursor.object);
@@ -220,6 +224,7 @@ renderer.setAnimationLoop((now: number) => {
   game.update(now - lastFrame);
   lastFrame = now;
   trainsView.update();
+  floatingTexts.update(now);
   renderer.render(scene, isoCamera.camera);
   labels.render(scene, isoCamera.camera);
 });

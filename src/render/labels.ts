@@ -60,3 +60,36 @@ export class StationLabels {
     }
   }
 }
+
+const FLOAT_MS = 2500;
+const FLOAT_RISE = 1.5;
+
+// Krátce zobrazené texty ve scéně (např. výdělek nad nástupištěm), stoupají a mizí
+export class FloatingTexts {
+  readonly object = new THREE.Group();
+  private readonly items: { label: CSS2DObject; start: number; y: number }[] = [];
+
+  show(text: string, x: number, z: number, className: string): void {
+    const el = document.createElement('div');
+    el.className = className;
+    el.textContent = text;
+    const label = new CSS2DObject(el);
+    label.position.set(x, 1.2, z);
+    this.object.add(label);
+    this.items.push({ label, start: performance.now(), y: 1.2 });
+  }
+
+  update(now: number): void {
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const item = this.items[i];
+      const t = (now - item.start) / FLOAT_MS;
+      if (t >= 1) {
+        this.object.remove(item.label);
+        this.items.splice(i, 1);
+        continue;
+      }
+      item.label.position.y = item.y + t * FLOAT_RISE;
+      item.label.element.style.opacity = String(1 - t * t);
+    }
+  }
+}

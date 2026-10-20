@@ -58,6 +58,7 @@ export class Passengers {
       const days = game.clock.now - train.boardedAt;
       const income = fare(train.passengers, train.tiles, days);
       game.earn(income);
+      game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
       game.thisYear.passengers += train.passengers;
       train.income += income;
       game.news(
