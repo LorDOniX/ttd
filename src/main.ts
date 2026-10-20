@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import './style.css';
-import { START_YEAR } from './game/clock';
+import { START_YEAR, formatDate } from './game/clock';
 import { Game } from './game/game';
+import { PENDING_LOAD_KEY, parseSave, restoreGame } from './game/save';
 import { BuildingsView } from './render/buildings';
 import { IsoCamera } from './render/camera';
 import { TileCursor } from './render/cursor';
@@ -13,7 +14,7 @@ import { TerrainView } from './render/terrain';
 import { TrainsView } from './render/trains';
 import { BuildTools } from './ui/buildTools';
 import { openDepot } from './ui/depot';
-import { openFinance, openSettings, openTown } from './ui/dialogs';
+import { openFinance, openSaveLoad, openSettings, openTown } from './ui/dialogs';
 import { h } from './ui/dom';
 import { Hud } from './ui/hud';
 import { WindowManager } from './ui/windows';
@@ -23,11 +24,27 @@ import { hashSeed } from './world/rng';
 
 const MAP_SIZE = 256;
 
-// Seed z URL (?seed=...), jinak náhodný
-const seedText = new URLSearchParams(location.search).get('seed') ?? String(Date.now());
-const world = generateWorld(hashSeed(seedText), MAP_SIZE, START_YEAR);
+// Načtená hra čeká v sessionStorage po reloadu, jinak nová hra ze seedu z URL (?seed=...)
+function startGame(): { game: Game; seedText: string; loaded: boolean; error: string | null } {
+  const pending = sessionStorage.getItem(PENDING_LOAD_KEY);
+  sessionStorage.removeItem(PENDING_LOAD_KEY);
+  let error: string | null = null;
+  if (pending) {
+    try {
+      const data = parseSave(pending);
+      return { game: restoreGame(data), seedText: data.seedText, loaded: true, error };
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Hru se nepodařilo načíst.';
+    }
+  }
+  const seedText = new URLSearchParams(location.search).get('seed') ?? String(Date.now());
+  const game = new Game(generateWorld(hashSeed(seedText), MAP_SIZE, START_YEAR));
+  return { game, seedText, loaded: false, error };
+}
+
+const { game, seedText, loaded, error: loadError } = startGame();
+const { world } = game;
 const { map, towns } = world;
-const game = new Game(world);
 
 const container = document.getElementById('app')!;
 
@@ -94,6 +111,7 @@ const grid = {
   setVisible: (visible: boolean) => terrain.setGridVisible(visible),
 };
 new Hud(container, game, {
+  openSaveLoad: () => openSaveLoad(windows, game, seedText),
   openSettings: () => openSettings(windows, game, grid, seedText),
   openFinance: () => openFinance(windows, game),
   openRailBuild: () => buildTools.openRailWindow(),
@@ -129,7 +147,11 @@ game.events.on('outOfMoney', () => {
   );
 });
 
-game.news(`Vítejte v roce ${START_YEAR}! Začínáte s rozpočtem na stavbu železnice.`);
+rebuildStationLabels();
+
+if (loadError) game.news(`Načtení selhalo: ${loadError} Začíná nová hra.`);
+else if (loaded) game.news(`Hra načtena: ${formatDate(game.clock.date)}.`);
+else game.news(`Vítejte v roce ${START_YEAR}! Začínáte s rozpočtem na stavbu železnice.`);
 
 function tileAt(clientX: number, clientY: number): TilePos | null {
   const p = isoCamera.groundPoint(clientX, clientY);

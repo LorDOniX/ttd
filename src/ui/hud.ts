@@ -5,6 +5,7 @@ import { h } from './dom';
 const NEWS_VISIBLE_MS = 30_000;
 
 export interface ToolbarActions {
+  openSaveLoad: () => void;
   openSettings: () => void;
   openFinance: () => void;
   openRailBuild: () => void;
@@ -40,7 +41,7 @@ export class Hud {
       'div',
       { className: 'toolbar' },
       pause,
-      button('💾', 'Uložit / načíst hru (fáze 7)'),
+      button('💾', 'Uložit / načíst hru', actions.openSaveLoad),
       button('⚙️', 'Nastavení', actions.openSettings),
       button('💰', 'Finance', actions.openFinance),
       button('🚂', 'Stavba železnice', actions.openRailBuild),

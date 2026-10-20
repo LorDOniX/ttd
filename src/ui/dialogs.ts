@@ -1,4 +1,6 @@
+import { formatDate } from '../game/clock';
 import { Game, formatMoney } from '../game/game';
+import { PENDING_LOAD_KEY, parseSave, serializeGame } from '../game/save';
 import { trainModel } from '../game/trains';
 import type { Town } from '../world/town';
 import { h } from './dom';
@@ -113,6 +115,48 @@ export function openFinance(windows: WindowManager, game: Game): void {
   ];
   const options = { width: 460, onClose: () => unsubscribe.forEach((off) => off()) };
   windows.open('finance', 'Finance', render(), options);
+}
+
+export function openSaveLoad(windows: WindowManager, game: Game, seedText: string): void {
+  const status = h('div', { className: 'form__hint' });
+
+  const save = h('button', { className: 'tool-button' }, h('span', {}, 'Uložit hru'), h('small', {}, 'JSON'));
+  save.addEventListener('click', () => {
+    const json = JSON.stringify(serializeGame(game, seedText));
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    const a = h('a', { href: url, download: `ttd-${formatDate(game.clock.date).replace(/\.?\s+/g, '-')}.json` });
+    // Některé prohlížeče stáhnou jen odkaz vložený do dokumentu a s ještě platnou URL
+    document.body.append(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    status.textContent = 'Hra uložena.';
+  });
+
+  const input = h('input', { type: 'file', accept: '.json,application/json' });
+  input.style.display = 'none';
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      parseSave(text);
+      if (!window.confirm('Načíst uloženou hru? Neuložený postup se ztratí.')) return;
+      // Načtená hra se postaví po novém načtení stránky, aby nezůstal starý stav scény
+      sessionStorage.setItem(PENDING_LOAD_KEY, text);
+      location.reload();
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : 'Hru se nepodařilo načíst.';
+    } finally {
+      input.value = '';
+    }
+  });
+  const load = h('button', { className: 'tool-button' }, h('span', {}, 'Načíst hru'), h('small', {}, 'JSON'));
+  load.addEventListener('click', () => input.click());
+
+  windows.open('save-load', 'Uložit / načíst', h('div', { className: 'form' }, save, load, input, status), {
+    width: 260,
+  });
 }
 
 export function openTown(windows: WindowManager, game: Game, town: Town): void {
