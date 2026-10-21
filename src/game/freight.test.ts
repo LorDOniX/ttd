@@ -114,7 +114,7 @@ describe('výrobní řetězce', () => {
     // Zboží vykupuje jen nástupiště s dostatkem městské zástavby v dosahu
     expect(game.freight.accepted(a)).toEqual([]);
     for (let x = 6; x < 6 + TOWN_ACCEPTS_MIN_BUILDINGS - 1; x++) addBuilding(game, townA, x, 14);
-    expect(game.freight.accepted(a)).toEqual(['goods']);
+    expect(game.freight.accepted(a)).toEqual(['mail', 'goods']);
     const train = buyTrain(game, depot, 2);
     game.fleet.setCargo(train, 'goods');
     game.fleet.start(train, [b.id, a.id]);
@@ -123,6 +123,20 @@ describe('výrobní řetězce', () => {
     expect(sawmill.production).toBe(90);
     for (let i = 0; i < 200 && game.thisYear.freight.goods === 0; i++) runDays(game, 1);
     expect(game.thisYear.freight.goods).toBeGreaterThan(0);
+  });
+
+  it('pošta vzniká ve městě u nástupiště s poštovním vlakem a vykoupí ji jiné město', () => {
+    const { game, a, b, depot, townB } = buildLine();
+    for (let x = 36; x < 36 + TOWN_ACCEPTS_MIN_BUILDINGS; x++) addBuilding(game, townB, x, 24);
+    runDays(game, 10);
+    expect(a.freight.mail).toBe(0);
+    const train = buyTrain(game, depot, 1);
+    game.fleet.setCargo(train, 'mail');
+    game.fleet.start(train, [a.id, b.id]);
+    // Město o 3 000 obyvatelích pošle čtvrtinu ze 180 cestujících měsíčně
+    expect(game.freight.monthlyMail(a)).toBeCloseTo(45);
+    for (let i = 0; i < 400 && game.thisYear.freight.mail === 0; i++) runDays(game, 1);
+    expect(game.thisYear.freight.mail).toBeGreaterThan(0);
   });
 });
 

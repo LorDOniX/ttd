@@ -1,4 +1,4 @@
-import { FREIGHT_MAX_WAITING_MONTHS, TOWN_ACCEPTS_MIN_BUILDINGS, WAGON_CAPACITY } from './balance';
+import { FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDINGS, WAGON_CAPACITY } from './balance';
 import { CARGOS, FREIGHT_TYPES, TOWN_ACCEPTS, type FreightType } from './cargo';
 import { formatMoney, type Game } from './game';
 import { catchmentArea, fare, type Area } from './passengers';
@@ -59,10 +59,14 @@ export class Freight {
   }
 
   // Náklad se na nástupiště sváží, jen když ho tam odváží některý vlak s vagony na tento náklad
+  private servedBy(type: FreightType): Set<number> {
+    return new Set(this.game.fleet.trains.filter((t) => t.cargo === type).flatMap((t) => t.orders ?? []));
+  }
+
   pickupStations(industry: Industry): Station[] {
     const type = INDUSTRY_TYPES[industry.kind].produces;
     if (!type) return [];
-    const served = new Set(this.game.fleet.trains.filter((t) => t.cargo === type).flatMap((t) => t.orders ?? []));
+    const served = this.servedBy(type);
     return this.game.world.rail.stations.filter(
       (s) => served.has(s.id) && this.industriesInReach(s).includes(industry),
     );
@@ -131,6 +135,23 @@ export class Freight {
         station.freight[type] += added;
         industry.transported += added;
       }
+    }
+    this.produceMail();
+  }
+
+  // Měsíční pošta z měst v dosahu nástupiště, dělená stejně jako cestující
+  monthlyMail(station: Station): number {
+    return this.game.passengers.monthlyPassengers(station) * MAIL_PER_PASSENGER;
+  }
+
+  private produceMail(): void {
+    const served = this.servedBy('mail');
+    for (const station of this.game.world.rail.stations) {
+      if (!served.has(station.id)) continue;
+      const monthly = this.monthlyMail(station);
+      const amount = (monthly / DAYS_PER_MONTH) * inflowFactor(station.rating);
+      const max = monthly * FREIGHT_MAX_WAITING_MONTHS;
+      station.freight.mail += Math.max(0, Math.min(amount, max - station.freight.mail));
     }
   }
 }

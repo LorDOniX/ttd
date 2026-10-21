@@ -95,6 +95,7 @@ export class GameView {
         const accepted = game.freight.accepted(s);
         const parts = [s.name];
         if (towns) parts.push(`čeká ${Math.floor(s.waiting)}`);
+        if (s.freight.mail >= 1) parts.push(`pošta ${Math.floor(s.freight.mail)} t`);
         for (const type of produced) parts.push(`${CARGOS[type].noun} ${Math.floor(s.freight[type])} t`);
         if (accepted.length > 0) parts.push(`výkup ${accepted.map((t) => CARGOS[t].genitive).join(', ')}`);
         const served = towns || produced.length > 0 || accepted.length > 0;

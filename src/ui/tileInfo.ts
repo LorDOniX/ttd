@@ -93,6 +93,9 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
         ['Název', station.name],
         ['Rozměr', `${station.tracks}×${station.length}`],
         ['Čeká cestujících', String(Math.floor(station.waiting))],
+        ...(game.passengers.townsInReach(station).length > 0
+          ? [['Pošta k odvozu', `${Math.floor(station.freight.mail)} t`] as [string, string]]
+          : []),
         ...game.freight
           .produced(station)
           .map((t): [string, string] => [`K odvozu (${CARGOS[t].noun})`, `${Math.floor(station.freight[t])} t`]),

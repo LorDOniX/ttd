@@ -124,6 +124,13 @@ export const GOODS_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
   { maxDays: 50, rate: 11 },
   { maxDays: Infinity, rate: 5 },
 ];
+// Pošta: město jí pošle čtvrtinu tolik tun, kolik vypraví cestujících; platí dobře, ale jen když je rychlá
+export const MAIL_PER_PASSENGER = 0.25;
+export const MAIL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
+  { maxDays: 20, rate: 14 },
+  { maxDays: 45, rate: 8 },
+  { maxDays: Infinity, rate: 3 },
+];
 
 // Živý průmysl: měsíční šance na změnu výroby těžebního závodu; dobře obsloužený spíš roste
 export const INDUSTRY_CHANGE_CHANCE = 0.04;
