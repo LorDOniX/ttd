@@ -1,0 +1,4 @@
+- postaveni jednoho dilku koleji nejde
+- max počet vagonku zavislych od delky nastupiste - nebo neomezovat a jak řešit delší vlak jak nástupiště?
+- zmensit pocatecni mesta - ty menší dáme 250-750; města necháme 1000-2000
+- nahledova fotka pro pozdejsi rok, at je mesto velke, třeba 2025
