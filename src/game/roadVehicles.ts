@@ -18,6 +18,8 @@ const DAYS_PER_YEAR = 365.25;
 const LOST_RETRY_DAYS = 5;
 // Auto čekající na plné naložení zkouší doložit jednou denně
 const FULL_LOAD_CHECK_DAYS = 1;
+// Před zavřenou závorou auto zastaví tak, aby do ní nenarazilo (polovina délky auta)
+const CROSSING_GAP = 0.2;
 
 export type RoadVehicleState = 'depot' | 'running' | 'loading' | 'lost';
 
@@ -299,18 +301,20 @@ export class RoadFleet {
     const { reservations } = this.game.fleet;
     const end = vehicle.path.length - 1;
     let pos = Math.min(end, vehicle.pos + roadVehicleModel(vehicle).speed * days);
-    // Vjezd na dlaždici k nastává v polovině cesty mezi středy (k − 0,5)
-    for (let k = Math.floor(vehicle.pos + 0.5) + 1; k <= end && k - 0.5 <= pos; k++) {
+    // Vjezd na dlaždici k nastává v polovině cesty mezi středy (k − 0,5); před přejezdem už o CROSSING_GAP dřív
+    for (let k = Math.floor(vehicle.pos + 0.5) + 1; k <= end && k - 0.5 - CROSSING_GAP <= pos; k++) {
       const from = vehicle.path[k - 1];
       const to = vehicle.path[k];
+      // Před zavřenou závorou auto stojí; kdo už k ní dojel před zavřením, projede
+      const closed = map.get(to.x, to.y) === TileType.Crossing && reservations.ownerAt(to.x, to.y) !== undefined;
+      if (closed && vehicle.pos <= k - 0.5 - CROSSING_GAP) {
+        pos = k - 0.5 - CROSSING_GAP;
+        break;
+      }
+      if (k - 0.5 > pos) break;
       if (!roadMoves(this.game.world.rail, from.x, from.y).some((t) => t.x === to.x && t.y === to.y)) {
         this.replan(vehicle);
         return;
-      }
-      // Na přejezd rezervovaný vlakem auto nevjede
-      if (map.get(to.x, to.y) === TileType.Crossing && reservations.ownerAt(to.x, to.y) !== undefined) {
-        pos = k - 0.5 - 0.01;
-        break;
       }
       vehicle.tiles++;
     }

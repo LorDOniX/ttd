@@ -4,7 +4,7 @@ import type { Game } from './game';
 import { parseSave, restoreGame, serializeGame } from './save';
 import { addBuilding, addIndustry, emptyGame, makeTown, runDays } from '../test/fixtures';
 import { TileType } from '../world/map';
-import { Edge, type Depot, type Station } from '../world/rail';
+import { Edge, axisPiece, type Depot, type Station } from '../world/rail';
 import { roadMoves } from '../world/roadRoute';
 
 const model = (id: string) => ROAD_VEHICLE_MODELS.find((m) => m.id === id)!;
@@ -136,5 +136,25 @@ describe('silniční vozidla', () => {
     expect(restored.world.rail.stations.every((s) => s.kind === 'road')).toBe(true);
     runDays(restored, 40);
     expect(restored.roadFleet.vehicles[0].income).toBeGreaterThan(0);
+  });
+
+  it('před přejezdem se zavřenou závorou auto stojí, po otevření pokračuje', () => {
+    const { game, a, b, depot } = buildRoadLine();
+    game.world.rail.addPiece(20, 10, axisPiece('y'));
+    expect(game.world.map.get(20, 10)).toBe(TileType.Crossing);
+    const { reservations } = game.fleet;
+    let closed = true;
+    const ownerAt = reservations.ownerAt.bind(reservations);
+    reservations.ownerAt = (x, y) => (closed && x === 20 && y === 10 ? 99 : ownerAt(x, y));
+    game.roadFleet.buy(depot, model('bus-regal'));
+    const bus = game.roadFleet.vehicles[0];
+    game.roadFleet.start(bus, [a.id, b.id]);
+    runDays(game, 15);
+    const tile = game.roadFleet.tileOf(bus)!;
+    expect(tile).toEqual({ x: 19, y: 10 });
+    expect(bus.state).toBe('running');
+    closed = false;
+    runDays(game, 3);
+    expect(game.roadFleet.tileOf(bus)!.x).toBeGreaterThan(20);
   });
 });
