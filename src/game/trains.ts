@@ -232,6 +232,8 @@ export class Fleet {
   removeWagon(train: Train): void {
     if (train.state !== 'depot' || train.wagons === 0) return;
     train.wagons--;
+    // Náklad z odpojeného vagonu propadne
+    train.passengers = Math.min(train.passengers, train.wagons * WAGON_CAPACITY);
     this.game.refund(Math.round(WAGON_PRICE * sellFactor(trainAge(train, this.game.clock.day))), 'vehicles');
     this.changed();
   }
@@ -308,9 +310,10 @@ export class Fleet {
     return null;
   }
 
-  // Změna druhu nákladu jen v depu, kde je vlak prázdný
+  // Změna druhu nákladu jen v depu; dosavadní náklad propadne
   setCargo(train: Train, cargo: Cargo): string | null {
     if (train.state !== 'depot') return 'Druh nákladu lze změnit jen v depu.';
+    if (cargo !== train.cargo) train.passengers = 0;
     train.cargo = cargo;
     this.changed();
     return null;
@@ -488,9 +491,9 @@ export class Fleet {
       train.state = 'depot';
       train.path = [];
       this.reservations.release(train);
-      // Cestující v depu vystoupí bez zaplacení
-      train.passengers = 0;
-      this.game.news(`${train.name} dorazil do depa.`);
+      // Náklad zůstává ve vlaku a po výjezdu ho vlak vyloží na další zastávce
+      const load = train.passengers > 0 ? ` s nákladem ${formatLoad(train)}` : '';
+      this.game.news(`${train.name} dorazil do depa${load}.`);
       if (train.renewing) this.finishRenewal(train);
     } else {
       train.state = 'loading';

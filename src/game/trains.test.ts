@@ -83,6 +83,25 @@ describe('vlaky', () => {
     expect(game.money - before).toBe(price);
     expect(game.fleet.trains).toHaveLength(0);
   });
+
+  it('náklad zůstane ve vlaku v depu a po výjezdu se vyloží', () => {
+    const { game, a, b, depot } = buildLine();
+    const train = buyTrain(game, depot, 2);
+    game.fleet.start(train, [a.id, b.id]);
+    a.waiting = 40;
+    for (let i = 0; i < 20_000 && train.passengers === 0; i++) game.update(200);
+    const load = train.passengers;
+    expect(load).toBeGreaterThan(30);
+    game.fleet.sendToDepot(train);
+    for (let i = 0; i < 20_000 && train.state !== 'depot'; i++) game.update(200);
+    expect(train.passengers).toBe(load);
+    game.fleet.removeWagon(train);
+    expect(train.passengers).toBe(30);
+
+    expect(game.fleet.start(train, [b.id, a.id])).toBeNull();
+    for (let i = 0; i < 20_000 && game.thisYear.passengers === 0; i++) game.update(200);
+    expect(game.thisYear.passengers).toBe(30);
+  });
 });
 
 describe('stárnutí vlaků', () => {
