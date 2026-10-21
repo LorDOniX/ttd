@@ -5,7 +5,7 @@ import { catchmentArea, fare, type Area } from './passengers';
 import { inflowFactor } from './rating';
 import { trainModel, wagonsAtStation, type Train } from './trains';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
-import type { Station } from '../world/rail';
+import type { Station, StationShape } from '../world/rail';
 
 const DAYS_PER_MONTH = 30;
 
@@ -35,21 +35,26 @@ export class Freight {
     });
   }
 
-  industriesInReach(station: Station): Industry[] {
+  industriesInReach(station: StationShape): Industry[] {
     const area = catchmentArea(station);
     return this.game.world.industries.filter((i) => overlaps(area, i));
   }
 
   // Druhy nákladu, které závody v dosahu nástupiště vyrábějí
-  produced(station: Station): FreightType[] {
+  produced(station: StationShape): FreightType[] {
     const types = this.industriesInReach(station).map((i) => INDUSTRY_TYPES[i.kind].produces);
     return FREIGHT_TYPES.filter((type) => types.includes(type));
   }
 
   // Druhy nákladu, které nástupiště vykupuje díky závodům a městům v dosahu
   accepted(station: Station): FreightType[] {
-    const types = this.industriesInReach(station).flatMap((i) => INDUSTRY_TYPES[i.kind].accepts);
-    if (this.game.passengers.buildingsInReach(station) >= TOWN_ACCEPTS_MIN_BUILDINGS) types.push(...TOWN_ACCEPTS);
+    return this.acceptedIn(station, this.game.passengers.buildingsInReach(station));
+  }
+
+  // Tototéž pro tvar nástupiště se zadaným počtem městských budov v dosahu (náhled stavby)
+  acceptedIn(shape: StationShape, townBuildings: number): FreightType[] {
+    const types = this.industriesInReach(shape).flatMap((i) => INDUSTRY_TYPES[i.kind].accepts);
+    if (townBuildings >= TOWN_ACCEPTS_MIN_BUILDINGS) types.push(...TOWN_ACCEPTS);
     return FREIGHT_TYPES.filter((type) => types.includes(type));
   }
 

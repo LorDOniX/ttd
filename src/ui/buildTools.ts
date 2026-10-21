@@ -9,6 +9,7 @@ import {
   SIGNAL_COST,
   TRACK_PIECE_COST,
 } from '../game/balance';
+import { CARGOS } from '../game/cargo';
 import { stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
 import { catchmentArea } from '../game/passengers';
@@ -264,6 +265,18 @@ export class BuildTools {
     if (error) this.game.news(error);
   }
 
+  // Co bude nové nástupiště obsluhovat: díl měst, náklad k odvozu a výkup
+  private reachText(shape: StationShape): string {
+    const { passengers, freight } = this.game;
+    const { shares, buildings } = passengers.coverage(shape);
+    const parts = [...shares].map(([town, share]) => `${town.name} ${Math.round(share * 100)} %`);
+    const produced = freight.produced(shape);
+    if (produced.length > 0) parts.push(produced.map((t) => CARGOS[t].noun).join(', '));
+    const accepted = freight.acceptedIn(shape, buildings);
+    if (accepted.length > 0) parts.push(`výkup ${accepted.map((t) => CARGOS[t].genitive).join(', ')}`);
+    return parts.length > 0 ? parts.join(' · ') : 'mimo dosah města a průmyslu';
+  }
+
   private showCatchment(shape: StationShape): void {
     const { map } = this.game.world;
     const { x0, y0, x1, y1 } = catchmentArea(shape);
@@ -315,7 +328,7 @@ export class BuildTools {
         this.preview.showStation(shape, ok && this.game.money >= cost);
         this.showCatchment(shape);
         text = ok
-          ? `Nástupiště ${shape.tracks}×${shape.length} · ${formatMoney(cost)}`
+          ? `Nástupiště ${shape.tracks}×${shape.length} · ${formatMoney(cost)} · ${this.reachText(shape)}`
           : 'Sem nástupiště postavit nelze';
       }
     } else if (this.tool === 'depot' && tile) {

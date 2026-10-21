@@ -72,6 +72,23 @@ export class Passengers {
     return this.buildings.get(station.id) ?? 0;
   }
 
+  // Města v dosahu místa pro nové nástupiště: podíl zastávky (bez dělení s ostatními nástupišti) a počet budov
+  coverage(shape: StationShape): { shares: Map<Town, number>; buildings: number } {
+    const { map, towns } = this.game.world;
+    const area = catchmentArea(shape);
+    const shares = new Map<Town, number>();
+    let buildings = 0;
+    for (const town of towns) {
+      const capacity = townCapacity(town);
+      for (const b of town.buildings) {
+        if (!inArea(area, b.x, b.y) || !map.isType(b.x, b.y, TileType.Building)) continue;
+        shares.set(town, (shares.get(town) ?? 0) + buildingCapacity(b.model) / capacity);
+        buildings++;
+      }
+    }
+    return { shares, buildings };
+  }
+
   private refreshReach(): void {
     const { map } = this.game.world;
     if (this.reachVersion === map.changeCursor) return;

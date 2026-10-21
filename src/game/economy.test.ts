@@ -40,6 +40,16 @@ describe('cestující', () => {
     expect(game.passengers.monthlyPassengers(a)).toBeCloseTo(45);
   });
 
+  it('náhled nepostaveného nástupiště spočítá díl města a budovy v dosahu', () => {
+    const town = makeTown(0, 20, 20, 1500);
+    const game = emptyGame(64, [town]);
+    addBuilding(game, town, 20, 22);
+    addBuilding(game, town, 40, 40);
+    const { shares, buildings } = game.passengers.coverage(defaultStationShape(20, 20, 'x'));
+    expect(shares.get(town)).toBeCloseTo(0.5);
+    expect(buildings).toBe(1);
+  });
+
   it('dosah sahá 4 dlaždice od okraje nástupiště', () => {
     const area = catchmentArea(defaultStationShape(20, 20, 'x'));
     expect(area).toEqual({ x0: 15, x1: 25, y0: 16, y1: 24 });
