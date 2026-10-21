@@ -86,11 +86,17 @@ export class Construction {
     const nearest = [...towns].sort(
       (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
     )[0];
-    const sameTown = rail.stations.filter((s) => s.townId === nearest.id).length;
-    const name = sameTown === 0 ? nearest.name : `${nearest.name} ${sameTown + 1}`;
+    // Jméno podle města s největším dílem v dosahu, jinak podle závodu v dosahu, nakonec nejbližšího města
+    const covered = [...this.game.passengers.coverage(shape).shares].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const industry = this.game.freight.industriesInReach(shape)[0];
+    const town = covered ?? nearest;
+    const base = covered ? covered.name : (industry?.name ?? nearest.name);
+    const taken = new Set(rail.stations.map((s) => s.name));
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
 
     this.game.spend(cost, 'construction');
-    rail.addStation({ ...shape, name, townId: nearest.id });
+    rail.addStation({ ...shape, name, townId: town.id });
     this.game.news(`Postaveno nástupiště ${name}.`);
     this.game.events.emit('railChanged');
     return null;

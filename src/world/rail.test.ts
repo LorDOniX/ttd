@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEMOLISH_REFUND, PLATFORM_TILE_COST } from '../game/balance';
-import { emptyGame, makeTown } from '../test/fixtures';
+import { addBuilding, addIndustry, emptyGame, makeTown } from '../test/fixtures';
 import { TileType } from './map';
 import { stationTiles, type StationShape } from './rail';
 
@@ -32,5 +32,22 @@ describe('nástupiště', () => {
     const game = emptyGame(64, [makeTown(0, 30, 30)]);
     game.world.map.set(13, 10, TileType.Water);
     expect(game.construction.buildStation({ x: 12, y: 10, axis: 'x', length: 3, tracks: 1 })).toMatch(/nelze/);
+  });
+
+  it('jméno dostane podle města v dosahu, jinak podle závodu, jinak nejbližšího města', () => {
+    const near = makeTown(0, 30, 30);
+    const far = makeTown(1, 50, 50);
+    const game = emptyGame(64, [near, far]);
+    addBuilding(game, far, 50, 52);
+    const mine = addIndustry(game, 'coal-mine', 5, 5);
+    mine.name = 'Uhelný důl Test';
+    const build = (x: number, y: number): string => {
+      expect(game.construction.buildStation({ x, y, axis: 'x', length: 3, tracks: 1 })).toBeNull();
+      return game.world.rail.stations.at(-1)!.name;
+    };
+    expect(build(50, 50)).toBe(far.name);
+    expect(build(50, 54)).toBe(`${far.name} 2`);
+    expect(build(10, 6)).toBe('Uhelný důl Test');
+    expect(build(20, 30)).toBe(near.name);
   });
 });
