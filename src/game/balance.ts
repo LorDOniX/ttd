@@ -80,42 +80,43 @@ export const STATION_CATCHMENT_RADIUS = 4;
 
 // Nákladní doprava: na nástupišti se drží nejvýš těžba za tolik měsíců
 export const FREIGHT_MAX_WAITING_MONTHS = 3;
-// Uhlí: těžba dolu za měsíc a sazba za tunu a dlaždici – pomalejší pokles než u cestujících
+// Sazby za tunu a dlaždici v poměru k cestujícím jako v OpenTTD: náklad jede jen jedním směrem a závod
+// vyrobí méně, než město vypraví cestujících, proto platí skoro dvojnásobek; suroviny zlevňují pomalu
 export const COAL_PRODUCTION = { min: 60, max: 150 } as const;
 export const COAL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
-  { maxDays: 45, rate: 8 },
-  { maxDays: 90, rate: 5 },
-  { maxDays: Infinity, rate: 3 },
+  { maxDays: 60, rate: 18 },
+  { maxDays: 120, rate: 12 },
+  { maxDays: Infinity, rate: 7 },
 ];
 // Další suroviny; zpracovatelské závody vyrábějí tolik, kolik jim minulý měsíc dovezli
 export const WOOD_PRODUCTION = { min: 50, max: 130 } as const;
 export const OIL_PRODUCTION = { min: 50, max: 130 } as const;
 export const IRON_ORE_PRODUCTION = { min: 60, max: 150 } as const;
 export const WOOD_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
-  { maxDays: 40, rate: 7 },
-  { maxDays: 80, rate: 4 },
-  { maxDays: Infinity, rate: 2 },
+  { maxDays: 50, rate: 15 },
+  { maxDays: 100, rate: 10 },
+  { maxDays: Infinity, rate: 6 },
 ];
 export const OIL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
-  { maxDays: 40, rate: 8 },
-  { maxDays: 80, rate: 5 },
-  { maxDays: Infinity, rate: 3 },
+  { maxDays: 45, rate: 14 },
+  { maxDays: 90, rate: 9 },
+  { maxDays: Infinity, rate: 5 },
 ];
 export const IRON_ORE_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
-  { maxDays: 45, rate: 7 },
-  { maxDays: 90, rate: 5 },
-  { maxDays: Infinity, rate: 3 },
+  { maxDays: 60, rate: 16 },
+  { maxDays: 120, rate: 11 },
+  { maxDays: Infinity, rate: 6 },
 ];
 export const STEEL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
-  { maxDays: 35, rate: 10 },
-  { maxDays: 70, rate: 6 },
-  { maxDays: Infinity, rate: 3 },
+  { maxDays: 45, rate: 17 },
+  { maxDays: 90, rate: 11 },
+  { maxDays: Infinity, rate: 6 },
 ];
 // Zboží vynáší nejvíc, ale rychle ztrácí cenu
 export const GOODS_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
-  { maxDays: 25, rate: 12 },
-  { maxDays: 50, rate: 7 },
-  { maxDays: Infinity, rate: 3 },
+  { maxDays: 25, rate: 19 },
+  { maxDays: 50, rate: 11 },
+  { maxDays: Infinity, rate: 5 },
 ];
 
 // Živý průmysl: měsíční šance na změnu výroby těžebního závodu; dobře obsloužený spíš roste
