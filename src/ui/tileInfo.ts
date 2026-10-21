@@ -1,4 +1,4 @@
-import { MAINTENANCE_RATE } from '../game/balance';
+import { MAINTENANCE_RATE, TOWN_ACCEPTS_MIN_BUILDINGS } from '../game/balance';
 import { CARGOS } from '../game/cargo';
 import { stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
@@ -105,6 +105,10 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
         ],
         ['Příliv za měsíc', String(Math.round(game.passengers.inflow(station)))],
         ['Města v dosahu', reach.length > 0 ? reach.join(', ') : 'žádná'],
+        [
+          'Budovy v dosahu',
+          `${game.passengers.buildingsInReach(station)} (zboží vykupuje od ${TOWN_ACCEPTS_MIN_BUILDINGS})`,
+        ],
         ['Průmysl v dosahu', industries.length > 0 ? industries.join(', ') : 'žádný'],
         ['Obsluhují vlaky', served.length > 0 ? served.join(', ') : 'žádné'],
         ['Údržba', monthly(stationCost(station))],

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { addIndustry, buildLine, buyTrain, runDays } from '../test/fixtures';
+import { addBuilding, addIndustry, buildLine, buyTrain, runDays } from '../test/fixtures';
+import { TOWN_ACCEPTS_MIN_BUILDINGS } from './balance';
 
 // Linka A – B s dolem v dosahu A a elektrárnou v dosahu B
 function coalLine(withPlant = true) {
@@ -96,7 +97,7 @@ describe('výrobní řetězce', () => {
   it('dovezené dřevo dostane pila v dosahu nástupiště', () => {
     const { game, a, b, depot } = buildLine();
     const sawmill = addIndustry(game, 'sawmill', 43, 16);
-    expect(game.freight.accepted(b)).toEqual(['wood', 'goods']);
+    expect(game.freight.accepted(b)).toEqual(['wood']);
     const train = buyTrain(game, depot, 2);
     game.fleet.setCargo(train, 'wood');
     game.fleet.start(train, [a.id, b.id]);
@@ -107,10 +108,12 @@ describe('výrobní řetězce', () => {
   });
 
   it('pila vyrobí z minulého měsíce zboží a město ho vykoupí', () => {
-    const { game, a, b, depot } = buildLine();
+    const { game, a, b, depot, townA } = buildLine();
     const sawmill = addIndustry(game, 'sawmill', 43, 16);
     sawmill.received = 90;
-    // Zboží vykupuje každé nástupiště s městem v dosahu
+    // Zboží vykupuje jen nástupiště s dostatkem městské zástavby v dosahu
+    expect(game.freight.accepted(a)).toEqual([]);
+    for (let x = 6; x < 6 + TOWN_ACCEPTS_MIN_BUILDINGS - 1; x++) addBuilding(game, townA, x, 14);
     expect(game.freight.accepted(a)).toEqual(['goods']);
     const train = buyTrain(game, depot, 2);
     game.fleet.setCargo(train, 'goods');

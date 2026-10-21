@@ -1,4 +1,4 @@
-import { FREIGHT_MAX_WAITING_MONTHS, WAGON_CAPACITY } from './balance';
+import { FREIGHT_MAX_WAITING_MONTHS, TOWN_ACCEPTS_MIN_BUILDINGS, WAGON_CAPACITY } from './balance';
 import { CARGOS, FREIGHT_TYPES, TOWN_ACCEPTS, type FreightType } from './cargo';
 import { formatMoney, type Game } from './game';
 import { catchmentArea, fare, type Area } from './passengers';
@@ -49,7 +49,7 @@ export class Freight {
   // Druhy nákladu, které nástupiště vykupuje díky závodům a městům v dosahu
   accepted(station: Station): FreightType[] {
     const types = this.industriesInReach(station).flatMap((i) => INDUSTRY_TYPES[i.kind].accepts);
-    if (this.game.passengers.townsInReach(station).length > 0) types.push(...TOWN_ACCEPTS);
+    if (this.game.passengers.buildingsInReach(station) >= TOWN_ACCEPTS_MIN_BUILDINGS) types.push(...TOWN_ACCEPTS);
     return FREIGHT_TYPES.filter((type) => types.includes(type));
   }
 

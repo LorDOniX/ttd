@@ -46,7 +46,8 @@ export function fare(amount: number, tiles: number, days: number, tiers = FARE_T
 export class Passengers {
   // Dávka města pro každé nástupiště: podíl kapacity budov v dosahu, sdílené budovy dělené mezi nástupiště;
   // mění se jen se změnou mapy (stavba, budovy), proto platí do další změny
-  private shares = new Map<number, Map<Town, number>>();
+  private readonly shares = new Map<number, Map<Town, number>>();
+  private readonly buildings = new Map<number, number>();
   private reachVersion = -1;
 
   constructor(private readonly game: Game) {
@@ -58,17 +59,26 @@ export class Passengers {
     return [...this.townShares(station).keys()];
   }
 
-  // Kolik z města (0–1) připadá na nástupiště
+  // Kolik dílů města (0–1) připadá na nástupiště
   townShares(station: Station): Map<Town, number> {
-    const { map } = this.game.world;
-    if (this.reachVersion !== map.changeCursor) {
-      this.shares = this.computeShares();
-      this.reachVersion = map.changeCursor;
-    }
+    this.refreshReach();
     return this.shares.get(station.id) ?? new Map();
   }
 
-  private computeShares(): Map<number, Map<Town, number>> {
+  // Počet budov měst v dosahu nástupiště
+  buildingsInReach(station: Station): number {
+    this.refreshReach();
+    return this.buildings.get(station.id) ?? 0;
+  }
+
+  private refreshReach(): void {
+    const { map } = this.game.world;
+    if (this.reachVersion === map.changeCursor) return;
+    this.computeReach();
+    this.reachVersion = map.changeCursor;
+  }
+
+  private computeReach(): void {
     const { map, towns, rail } = this.game.world;
     const weights = new Map<number, { town: Town; weight: number }>();
     for (const town of towns) {
@@ -91,16 +101,17 @@ export class Passengers {
     const stationsAt = new Map<number, number>();
     for (const tiles of covered) for (const t of tiles) stationsAt.set(t, (stationsAt.get(t) ?? 0) + 1);
 
-    const result = new Map<number, Map<Town, number>>();
+    this.shares.clear();
+    this.buildings.clear();
     rail.stations.forEach((station, i) => {
       const shares = new Map<Town, number>();
       for (const t of covered[i]) {
         const { town, weight } = weights.get(t)!;
         shares.set(town, (shares.get(town) ?? 0) + weight / stationsAt.get(t)!);
       }
-      result.set(station.id, shares);
+      this.shares.set(station.id, shares);
+      this.buildings.set(station.id, covered[i].length);
     });
-    return result;
   }
 
   // Měsíční příliv cestujících na nástupiště z části města v dosahu

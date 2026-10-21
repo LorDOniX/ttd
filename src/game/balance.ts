@@ -80,6 +80,8 @@ export const STATION_CATCHMENT_RADIUS = 4;
 
 // Nákladní doprava: na nástupišti se drží nejvýš těžba za tolik měsíců
 export const FREIGHT_MAX_WAITING_MONTHS = 3;
+// Zboží vykupuje nástupiště s aspoň tolika budovami města v dosahu (centrum, ne okraj)
+export const TOWN_ACCEPTS_MIN_BUILDINGS = 8;
 // Sazby za tunu a dlaždici v poměru k cestujícím jako v OpenTTD: náklad jede jen jedním směrem a závod
 // vyrobí méně, než město vypraví cestujících, proto platí skoro dvojnásobek; suroviny zlevňují pomalu
 export const COAL_PRODUCTION = { min: 60, max: 150 } as const;
