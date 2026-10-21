@@ -176,6 +176,12 @@ export const TOWN_POPULATION = {
 // Město bez obsluhy skoro neroste; růst táhne hlavně doprava
 export const TOWN_GROWTH_BASE = 0.005;
 export const TOWN_GROWTH_SERVED = 0.05;
+// Akce ve městě: reklama zvedne hodnocení stanic v dosahu, financovaná výstavba přidá rok růstu obsluhovaného města
+export const AD_CAMPAIGN_COST = 60_000;
+export const AD_RATING_BOOST = 0.2;
+export const FUND_BUILDINGS_BASE = 100_000;
+export const FUND_BUILDINGS_PER_RESIDENT = 50;
+export const FUND_GROWTH = TOWN_GROWTH_SERVED;
 export const BUILDING_CAPACITY = { house: 12, low: 25, office: 40, skyscraper: 150 } as const;
 export const SKYSCRAPER_YEAR = 2010;
 // Pravděpodobnost, že se budova v centru během roku přestaví na mrakodrap

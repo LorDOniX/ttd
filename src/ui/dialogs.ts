@@ -1,6 +1,8 @@
+import { AD_CAMPAIGN_COST, AD_RATING_BOOST } from '../game/balance';
 import { formatDate } from '../game/clock';
-import { Game } from '../game/game';
+import { Game, formatMoney } from '../game/game';
 import { parseSave, serializeGame } from '../game/save';
+import { advertise, fundBuildings, fundBuildingsCost } from '../game/townActions';
 import type { Town, TownKind } from '../world/town';
 import { h } from './dom';
 import { loadTheme, saveTheme, type Theme } from './theme';
@@ -148,18 +150,44 @@ export function openTown(
   focus: (x: number, z: number) => void,
 ): void {
   const id = `town-${town.id}`;
+  const action = (label: string, run: () => string | null): HTMLButtonElement => {
+    const b = h('button', { className: 'small-button', textContent: label });
+    b.addEventListener('click', () => {
+      const error = run();
+      if (error) game.news(error);
+      if (windows.isOpen(id)) windows.update(id, render());
+    });
+    return b;
+  };
   const render = (): HTMLElement =>
     h(
-      'table',
-      { className: 'table' },
-      h('tr', {}, h('td', {}, 'Typ'), h('td', {}, KIND_LABELS[town.kind])),
-      h('tr', {}, h('td', {}, 'Obyvatel'), h('td', { className: 'num' }, town.population.toLocaleString('cs-CZ'))),
-      h('tr', {}, h('td', {}, 'Budov'), h('td', { className: 'num' }, String(town.buildings.length))),
+      'div',
+      { className: 'form' },
+      h(
+        'table',
+        { className: 'table' },
+        h('tr', {}, h('td', {}, 'Typ'), h('td', {}, KIND_LABELS[town.kind])),
+        h('tr', {}, h('td', {}, 'Obyvatel'), h('td', { className: 'num' }, town.population.toLocaleString('cs-CZ'))),
+        h('tr', {}, h('td', {}, 'Budov'), h('td', { className: 'num' }, String(town.buildings.length))),
+        h('tr', {}, h('td', {}, 'Obsluhované'), h('td', { className: 'num' }, town.served ? 'ano' : 'ne')),
+      ),
+      h(
+        'div',
+        { className: 'train__actions' },
+        action(`Reklama (${formatMoney(AD_CAMPAIGN_COST)})`, () => advertise(game, town)),
+        action(`Financovat výstavbu (${formatMoney(fundBuildingsCost(town))})`, () => fundBuildings(game, town)),
+      ),
+      h(
+        'div',
+        { className: 'form__hint' },
+        `Reklama zvedne hodnocení vašich stanic ve městě o ${Math.round(AD_RATING_BOOST * 100)} bodů. ` +
+          'Financovaná výstavba hned přidá městu rok růstu. Obsluhované město roste rychleji.',
+      ),
     );
 
   const off = game.events.on('townsChanged', () => {
     if (windows.isOpen(id)) windows.update(id, render());
   });
-  const options = { width: 240, onClose: off, locate: () => focus(town.x + 0.5, town.y + 0.5) };
+  const options = { width: 300, onClose: off, locate: () => focus(town.x + 0.5, town.y + 0.5) };
   windows.open(id, town.name, render(), options);
 }
