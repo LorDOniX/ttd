@@ -46,7 +46,7 @@ export function infrastructureValue(world: World): number {
   return value + rail.depots.length * DEPOT_COST + rail.signals.size * SIGNAL_COST;
 }
 
-type Job = { kind: 'track'; step: PathStep } | { kind: 'road'; step: RoadStep };
+export type Job = { kind: 'track'; step: PathStep } | { kind: 'road'; step: RoadStep };
 
 export interface DemolishPlan {
   tiles: TilePos[];
@@ -65,6 +65,16 @@ export class Construction {
 
   get busy(): boolean {
     return this.queue.length > 0;
+  }
+
+  // Dosud nepostavené dílky; ukládají se s hrou a platí se až při stavbě
+  get pending(): readonly Job[] {
+    return this.queue;
+  }
+
+  restore(jobs: Job[]): void {
+    this.queue = jobs;
+    this.elapsed = 0;
   }
 
   buildTrack(steps: PathStep[]): void {

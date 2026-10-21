@@ -2,11 +2,12 @@ import { RATING_START, STATION_LENGTH } from './balance';
 import { FREIGHT_TYPES, emptyFreight, isCargo, type FreightStock } from './cargo';
 import { Game, emptyYear, type ViewState, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
+import type { Job } from './construction';
 import type { Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
 import { GameMap } from '../world/map';
-import { RailNetwork, type Depot, type Station } from '../world/rail';
+import { RailNetwork, PIECES, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
@@ -40,8 +41,9 @@ export interface SaveData {
     rngState: number;
   };
   clock: { date: GameDate; day: number; dayProgress: number };
-  // Starší uložení pohled kamery nemají
+  // Starší uložení pohled kamery ani rozpracovanou výstavbu nemají
   view?: ViewState;
+  construction?: Job[];
 }
 
 // Verze 1 měla jen lonišní rok a výdaje bez rozpadu
@@ -113,6 +115,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       rngState: game.rng.state,
     },
     ...(game.view ? { view: game.view } : {}),
+    ...(game.construction.busy ? { construction: [...game.construction.pending] } : {}),
     clock: { date: clock.date, day: clock.day, dayProgress: clock.dayProgress },
   };
 }
@@ -265,7 +268,17 @@ export function restoreGame(data: SaveData): Game {
   );
   game.fleet.nextId = data.fleet.nextId;
   game.view = validView(data.view);
+  // Cizí soubor může obsahovat nesmysly; místo se před stavbou kontroluje znovu
+  game.construction.restore((data.construction ?? []).filter((job) => validJob(job, width, height)));
   return game;
+}
+
+function validJob(job: unknown, width: number, height: number): job is Job {
+  if (!isObject(job) || !isObject(job.step) || (job.kind !== 'track' && job.kind !== 'road')) return false;
+  const { x, y, piece, isNew } = job.step;
+  const below = (v: unknown, size: number): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) < size;
+  const pieceOk = job.kind === 'road' || below(piece, PIECES.length);
+  return below(x, width) && below(y, height) && pieceOk && typeof isNew === 'boolean';
 }
 
 function validView(view: unknown): ViewState | null {

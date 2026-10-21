@@ -139,6 +139,22 @@ describe('uložení a načtení', () => {
     expect(restoreGame(parseSave(JSON.stringify(data))).view).toBeNull();
   });
 
+  it('rozpracovaná výstavba se uloží a po načtení dostaví', () => {
+    const { game } = buildLine();
+    const steps = [
+      { x: 20, y: 40, piece: 0, isNew: true },
+      { x: 21, y: 40, piece: 0, isNew: true },
+    ];
+    game.construction.buildTrack(steps);
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.construction.push({ kind: 'track', step: { x: 9999, y: 1, piece: 0, isNew: true } }, { kind: 'rocket' });
+    const copy = restoreGame(parseSave(JSON.stringify(data)));
+    expect(copy.construction.pending.map((job) => job.step)).toEqual(steps);
+    copy.construction.update(1000);
+    expect(copy.construction.busy).toBe(false);
+    expect(copy.world.rail.has(21, 40, 0)).toBe(true);
+  });
+
   it('návěstidla se uloží a neplatná se při načtení zahodí', () => {
     const { game } = buildLine();
     game.world.rail.addSignal(20, 12);
