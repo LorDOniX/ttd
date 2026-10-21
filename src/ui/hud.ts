@@ -73,14 +73,11 @@ export class Hud {
       ],
       [button('🗺️', 'Minimapa (M)', actions.openMinimap)],
       [button('💰', 'Finance (F)', actions.openFinance)],
-      [
-        button('🚆', 'Seznam vlaků (V)', actions.openTrainList),
-        button('🚌', 'Seznam aut (A)', actions.openVehicleList),
-      ],
+      [button('�', 'Seznam aut (A)', actions.openVehicleList), button('🚆', 'Seznam vlaků (V)', actions.openTrainList)],
       [rotate],
       [
+        button('�️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild),
         button('🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild),
-        button('🛣️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild),
       ],
       [button('📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
     ];
