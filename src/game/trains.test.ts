@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_WAGONS,
   OLD_TRAIN_COST_FACTOR,
+  TRAIN_LOADING_DAYS,
   TRAIN_MIN_SELL,
   TRAIN_MODELS,
   TRAIN_SELL_REFUND,
@@ -229,6 +230,17 @@ describe('vlak delší než nástupiště', () => {
     }
     throw new Error('Vlak do stanice nedorazil');
   }
+
+  it('pobyt ve stanici se prodlouží podle přeloženého nákladu', () => {
+    const { game, a, b, depot } = buildLine();
+    const train = buyTrain(game, depot, 5);
+    game.fleet.start(train, [a.id, b.id]);
+    a.waiting = 150;
+    untilLoadingAt(game, train, a.id);
+    expect(train.passengers).toBe(150);
+    // Nejkratší zastavení a den na 150 naložených
+    expect(train.waitDays).toBeGreaterThan(TRAIN_LOADING_DAYS + 0.9);
+  });
 
   it('vagonů může být tolik, kolik pojme nejdelší nástupiště', () => {
     const { game, depot } = buildLine();

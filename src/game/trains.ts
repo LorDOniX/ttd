@@ -3,6 +3,7 @@ import {
   OLD_TRAIN_COST_FACTOR,
   TRAIN_LIFETIME_YEARS,
   TRAIN_LOADING_DAYS,
+  LOADING_PER_DAY,
   TRAIN_MIN_SELL,
   TRAIN_MODELS,
   TRAIN_SELL_REFUND,
@@ -500,15 +501,16 @@ export class Fleet {
       train.waitDays = TRAIN_LOADING_DAYS;
       this.reservations.reset(train, this.tail(train));
       const station = this.goal(train);
-      if (station && !('entrance' in station)) this.exchange(train, station);
+      // Pobyt se prodlouží podle množství vyloženého a naloženého nákladu
+      if (station && !('entrance' in station)) train.waitDays += this.exchange(train, station) / LOADING_PER_DAY;
     }
     this.changed();
   }
 
-  private exchange(train: Train, station: Station, loadOnly = false): void {
+  private exchange(train: Train, station: Station, loadOnly = false): number {
     const { cargo } = train;
-    if (isFreight(cargo)) this.game.freight.exchange(train, station, cargo, loadOnly);
-    else this.game.passengers.exchange(train, station, loadOnly);
+    if (isFreight(cargo)) return this.game.freight.exchange(train, station, cargo, loadOnly);
+    return this.game.passengers.exchange(train, station, loadOnly);
   }
 
   // Naplánuje cestu k dalšímu cíli; vlak může pokračovat vpřed, nebo se otočit

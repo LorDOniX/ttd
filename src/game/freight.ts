@@ -68,8 +68,8 @@ export class Freight {
     );
   }
 
-  // Vyloží náklad, pokud ho nástupiště vykupuje, a naloží čekající; loadOnly jen doplní
-  exchange(train: Train, station: Station, type: FreightType, loadOnly = false): void {
+  // Vyloží náklad, pokud ho nástupiště vykupuje, a naloží čekající; loadOnly jen doplní. Vrací přeložené tuny.
+  exchange(train: Train, station: Station, type: FreightType, loadOnly = false): number {
     const { game } = this;
     const spec = CARGOS[type];
     const atPlatform = wagonsAtStation(train, station) * WAGON_CAPACITY;
@@ -113,6 +113,7 @@ export class Freight {
     station.lastVisit = game.clock.now;
     station.lastSpeed = trainModel(train).speed;
     game.events.emit('stationsChanged');
+    return unloaded + loading;
   }
 
   private produce(): void {

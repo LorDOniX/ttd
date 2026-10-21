@@ -63,8 +63,9 @@ export const TRAIN_MIN_SELL = 0.1;
 export const TRAIN_LIFETIME_YEARS = 25;
 // Provoz vlaku po životnosti je dražší
 export const OLD_TRAIN_COST_FACTOR = 1.5;
-// Staniční pobyt na vykložení a naložení
-export const TRAIN_LOADING_DAYS = 2;
+// Staniční pobyt: nejkratší zastavení a k tomu den na každých tolik vyložených a naložených jednotek
+export const TRAIN_LOADING_DAYS = 1;
+export const LOADING_PER_DAY = 150;
 
 // Sazba za cestujícího a ujetou dlaždici podle doby přepravy
 export const FARE_TIERS: readonly { maxDays: number; rate: number }[] = [

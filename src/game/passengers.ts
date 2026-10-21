@@ -149,7 +149,8 @@ export class Passengers {
 
   // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající.
   // Vystupuje a nastupuje se jen ve vagonech, které stojí na nástupišti; loadOnly jen doplní (čekání na plné naložení).
-  exchange(train: Train, station: Station, loadOnly = false): void {
+  // Vrací počet vyložených a naložených cestujících.
+  exchange(train: Train, station: Station, loadOnly = false): number {
     const { game } = this;
     const atPlatform = wagonsAtStation(train, station) * WAGON_CAPACITY;
     let unloaded = 0;
@@ -191,6 +192,7 @@ export class Passengers {
     station.lastVisit = game.clock.now;
     station.lastSpeed = trainModel(train).speed;
     game.events.emit('stationsChanged');
+    return unloaded + boarding;
   }
 
   private generate(): void {
