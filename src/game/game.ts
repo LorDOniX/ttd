@@ -4,6 +4,7 @@ import { Construction, infrastructureValue } from './construction';
 import { Emitter } from './emitter';
 import { GameClock, formatDate, type GameDate } from './clock';
 import { Freight } from './freight';
+import { companyValue, performance, performanceScore, performanceTitle } from './company';
 import { IndustryLife } from './industryLife';
 import { Passengers } from './passengers';
 import { Fleet } from './trains';
@@ -211,6 +212,11 @@ export class Game {
     );
     this.history.push({ year, ...this.thisYear });
     this.thisYear = emptyYear();
+    const score = performanceScore(performance(this));
+    this.news(
+      `Hodnocení společnosti za rok ${year}: ${score} / 1000 – ${performanceTitle(score)}, ` +
+        `hodnota ${formatMoney(companyValue(this))}.`,
+    );
 
     for (const town of this.world.towns) {
       growTown(this.world.map, town, year + 1, this.rng);

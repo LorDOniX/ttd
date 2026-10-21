@@ -1,17 +1,19 @@
 import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN } from '../game/balance';
 import { CARGOS, FREIGHT_TYPES } from '../game/cargo';
+import { companyValue, performance, performanceScore, performanceTitle } from '../game/company';
 import { EXPENSE_KINDS, Game, formatMoney, type ExpenseKind, type YearStats } from '../game/game';
 import { trainModel } from '../game/trains';
 import { barChart } from './chart';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
-type Tab = 'overview' | 'charts' | 'trains';
+type Tab = 'overview' | 'charts' | 'trains' | 'company';
 
 const TABS: [Tab, string][] = [
   ['overview', 'Přehled'],
   ['charts', 'Grafy'],
   ['trains', 'Vlaky'],
+  ['company', 'Společnost'],
 ];
 
 const EXPENSE_LABELS: Record<ExpenseKind, string> = {
@@ -167,6 +169,37 @@ function trains(game: Game): HTMLElement {
   );
 }
 
+function company(game: Game): HTMLElement {
+  const parts = performance(game);
+  const score = performanceScore(parts);
+  return h(
+    'div',
+    { className: 'form' },
+    h('div', {}, 'Hodnota společnosti: ', h('strong', {}, formatMoney(companyValue(game)))),
+    h('div', {}, 'Hodnocení: ', h('strong', {}, `${score} / 1000 – ${performanceTitle(score)}`)),
+    h(
+      'table',
+      { className: 'table' },
+      h('tr', {}, h('th', {}, 'Část'), h('th', { className: 'num' }, 'Stav'), h('th', { className: 'num' }, 'Body')),
+      ...parts.map((p) =>
+        h(
+          'tr',
+          {},
+          h('td', {}, p.label),
+          h('td', { className: 'num' }, p.value),
+          h('td', { className: 'num' }, `${p.points} / 200`),
+        ),
+      ),
+    ),
+    h(
+      'div',
+      { className: 'form__hint' },
+      'Hodnota je stav účtu bez úvěru a prodejní cena vlaků. Hodnocení počítá poslední uzavřený rok: ' +
+        'ziskové vlaky, stanice obsloužené za poslední měsíc, přepravené množství, druhy nákladu a peníze.',
+    ),
+  );
+}
+
 export function openFinance(windows: WindowManager, game: Game): void {
   let tab: Tab = 'overview';
 
@@ -184,7 +217,14 @@ export function openFinance(windows: WindowManager, game: Game): void {
         return b;
       }),
     );
-    const content = tab === 'overview' ? overview(game) : tab === 'charts' ? charts(game) : trains(game);
+    const content =
+      tab === 'overview'
+        ? overview(game)
+        : tab === 'charts'
+          ? charts(game)
+          : tab === 'trains'
+            ? trains(game)
+            : company(game);
     return h('div', {}, tabs, content);
   };
 
