@@ -10,7 +10,7 @@ import type { WindowManager } from './windows';
 
 const KIND_LABELS: Record<TownKind, string> = { city: 'Město', town: 'Městečko', village: 'Vesnice' };
 
-export interface GridToggle {
+export interface Toggle {
   visible: () => boolean;
   setVisible: (visible: boolean) => void;
 }
@@ -18,12 +18,16 @@ export interface GridToggle {
 export function openSettings(
   windows: WindowManager,
   game: Game,
-  grid: GridToggle,
+  grid: Toggle,
+  highlight: Toggle,
   seed: string,
   shortcutsHelp: HTMLElement,
 ): void {
   const gridInput = h('input', { type: 'checkbox', checked: grid.visible() });
   gridInput.addEventListener('change', () => grid.setVisible(gridInput.checked));
+
+  const highlightInput = h('input', { type: 'checkbox', checked: highlight.visible() });
+  highlightInput.addEventListener('change', () => highlight.setVisible(highlightInput.checked));
 
   const renewInput = h('input', { type: 'checkbox', checked: game.autoRenew });
   renewInput.addEventListener('change', () => (game.autoRenew = renewInput.checked));
@@ -48,6 +52,7 @@ export function openSettings(
     'div',
     { className: 'form' },
     h('label', { className: 'form__row' }, gridInput, ' Zobrazit mřížku'),
+    h('label', { className: 'form__row' }, highlightInput, ' Zvýraznit dlaždici pod kurzorem'),
     h('label', { className: 'form__row' }, renewInput, ' Automaticky obnovovat staré vlaky'),
     h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),

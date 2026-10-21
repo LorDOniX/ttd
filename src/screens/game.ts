@@ -109,7 +109,15 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
           returnToTitle();
         },
       }),
-    openSettings: () => openSettings(windows, game, grid, seedText, shortcuts.help()),
+    openSettings: () =>
+      openSettings(
+        windows,
+        game,
+        grid,
+        { visible: () => cursor.enabled, setVisible: (on: boolean) => cursor.setEnabled(on) },
+        seedText,
+        shortcuts.help(),
+      ),
     openFinance: () => openFinance(windows, game),
     openRailBuild: () => buildTools.openRailWindow(),
     openRoadBuild: () => buildTools.openRoadWindow(),
