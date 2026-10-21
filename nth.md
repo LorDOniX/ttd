@@ -2,24 +2,29 @@
 
 Volitelná rozšíření mimo hlavní fáze ze [ttd.md](ttd.md).
 
-## Provoz vlaků
-- **Vlaky se navzájem hlídají** – návěstidla a rezervace úseků kolejí jako v OpenTTD, aby dva vlaky na stejné koleji neprojely skrz sebe (dnes se vlaky navzájem ignorují)
-- **Cestující ve vlaku poslaném do depa** – dnes vystoupí bez zaplacení; vlak by je mohl nejdřív dovézt do cílové stanice, nebo aspoň varovat
+## Hotovo
+- **Vlaky se navzájem hlídají** – rezervace úseků a návěstidla (fáze 16)
+- **Náklad ve vlaku poslaném do depa** – zůstane ve vlaku a vyloží se na další zastávce
+- **Náhled dosahu nástupiště** – při stavbě se ukáže dosah a u kurzoru díl měst, náklad a výkup
+- **Název nástupiště podle dosahu** – podle města v dosahu, jinak podle závodu, až pak nejbližšího města
+- **Pozice kamery v uložení** – po načtení se obnoví pohled
+- **Rozpracovaná výstavba v uložení** – po načtení se stavba dokončí
+- **Umístění oken** – nová okna u levého okraje, přetažené si pamatují polohu
 
-## Stavba
-- **Náhled dosahu nástupiště** – při stavbě zvýraznit okruh 4 dlaždic a města, ze kterých budou chodit cestující
-- **Název nástupiště jen podle měst v dosahu** – dnes dostane jméno nejbližšího města, i když je mimo jeho dosah
+## Zbývá
+- **Auta do měst** – modely jsou v `assets/car kit`; samostatný větší krok (jízda po silnicích měst, bez vlivu na hru)
+- **Výška terénu** – teď nedává smysl: koleje, mosty, stavba i generátor počítají s rovinou, šlo by o přestavbu celé mapy
 
-## Uložení hry
-- **Pozice kamery** – po načtení začíná pohled u největšího města
-- **Rozpracovaná výstavba** – koleje a silnice, které se teprve stavějí, se neukládají
+## Návrhy převzetí z OpenTTD
+Jednoduché (stačí stávající systémy):
+- **Pošta** – další druh nákladu mezi městy (krytý vagon), malé množství, vysoká sazba
+- **Reklamní kampaň a financování výstavby** – akce v okně města: na pár měsíců vyšší hodnocení stanic, rychlejší růst
+- **Klik na zprávu ukáže místo** – zprávy o vlacích, stanicích a závodech s polohou
+- **Automatická obnova vlaků** – volba v nastavení: starý vlak se při průjezdu depem sám obnoví
+- **Postupné nakládání** – doba stání podle množství nákladu místo pevných 2 dnů
 
-## Ovládání
-- **Umístění oken** – okna se otevírají uprostřed nahoře a zakrývají mapu; otevírat je u okraje nebo si pamatovat poslední polohu
-
-## Auta do měst
-- auta budou jezdit ve městech - modely bych nachystal od kennyho
-
-## Ostatní
-- co půjde jendodušše převzít z open ttd - navrhni
-- výška terénu
+Středně náročné:
+- **Okno stanice** – čekající náklad podle druhu, hodnocení a vlaky, které ji obsluhují
+- **Hodnocení stanice podle druhu nákladu** – jako v OpenTTD každý náklad zvlášť
+- **Hodnota a hodnocení společnosti** – roční přehled výkonu firmy
+- **Sdílené jízdní řády a skupiny vlaků**
