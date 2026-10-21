@@ -1,4 +1,4 @@
-import { TRAIN_MODELS } from '../game/balance';
+import { TRAIN_MODELS, type TrainModel } from '../game/balance';
 import { START_YEAR } from '../game/clock';
 import { Game } from '../game/game';
 import { describeSave, launch, readAutosave, type NewGameOptions, type TownAmount, type WaterAmount } from '../game/launch';
@@ -10,13 +10,15 @@ import { generateWorld } from '../world/generator';
 import { Edge, defaultStationShape, type Station } from '../world/rail';
 import { findTrackPath } from '../world/railPath';
 import { hashSeed } from '../world/rng';
-import type { Town } from '../world/town';
+import { growTown, type Town } from '../world/town';
 import { DEFAULT_OPTIONS } from './game';
 
 // Ukázka na pozadí běží rychleji, aby bylo co sledovat
 const DEMO_SPEED = 3;
 const SPIN_PER_SECOND = 0.05;
 const DEMO_LINES = 3;
+// Ukázka v pozdějším roce: města mají za sebou desítky let růstu a v centru mrakodrapy
+const DEMO_YEAR = 2025;
 
 function placeStationNear(game: Game, town: Town): Station | null {
   const { rail } = game.world;
@@ -36,7 +38,7 @@ function placeStationNear(game: Game, town: Town): Station | null {
 }
 
 // Trať mezi dvěma městy s depem a vypraveným vlakem
-function buildDemoLine(game: Game, from: Town, to: Town, modelIndex: number): boolean {
+function buildDemoLine(game: Game, from: Town, to: Town, model: TrainModel): boolean {
   const { rail } = game.world;
   const a = placeStationNear(game, from);
   const b = a && placeStationNear(game, to);
@@ -44,7 +46,7 @@ function buildDemoLine(game: Game, from: Town, to: Town, modelIndex: number): bo
   if (!a || !b || !path) return false;
   for (const step of path) rail.addPiece(step.x, step.y, step.piece);
   const depot = rail.addDepot(a.x - 2, a.y, Edge.E);
-  game.fleet.buy(depot, TRAIN_MODELS[modelIndex % TRAIN_MODELS.length]);
+  game.fleet.buy(depot, model);
   const train = game.fleet.trains[game.fleet.trains.length - 1];
   for (let i = 0; i < 3; i++) game.fleet.addWagon(train);
   return game.fleet.start(train, [a.id, b.id]) === null;
@@ -53,6 +55,13 @@ function buildDemoLine(game: Game, from: Town, to: Town, modelIndex: number): bo
 function createDemo(): Game {
   const game = new Game(generateWorld(hashSeed('ttd-title'), 128, START_YEAR, { waterLevel: 0.3, townDensity: 2.5 }));
   game.money = 1e9;
+  const { map } = game.world;
+  for (let year = START_YEAR + 1; year <= DEMO_YEAR; year++) {
+    for (const town of game.world.towns) growTown(map, town, year, game.rng);
+  }
+  game.clock.date = { year: DEMO_YEAR, month: 0, day: 1 };
+  // Od nejnovějších vlaků, které v roce ukázky jezdí
+  const models = TRAIN_MODELS.filter((m) => m.year <= DEMO_YEAR).reverse();
   const towns = [...game.world.towns].sort((a, b) => b.population - a.population);
   const used = new Set<Town>();
   let lines = 0;
@@ -61,7 +70,7 @@ function createDemo(): Game {
     const to = towns
       .filter((t) => t !== from && !used.has(t))
       .sort((p, q) => Math.hypot(p.x - from.x, p.y - from.y) - Math.hypot(q.x - from.x, q.y - from.y))[0];
-    if (!to || !buildDemoLine(game, from, to, lines * 3)) continue;
+    if (!to || !buildDemoLine(game, from, to, models[(lines * 2) % models.length])) continue;
     used.add(from).add(to);
     lines++;
   }
@@ -152,14 +161,18 @@ export function runTitle(container: HTMLElement): void {
   const game = createDemo();
   const view = new GameView(container, game);
   view.terrain.setGridVisible(false);
-  // Těžiště nástupišť, aby byly vidět tratě a vlaky; přiblížení skryje okraj mapy
-  view.camera.camera.zoom = 1.2;
+  // Mezi centrum největšího města s tratí a jeho nádraží, aby bylo vidět město i vlaky;
+  // přiblížení skryje okraj mapy
+  view.camera.camera.zoom = 1.6;
   view.camera.camera.updateProjectionMatrix();
-  const { map, rail } = game.world;
-  const count = Math.max(1, rail.stations.length);
-  const cx = rail.stations.reduce((sum, s) => sum + s.x, 0) / count || map.width / 2;
-  const cy = rail.stations.reduce((sum, s) => sum + s.y, 0) / count || map.height / 2;
-  view.camera.focus(cx, cy);
+  const { map, rail, towns } = game.world;
+  const station = [...rail.stations].sort((a, b) => towns[b.townId].population - towns[a.townId].population)[0];
+  if (station) {
+    const town = towns[station.townId];
+    view.camera.focus((town.x + station.x) / 2, (town.y + station.y) / 2);
+  } else {
+    view.camera.focus(map.width / 2, map.height / 2);
+  }
 
   const panel = h('div', { className: 'title__panel' });
   const showMain = (): void => panel.replaceChildren(mainPanel(() => panel.replaceChildren(newGamePanel(showMain))));
