@@ -6,6 +6,7 @@ import { addBuilding, addIndustry, emptyGame, makeTown, runDays } from '../test/
 import { TileType } from '../world/map';
 import { Edge, axisPiece, type Depot, type Station } from '../world/rail';
 import { roadMoves } from '../world/roadRoute';
+import { vehiclePoint } from './roadVehicles';
 
 const model = (id: string) => ROAD_VEHICLE_MODELS.find((m) => m.id === id)!;
 
@@ -136,6 +137,27 @@ describe('silniční vozidla', () => {
     expect(restored.world.rail.stations.every((s) => s.kind === 'road')).toBe(true);
     runDays(restored, 40);
     expect(restored.roadFleet.vehicles[0].income).toBeGreaterThan(0);
+  });
+
+  it('auta ve stejném pruhu se řadí za sebe a neprojíždějí sebou', () => {
+    const { game, a, b, depot } = buildRoadLine();
+    for (let i = 0; i < 3; i++) {
+      game.roadFleet.buy(depot, model('bus-regal'));
+      game.roadFleet.start(game.roadFleet.vehicles[i], [a.id, b.id]);
+    }
+    let minGap = Infinity;
+    for (let day = 0; day < 60; day++) {
+      runDays(game, 1);
+      const points = game.roadFleet.vehicles.filter((v) => v.state !== 'depot').map((v) => vehiclePoint(v.path, v.pos));
+      for (const p of points) {
+        for (const q of points) {
+          const sameDirection = p !== q && p.dx === q.dx && p.dy === q.dy;
+          if (sameDirection) minGap = Math.min(minGap, Math.hypot(p.x - q.x, p.y - q.y));
+        }
+      }
+    }
+    expect(minGap).toBeGreaterThan(0.45);
+    expect(game.roadFleet.vehicles.every((v) => v.income > 0)).toBe(true);
   });
 
   it('před přejezdem se zavřenou závorou auto stojí, po otevření pokračuje', () => {

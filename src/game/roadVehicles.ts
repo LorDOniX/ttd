@@ -20,6 +20,9 @@ const LOST_RETRY_DAYS = 5;
 const FULL_LOAD_CHECK_DAYS = 1;
 // Před zavřenou závorou auto zastaví tak, aby do ní nenarazilo (polovina délky auta)
 const CROSSING_GAP = 0.2;
+// Odstup aut za sebou (délka auta s mezerou) a šířka pruhu pro rozpoznání auta před sebou
+const VEHICLE_GAP = 0.5;
+const LANE_WIDTH = 0.3;
 
 export type RoadVehicleState = 'depot' | 'running' | 'loading' | 'lost';
 
@@ -300,7 +303,11 @@ export class RoadFleet {
     const { map } = this.game.world;
     const { reservations } = this.game.fleet;
     const end = vehicle.path.length - 1;
-    let pos = Math.min(end, vehicle.pos + roadVehicleModel(vehicle).speed * days);
+    let pos = Math.min(
+      end,
+      vehicle.pos + roadVehicleModel(vehicle).speed * days,
+      vehicle.pos + this.roomAhead(vehicle),
+    );
     // Vjezd na dlaždici k nastává v polovině cesty mezi středy (k − 0,5); před přejezdem už o CROSSING_GAP dřív
     for (let k = Math.floor(vehicle.pos + 0.5) + 1; k <= end && k - 0.5 - CROSSING_GAP <= pos; k++) {
       const from = vehicle.path[k - 1];
@@ -320,6 +327,25 @@ export class RoadFleet {
     }
     vehicle.pos = Math.max(vehicle.pos, pos);
     if (vehicle.pos >= end) this.arrive(vehicle);
+  }
+
+  // Kolik smí auto popojet, než dojede auto před sebou ve stejném pruhu (jedoucí stejným směrem)
+  private roomAhead(vehicle: RoadVehicle): number {
+    const me = vehiclePoint(vehicle.path, vehicle.pos);
+    let room = Infinity;
+    for (const other of this.vehicles) {
+      if (other === vehicle || other.state === 'depot' || other.path.length === 0) continue;
+      const it = vehiclePoint(other.path, other.pos);
+      if (me.dx * it.dx + me.dy * it.dy <= 0.5) continue;
+      const ox = it.x - me.x;
+      const oy = it.y - me.y;
+      const along = ox * me.dx + oy * me.dy;
+      const lateral = Math.abs(ox * me.dy - oy * me.dx);
+      // Na stejném místě (např. oba vyjíždejí z garáže) pouští dřív koupené auto
+      const ahead = along > 0 || (along === 0 && other.id < vehicle.id);
+      if (ahead && lateral < LANE_WIDTH) room = Math.min(room, Math.max(0, along - VEHICLE_GAP));
+    }
+    return room;
   }
 
   private arrive(vehicle: RoadVehicle): void {
