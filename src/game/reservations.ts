@@ -88,6 +88,17 @@ export class Reservations {
     return true;
   }
 
+  // Vlak, který drží první obsazenou dlaždici dalšího úseku, nebo undefined
+  blockerOf(train: Train): number | undefined {
+    const { path } = train;
+    for (let i = this.reach.get(train.id) ?? 0; i < path.length; i++) {
+      const owner = this.ownerAt(path[i].x, path[i].y);
+      if (owner !== undefined && owner !== train.id) return owner;
+      if (this.isWaitPoint(path[i].x, path[i].y)) return undefined;
+    }
+    return undefined;
+  }
+
   // Vzdálenost od začátku trasy, kam smí dojet hlava vlaku
   limit(train: Train): number {
     const end = this.reach.get(train.id) ?? 0;

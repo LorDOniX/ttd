@@ -4,7 +4,7 @@ import { Reservations } from './reservations';
 import type { Game } from './game';
 import type { Train } from './trains';
 import { addBuilding, buildLine, buyTrain, emptyGame, layTrack, makeTown, runDays } from '../test/fixtures';
-import { Edge } from '../world/rail';
+import { Edge, defaultStationShape } from '../world/rail';
 import { segmentIndexAt, type Segment } from '../world/route';
 
 const straight = (x0: number, x1: number, y: number): Segment[] =>
@@ -102,7 +102,7 @@ describe('vlaky s rezervací', () => {
     expect([...tracksUsed].sort()).toEqual([19, 20]);
   });
 
-  it('na jednokolejce bez výhybny vlaky čekají a hráč dostane varování', () => {
+  it('na jednokolejce bez výhybny se vlaky zablokují a hráč se hned dozví proč', () => {
     const { game, a, b, depot } = buildLine();
     const first = buyTrain(game, depot);
     const second = buyTrain(game, depot);
@@ -111,8 +111,37 @@ describe('vlaky s rezervací', () => {
     const news: string[] = [];
     game.events.on('news', (text) => news.push(text));
     runDays(game, 200);
-    expect([first, second].some((t) => game.fleet.isBlocked(t))).toBe(true);
-    expect(news.some((n) => n.includes('čeká na volnou trať'))).toBe(true);
+    expect([first, second].every((t) => game.fleet.isBlocked(t))).toBe(true);
+    const warnings = news.filter((n) => n.includes('navzájem blokují'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/Vlak 1/);
+    expect(warnings[0]).toMatch(/Vlak 2/);
+    expect(news.some((n) => n.includes('čeká na volnou trať'))).toBe(false);
+  });
+
+  it('s dvoukolejným nástupištěm v cíli se vlaky na jednokolejce střídají', () => {
+    const townA = makeTown(0, 10, 14);
+    const townB = makeTown(1, 40, 24);
+    const game = emptyGame(64, [townA, townB]);
+    addBuilding(game, townA, 10, 12);
+    addBuilding(game, townB, 40, 22);
+    const { rail } = game.world;
+    const a = rail.addStation({ ...defaultStationShape(10, 10, 'x'), name: 'A', townId: 0 });
+    const b = rail.addStation({ ...defaultStationShape(40, 20, 'x'), tracks: 2, name: 'B', townId: 1 });
+    layTrack(game, { x: 12, y: 10 }, { x: 38, y: 20 });
+    layTrack(game, { x: 38, y: 19 }, { x: 34, y: 18 });
+    const depot = rail.addDepot(8, 10, Edge.E);
+    game.money = 5_000_000;
+    const first = buyTrain(game, depot);
+    game.fleet.start(first, [a.id, b.id]);
+    runDays(game, 3);
+    const second = buyTrain(game, depot);
+    game.fleet.start(second, [a.id, b.id]);
+    let deliveries = 0;
+    game.events.on('income', () => deliveries++);
+    runDays(game, 200);
+    // Druhý vlak zajede na volnou kolej nástupiště B, místo aby čekal za prvním
+    expect(deliveries).toBeGreaterThan(10);
   });
 });
 

@@ -163,7 +163,7 @@ export class Fleet {
   nextGroupId = 1;
   readonly reservations: Reservations;
   // Jak dlouho vlak stojí před obsazenou tratí: celkem a od posledního hledání jiné cesty
-  private readonly blocked = new Map<number, { total: number; sinceReplan: number }>();
+  private readonly blocked = new Map<number, { total: number; sinceReplan: number; deadlockWarned: boolean }>();
 
   constructor(private readonly game: Game) {
     this.reservations = new Reservations(game.world.map.width, (x, y) => game.world.rail.hasSignal(x, y));
@@ -508,12 +508,24 @@ export class Fleet {
 
   // Stojí před obsazenou tratí; občas zkusí jinou cestu a po delší době varuje hráče
   private wait(train: Train, days: number): void {
-    const state = this.blocked.get(train.id) ?? { total: 0, sinceReplan: 0 };
+    const state = this.blocked.get(train.id) ?? { total: 0, sinceReplan: 0, deadlockWarned: false };
     const warned = state.total >= BLOCKED_WARN_DAYS;
     state.total += days;
     state.sinceReplan += days;
     this.blocked.set(train.id, state);
-    if (!warned && state.total >= BLOCKED_WARN_DAYS) {
+    if (!state.deadlockWarned && state.total >= BLOCKED_REPLAN_DAYS) {
+      const cycle = this.deadlockCycle(train);
+      if (cycle) {
+        for (const t of cycle) this.blocked.get(t.id)!.deadlockWarned = true;
+        this.game.news(
+          `${cycle.map((t) => t.name).join(' a ')} se navzájem blokují – na jednokolejné trati se nemají kde minout. ` +
+            'Postavte výhybnu (druhou kolej s návěstidly) nebo dvoukolejné nástupiště.',
+          this.position(train),
+        );
+        return;
+      }
+    }
+    if (!warned && !state.deadlockWarned && state.total >= BLOCKED_WARN_DAYS) {
       this.game.news(
         `${train.name} už měsíc čeká na volnou trať – jednokolejka potřebuje výhybny nebo víc kolejí.`,
         this.position(train),
@@ -523,6 +535,22 @@ export class Fleet {
       state.sinceReplan = 0;
       this.replan(train);
     }
+  }
+
+  // Vlaky, které na sebe čekají v kruhu (A čeká na B, B na A…); bez pomoci hráče se nepohnou
+  private deadlockCycle(train: Train): Train[] | null {
+    const cycle: Train[] = [train];
+    let current = train;
+    for (let i = 0; i < this.trains.length; i++) {
+      const id = this.reservations.blockerOf(current);
+      const next = this.trains.find((t) => t.id === id);
+      if (!next || !this.blocked.has(next.id)) return null;
+      if (next === train) return cycle;
+      if (cycle.includes(next)) return null;
+      cycle.push(next);
+      current = next;
+    }
+    return null;
   }
 
   private tail(train: Train): number {
@@ -607,8 +635,26 @@ export class Fleet {
 
   // Přednostně trasa mimo koleje jiných vlaků (např. volná kolej nástupiště), jinak nejkratší a vlak počká
   private routeTo(start: RouteStart, goal: Station | Depot, train?: Train): Segment[] | null {
-    const avoid = train ? (x: number, y: number) => this.reservations.blocks(train, x, y) : undefined;
+    const avoid = train ? this.avoidFor(train, goal) : undefined;
     return (avoid && this.findGoal(start, goal, avoid)) || this.findGoal(start, goal);
+  }
+
+  // Cizí rezervace; u cílového nástupiště celá kolej, na které už stojí jiný vlak –
+  // trasa končí až na konci nástupiště, takže by vlak volnou první dlaždici ke koleji nepomohla
+  private avoidFor(train: Train, goal: Station | Depot): (x: number, y: number) => boolean {
+    const blocked = (x: number, y: number): boolean => this.reservations.blocks(train, x, y);
+    if ('entrance' in goal) return blocked;
+    const width = this.game.world.map.width;
+    const rows = new Map<number, { x: number; y: number }[]>();
+    for (const t of stationTiles(goal)) {
+      const row = goal.axis === 'x' ? t.y : t.x;
+      rows.set(row, [...(rows.get(row) ?? []), t]);
+    }
+    const occupied = new Set<number>();
+    for (const row of rows.values()) {
+      if (row.some((t) => blocked(t.x, t.y))) for (const t of row) occupied.add(t.y * width + t.x);
+    }
+    return (x, y) => blocked(x, y) || occupied.has(y * width + x);
   }
 
   private findGoal(
