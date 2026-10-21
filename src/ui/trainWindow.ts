@@ -1,4 +1,5 @@
 import { TRAIN_LIFETIME_YEARS } from '../game/balance';
+import { CARGOS, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
 import {
   formatLoad,
@@ -224,12 +225,35 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
   windows.open(id, train.name, render(), options);
 }
 
-// Seznam všech vlaků; kliknutím na řádek se otevře okno vlaku
+// Seznam všech vlaků, filtrovatelný podle nákladu; kliknutím na řádek se otevře okno vlaku
 export function openTrainList(windows: WindowManager, game: Game, links: TrainLinks): void {
+  let filter: Cargo | null = null;
   const render = (): HTMLElement => {
-    const trains = game.fleet.trains;
-    if (trains.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádné vlaky.');
-    return h(
+    const all = game.fleet.trains;
+    if (all.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádné vlaky.');
+    const used = (Object.keys(CARGOS) as Cargo[]).filter((c) => all.some((t) => t.cargo === c));
+    if (filter && !used.includes(filter)) filter = null;
+    const trains = filter ? all.filter((t) => t.cargo === filter) : all;
+    const filterButton = (label: string, value: Cargo | null): HTMLButtonElement => {
+      const b = h('button', { className: 'small-button', textContent: label });
+      b.classList.toggle('small-button--active', filter === value);
+      b.addEventListener('click', () => {
+        filter = value;
+        refresh();
+      });
+      return b;
+    };
+    const filters =
+      used.length > 1
+        ? h(
+            'div',
+            { className: 'train__actions' },
+            'Náklad:',
+            filterButton(`Vše (${all.length})`, null),
+            ...used.map((c) => filterButton(`${CARGOS[c].name} (${all.filter((t) => t.cargo === c).length})`, c)),
+          )
+        : null;
+    const table = h(
       'table',
       { className: 'table table--clickable' },
       h(
@@ -256,6 +280,7 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
         return tr;
       }),
     );
+    return filters ? h('div', { className: 'form' }, filters, table) : table;
   };
 
   const refresh = (): void => {
