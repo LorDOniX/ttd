@@ -6,6 +6,7 @@ import {
   ordersError,
   sellPrice,
   trainAge,
+  trainLength,
   trainModel,
   yearlyRunningCost,
   type Train,
@@ -39,6 +40,22 @@ export interface TrainLinks {
 export function formatYears(age: number): string {
   const n = Math.floor(age);
   return `${n} ${n === 1 ? 'rok' : n >= 2 && n <= 4 ? 'roky' : 'let'}`;
+}
+
+// Délka v dlaždicích, např. „3 dlaždice“, „3,5 dlaždice“, „5 dlaždic“
+export function formatTiles(length: number): string {
+  const text = length.toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
+  return `${text} ${Number.isInteger(length) && length >= 5 ? 'dlaždic' : 'dlaždice'}`;
+}
+
+// Upozornění, že souprava přesahuje některá nástupiště z jízdního řádu, jinak null
+export function shortStationsWarning(game: Game, train: Train): string | null {
+  const short = game.fleet.shortStations(train);
+  if (short.length === 0) return null;
+  return (
+    `Vlak (${formatTiles(trainLength(train))}) je delší než nástupiště ${short.map((s) => s.name).join(', ')} – ` +
+    'vagony mimo nástupiště nenaloží ani nevyloží a ocas vlaku blokuje kolej za ním.'
+  );
 }
 
 function depotOf(game: Game, train: Train): Depot | undefined {
@@ -118,12 +135,18 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
     const speed = (v: number): string => v.toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
     const today = game.clock.day;
     const old = isOld(train, today);
+    const warning = shortStationsWarning(game, train);
     const table = h(
       'table',
       { className: 'table' },
       row('Model', `${model.name} (${model.year})`),
       row('Stav', train.renewing ? `${stateText(game, train)} (na obnovu)` : stateText(game, train)),
       row('Cestující', `${train.passengers} / ${capacity}`, 'num'),
+      row(
+        'Délka',
+        `${formatTiles(trainLength(train))} (${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'})`,
+        warning ? 'num warning' : 'num',
+      ),
       row('Rychlost', `${speed(train.speed)} / ${speed(model.speed)} dlaždic/den`, 'num'),
       row(
         'Stáří',
@@ -161,6 +184,7 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
       'div',
       { className: 'form' },
       table,
+      ...(warning ? [h('div', { className: 'form__hint warning' }, warning)] : []),
       h('div', { className: 'train__actions' }, toDepot, depot, renew),
       h('h4', {}, 'Jízdní řád'),
       ordersEditor(game, train, choice),

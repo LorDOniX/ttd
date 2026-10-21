@@ -1,10 +1,10 @@
 import { MAX_WAGONS, WAGON_CAPACITY, WAGON_PRICE } from '../game/balance';
 import { Game, formatMoney } from '../game/game';
-import { isOld, ordersError, sellPrice, trainAge, trainModel, type Train } from '../game/trains';
+import { isOld, ordersError, sellPrice, trainAge, trainLength, trainModel, type Train } from '../game/trains';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { h } from './dom';
-import { formatYears, openTrain, stateText } from './trainWindow';
+import { formatTiles, formatYears, openTrain, shortStationsWarning, stateText } from './trainWindow';
 import type { WindowManager } from './windows';
 
 // Okno depa: nákup vlaků, vagony, vypravení na trať a prodej
@@ -48,10 +48,13 @@ export function openDepot(
       { className: 'train__info' },
       h('strong', {}, train.name),
       ` · ${model.name} · ${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'}`,
+      ` (${formatTiles(trainLength(train))})`,
       ` · ${train.passengers}/${train.wagons * WAGON_CAPACITY} cestujících`,
       h('span', { className: isOld(train, game.clock.day) ? 'warning' : '' }, ` · ${formatYears(trainAge(train, game.clock.day))}`),
       h('div', { className: 'form__hint' }, stateText(game, train)),
     );
+    const warning = shortStationsWarning(game, train);
+    if (warning) info.append(h('div', { className: 'form__hint warning' }, warning));
     const row = h('div', { className: 'train' }, info);
     const detail = (label: string): HTMLButtonElement =>
       button(label, () => openTrain(windows, game, train, { focus, openDepot: (d) => openDepot(windows, game, d, focus) }));

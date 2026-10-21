@@ -53,9 +53,10 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
 export const WAGON_PRICE = 50_000;
 export const WAGON_CAPACITY = 30;
 export const WAGON_RUNNING_COST = 4_000;
-// Lokomotiva a 5 vagonů po půl dlaždici vyplní nástupiště 1×3
-export const MAX_WAGONS = 5;
 export const VEHICLE_LENGTH = 0.5;
+// Lokomotiva a vagony po půl dlaždici: nejdelší vlak vyplní nejdelší nástupiště (1×3 pojme 5 vagonů);
+// vagony, které přesahují nástupiště, nenakládají ani nevykládají
+export const MAX_WAGONS = MAX_STATION_LENGTH / VEHICLE_LENGTH - 1;
 // Prodej vlaku nebo vagonu vrací část kupní ceny; s věkem klesá lineárně až na TRAIN_MIN_SELL na konci životnosti
 export const TRAIN_SELL_REFUND = 0.5;
 export const TRAIN_MIN_SELL = 0.1;

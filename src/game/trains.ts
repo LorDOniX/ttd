@@ -13,11 +13,12 @@ import {
 } from './balance';
 import { formatMoney, type Game } from './game';
 import { Reservations } from './reservations';
-import { axisPiece, opposite, stationTiles, type Depot, type Station } from '../world/rail';
+import { axisPiece, opposite, stationTiles, type Depot, type Station, type StationShape } from '../world/rail';
 import {
   extendThroughStation,
   findRoute,
   pathLength,
+  pointAt,
   reverseSegment,
   segmentLength,
   segmentIndexAt,
@@ -82,6 +83,21 @@ export function trainModel(train: Train): TrainModel {
 
 export function trainLength(train: Train): number {
   return (train.wagons + 1) * VEHICLE_LENGTH;
+}
+
+// Vagony stojící na nástupišti; jen ty nakládají a vykládají
+export function wagonsAtStation(train: Train, station: StationShape): number {
+  const tiles = new Set(stationTiles(station).map((t) => `${t.x},${t.y}`));
+  const vehicles = train.wagons + 1;
+  // Po otočení směru jízdy je lokomotiva na konci soupravy
+  const locomotive = train.flipped ? vehicles - 1 : 0;
+  let count = 0;
+  for (let i = 0; i < vehicles; i++) {
+    if (i === locomotive) continue;
+    const [x, y] = pointAt(train.path, train.pos - (i + 0.5) * VEHICLE_LENGTH);
+    if (tiles.has(`${Math.floor(x)},${Math.floor(y)}`)) count++;
+  }
+  return count;
 }
 
 // Stáří vlaku v letech
@@ -319,6 +335,14 @@ export class Fleet {
   // Vlak stojí před tratí obsazenou jiným vlakem
   isBlocked(train: Train): boolean {
     return this.blocked.has(train.id);
+  }
+
+  // Nástupiště z jízdního řádu, která jsou kratší než souprava
+  shortStations(train: Train): Station[] {
+    const length = trainLength(train);
+    return (train.orders ?? [])
+      .map((id) => this.station(id))
+      .filter((s, i, all): s is Station => s !== undefined && s.length < length && all.indexOf(s) === i);
   }
 
   stationName(id: number): string {

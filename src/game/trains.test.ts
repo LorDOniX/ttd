@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_WAGONS,
   OLD_TRAIN_COST_FACTOR,
   TRAIN_MIN_SELL,
   TRAIN_MODELS,
@@ -8,8 +9,9 @@ import {
   WAGON_RUNNING_COST,
 } from './balance';
 import type { Game } from './game';
-import { ordersError, sellFactor, sellPrice, trainAge, type Train } from './trains';
+import { ordersError, sellFactor, sellPrice, trainAge, wagonsAtStation, type Train } from './trains';
 import { addBuilding, buildLine, buyTrain, layTrack, makeTown, runDays } from '../test/fixtures';
+import { TileType } from '../world/map';
 import { defaultStationShape } from '../world/rail';
 
 describe('vlaky', () => {
@@ -197,5 +199,51 @@ describe('jízdní řád', () => {
     game.fleet.sendToDepot(train);
     for (let i = 0; i < 20_000 && train.state !== 'depot'; i++) game.update(200);
     expect(train.orders).toEqual([a.id, b.id]);
+  });
+});
+
+describe('vlak delší než nástupiště', () => {
+  function untilLoadingAt(game: Game, train: Train, stationId: number): void {
+    for (let i = 0; i < 20_000; i++) {
+      game.update(200);
+      if (train.state === 'loading' && train.orders![train.target] === stationId) return;
+    }
+    throw new Error('Vlak do stanice nedorazil');
+  }
+
+  it('vagonů může být tolik, kolik pojme nejdelší nástupiště', () => {
+    const { game, depot } = buildLine();
+    const train = buyTrain(game, depot, MAX_WAGONS);
+    expect(MAX_WAGONS).toBe(13);
+    expect(game.fleet.addWagon(train)).toMatch(/nejvýš 13/);
+  });
+
+  it('nakládá a vykládá jen vagony stojící na nástupišti a hráče varuje', () => {
+    const { game, a, b, depot } = buildLine();
+    // B bez města v dosahu, aby tam nikdo nenastupoval
+    game.world.map.set(40, 22, TileType.Grass);
+    const train = buyTrain(game, depot, 7);
+    expect(game.fleet.start(train, [a.id, b.id])).toBeNull();
+    expect(game.fleet.shortStations(train)).toEqual([a, b]);
+
+    // Souprava 4 dlaždice, na nástupišti 1×3 stojí lokomotiva a 5 vagonů
+    a.waiting = 500;
+    untilLoadingAt(game, train, a.id);
+    expect(wagonsAtStation(train, a)).toBe(5);
+    expect(train.passengers).toBe(150);
+
+    // Plný vlak: v B vystoupí jen 5 vagonů u nástupiště, zbytek jede dál
+    train.passengers = 7 * 30;
+    const delivered = game.thisYear.passengers;
+    untilLoadingAt(game, train, b.id);
+    expect(game.thisYear.passengers - delivered).toBe(150);
+    expect(train.passengers).toBe(60);
+  });
+
+  it('krátký vlak nástupiště nepřesahuje', () => {
+    const { game, a, b, depot } = buildLine();
+    const train = buyTrain(game, depot, 5);
+    game.fleet.setOrders(train, [a.id, b.id]);
+    expect(game.fleet.shortStations(train)).toEqual([]);
   });
 });

@@ -7,7 +7,7 @@ import {
 } from './balance';
 import { formatMoney, type Game } from './game';
 import { inflowFactor, leaveShare, updateRating } from './rating';
-import { trainModel, type Train } from './trains';
+import { trainModel, wagonsAtStation, type Train } from './trains';
 import { TileType } from '../world/map';
 import { stationTiles, type Station, type StationShape } from '../world/rail';
 import type { Town } from '../world/town';
@@ -88,31 +88,45 @@ export class Passengers {
     return this.monthlyPassengers(station) * inflowFactor(station.rating);
   }
 
-  // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající
+  // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající.
+  // Vystupuje a nastupuje se jen ve vagonech, které stojí na nástupišti.
   exchange(train: Train, station: Station): void {
     const { game } = this;
+    const atPlatform = wagonsAtStation(train, station) * WAGON_CAPACITY;
+    let unloaded = 0;
     if (train.passengers > 0 && train.boardedStation !== station.id) {
-      const days = game.clock.now - train.boardedAt;
-      const income = fare(train.passengers, train.tiles, days);
-      game.earn(income);
-      game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
-      game.thisYear.passengers += train.passengers;
-      train.income += income;
-      game.news(
-        `${train.name} přivezl ${train.passengers} cestujících do stanice ${station.name}: ` +
-          `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}.`,
-      );
-      train.passengers = 0;
+      unloaded = Math.min(train.passengers, atPlatform);
+      train.passengers -= unloaded;
+      const stayed = train.passengers > 0 ? ` (${train.passengers} nevystoupilo z vagonů mimo nástupiště)` : '';
+      if (unloaded > 0) {
+        const days = game.clock.now - train.boardedAt;
+        const income = fare(unloaded, train.tiles, days);
+        game.earn(income);
+        game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
+        game.thisYear.passengers += unloaded;
+        train.income += income;
+        game.news(
+          `${train.name} přivezl ${unloaded} cestujících do stanice ${station.name}: ` +
+            `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${stayed}.`,
+        );
+      } else {
+        game.news(`${train.name} stojí ve stanici ${station.name} mimo nástupiště${stayed}.`);
+      }
     }
 
+    // Vagony u nástupiště se vyprázdnily, pokud se vystupovalo; jinak jsou obsazené nejdřív ony
+    const free = unloaded > 0 ? atPlatform : Math.max(0, atPlatform - train.passengers);
     const capacity = train.wagons * WAGON_CAPACITY;
-    const boarding = Math.min(capacity - train.passengers, Math.floor(station.waiting));
-    if (boarding > 0 || train.passengers === 0) {
-      train.passengers += boarding;
+    const boarding = Math.min(free, capacity - train.passengers, Math.floor(station.waiting));
+    const staying = train.passengers;
+    if (boarding > 0 || staying === 0) {
+      // Kdo nevystoupil, jede dál; jeho cesta se započte poměrně do společné jízdenky
+      const total = staying + boarding;
+      train.boardedAt = total > 0 ? (staying * train.boardedAt + boarding * game.clock.now) / total : game.clock.now;
+      train.tiles = total > 0 ? Math.round((staying * train.tiles) / total) : 0;
+      train.passengers = total;
       station.waiting -= boarding;
       train.boardedStation = station.id;
-      train.boardedAt = game.clock.now;
-      train.tiles = 0;
     }
     for (const town of this.townsInReach(station)) town.served = true;
     station.lastVisit = game.clock.now;
