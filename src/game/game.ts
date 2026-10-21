@@ -52,6 +52,8 @@ type GameEvents = {
   treesChanged: [];
   // Výdělek za přepravu a místo, kde vznikl
   income: [number, number, number];
+  // Výsledek demolice a její střed: kladná částka se vrátila, záporná se zaplatila
+  demolished: [number, number, number];
   outOfMoney: [];
 };
 

@@ -145,7 +145,7 @@ body {
 }
 
 .statusbar__money--negative {
-  color: #ff8a80;
+  color: #ff5252;
 }
 
 .window {
@@ -259,6 +259,11 @@ body {
   font-weight: 600;
 }
 
+.negative,
+.table .negative {
+  color: #ff6b6b;
+}
+
 .warning,
 .table .warning {
   color: #ffb74d;
@@ -326,7 +331,19 @@ body {
 }
 
 .tool-button small {
+  margin-left: 8px;
   color: #ddd;
+  text-align: right;
+}
+
+.tool-button > span:first-child {
+  white-space: nowrap;
+}
+
+.tool-button__icon {
+  display: inline-block;
+  width: 24px;
+  font-size: 16px;
 }
 
 kbd {
@@ -427,7 +444,8 @@ kbd {
   white-space: nowrap;
 }
 
-.income-label {
+.income-label,
+.expense-label {
   color: #4cff6a;
   font-size: 15px;
   font-weight: 700;
@@ -435,6 +453,10 @@ kbd {
   text-shadow:
     0 0 3px #000,
     0 0 2px #000;
+}
+
+.expense-label {
+  color: #ff5252;
 }
 
 .title {

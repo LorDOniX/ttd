@@ -230,6 +230,11 @@ export class Construction {
 
     if (plan.cost > 0) this.game.spend(plan.cost, 'construction');
     else this.game.refund(-plan.cost, 'construction');
+    if (plan.cost !== 0) {
+      const cx = plan.tiles.reduce((sum, t) => sum + t.x, 0) / plan.tiles.length + 0.5;
+      const cz = plan.tiles.reduce((sum, t) => sum + t.y, 0) / plan.tiles.length + 0.5;
+      this.game.events.emit('demolished', -plan.cost, cx, cz);
+    }
     if (railChanged) this.game.events.emit('railChanged');
     if (roadsChanged) this.game.events.emit('roadsChanged');
     if (townsChanged) this.game.events.emit('townsChanged');

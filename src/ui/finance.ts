@@ -26,6 +26,15 @@ const CHART_YEARS = 10;
 
 const percent = (rate: number): string => `${Math.round(rate * 100)} %`;
 
+// Buňka s částkou, záporná je červená
+function moneyCell(
+  value: number,
+  format: (n: number) => string = formatMoney,
+  className = 'num',
+): HTMLTableCellElement {
+  return h('td', { className: value < 0 ? `${className} negative` : className }, format(value));
+}
+
 function overview(game: Game): HTMLElement {
   const borrow = h('button', { className: 'small-button', textContent: `Půjčit ${formatMoney(LOAN_STEP)}` });
   const repay = h('button', { className: 'small-button', textContent: `Splatit ${formatMoney(LOAN_STEP)}` });
@@ -40,7 +49,7 @@ function overview(game: Game): HTMLElement {
   const account = h(
     'div',
     { className: 'form' },
-    h('div', {}, 'Stav účtu: ', h('strong', {}, formatMoney(game.money))),
+    h('div', {}, 'Stav účtu: ', h('strong', { className: game.money < 0 ? 'negative' : '' }, formatMoney(game.money))),
     h('div', {}, `Úvěr: ${formatMoney(game.loan)} z ${formatMoney(MAX_LOAN)}`),
     h('div', { className: 'train__actions' }, borrow, repay),
     h(
@@ -54,19 +63,28 @@ function overview(game: Game): HTMLElement {
   const year = game.clock.date.year;
   const years: [string, YearStats][] = [[`${year}`, game.thisYear]];
   if (game.lastYear) years.push([`${game.lastYear.year}`, game.lastYear]);
-  const cells = (value: (s: YearStats) => string, className = 'num'): HTMLTableCellElement[] =>
-    years.map(([, s]) => h('td', { className }, value(s)));
-  const row = (label: string, value: (s: YearStats) => string, className?: string): HTMLTableRowElement =>
-    h('tr', {}, h('td', {}, label), ...cells(value, className));
+  const cells = (value: (s: YearStats) => number, format: (n: number) => string, className: string) =>
+    years.map(([, s]) => moneyCell(value(s), format, className));
+  const row = (
+    label: string,
+    value: (s: YearStats) => number,
+    className = 'num',
+    format: (n: number) => string = formatMoney,
+  ): HTMLTableRowElement => h('tr', {}, h('td', {}, label), ...cells(value, format, className));
 
   const table = h(
     'table',
     { className: 'table' },
     h('tr', {}, h('th', {}), ...years.map(([label]) => h('th', { className: 'num' }, label))),
-    row('Přepraveno cestujících', (s) => s.passengers.toLocaleString('cs-CZ')),
-    row('Příjmy', (s) => formatMoney(s.income)),
-    ...EXPENSE_KINDS.map((kind) => row(EXPENSE_LABELS[kind], (s) => formatMoney(0 - s.costs[kind]))),
-    row('Zisk', (s) => formatMoney(s.income - s.expenses), 'num strong'),
+    row(
+      'Přepraveno cestujících',
+      (s) => s.passengers,
+      'num',
+      (n) => n.toLocaleString('cs-CZ'),
+    ),
+    row('Příjmy', (s) => s.income),
+    ...EXPENSE_KINDS.map((kind) => row(EXPENSE_LABELS[kind], (s) => 0 - s.costs[kind])),
+    row('Zisk', (s) => s.income - s.expenses, 'num strong'),
   );
   return h('div', { className: 'form' }, account, table);
 }
@@ -99,7 +117,7 @@ function trains(game: Game): HTMLElement {
   const list = game.fleet.trains;
   if (list.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádné vlaky.');
   const money = (value: number, strong = false): HTMLTableCellElement =>
-    h('td', { className: strong ? 'num strong' : 'num' }, formatMoney(value));
+    moneyCell(value, formatMoney, strong ? 'num strong' : 'num');
   return h(
     'table',
     { className: 'table' },

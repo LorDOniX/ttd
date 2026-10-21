@@ -60,29 +60,35 @@ export class BuildTools {
 
   openRailWindow(): void {
     this.openToolWindow('rail-build', 'Stavba železnice', [
-      ['track', 'Koleje', 'K', `${formatMoney(TRACK_PIECE_COST)} / dílek, most ${formatMoney(BRIDGE_PIECE_COST)}`],
-      ['station', 'Nástupiště', 'N', `${formatMoney(PLATFORM_TILE_COST)} / dílek`],
-      ['depot', 'Depo', 'D', formatMoney(DEPOT_COST)],
-      ['signal', 'Návěstidlo', 'B', `${formatMoney(SIGNAL_COST)}, znovu = odstranit`],
-      ['demolish', 'Demolice', 'X', 'vrátí 50 %'],
+      [
+        'track',
+        '🛤️',
+        'Koleje',
+        'K',
+        `${formatMoney(TRACK_PIECE_COST)} / dílek, most ${formatMoney(BRIDGE_PIECE_COST)}`,
+      ],
+      ['station', '🚉', 'Nástupiště', 'N', `${formatMoney(PLATFORM_TILE_COST)} / dílek`],
+      ['depot', '🏭', 'Depo', 'D', formatMoney(DEPOT_COST)],
+      ['signal', '🚦', 'Návěstidlo', 'B', `${formatMoney(SIGNAL_COST)}, znovu = odstranit`],
+      ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
     ]);
   }
 
   openRoadWindow(): void {
     this.openToolWindow('road-build', 'Stavba silnic', [
-      ['road', 'Silnice', 'S', `${formatMoney(ROAD_TILE_COST)} / dílek`],
-      ['demolish', 'Demolice', 'X', 'vrátí 50 %'],
+      ['road', '🛣️', 'Silnice', 'S', `${formatMoney(ROAD_TILE_COST)} / dílek`],
+      ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
     ]);
   }
 
-  private openToolWindow(id: string, title: string, tools: [BuildTool, string, string, string][]): void {
+  private openToolWindow(id: string, title: string, tools: [BuildTool, string, string, string, string][]): void {
     const buttons = new Map<BuildTool, HTMLButtonElement>();
     const content = h('div', { className: 'form' });
-    for (const [tool, label, key, price] of tools) {
+    for (const [tool, icon, label, key, price] of tools) {
       const b = h(
         'button',
         { className: 'tool-button' },
-        h('span', {}, label, h('kbd', {}, key)),
+        h('span', {}, h('span', { className: 'tool-button__icon' }, icon), label, h('kbd', {}, key)),
         h('small', {}, price),
       );
       b.addEventListener('click', () => this.setTool(this.tool === tool ? null : tool));
@@ -100,7 +106,7 @@ export class BuildTools {
       ),
     );
     this.windows.open(id, title, content, {
-      width: 260,
+      width: 320,
       onClose: () => {
         this.buttons.delete(id);
         if (this.tool && buttons.has(this.tool)) this.setTool(null);

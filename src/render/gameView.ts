@@ -107,6 +107,11 @@ export class GameView {
     game.events.on('income', (amount, x, z) =>
       this.floatingTexts.show(`+${formatMoney(amount)}`, x, z, 'income-label'),
     );
+    game.events.on('demolished', (amount, x, z) =>
+      amount > 0
+        ? this.floatingTexts.show(`+${formatMoney(amount)}`, x, z, 'income-label')
+        : this.floatingTexts.show(`−${formatMoney(-amount)}`, x, z, 'expense-label'),
+    );
   }
 
   // Id vlaku pod kurzorem
