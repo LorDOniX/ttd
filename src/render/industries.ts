@@ -91,6 +91,17 @@ function logPile(x: number, z: number, rotation = 0): THREE.Object3D {
   return group;
 }
 
+// Pařez po pokáceném stromu
+function stump(x: number, z: number): THREE.Object3D {
+  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.1, 7), [
+    material(LOG),
+    material(LOG_END),
+    material(LOG),
+  ]);
+  s.position.set(x, 0.05, z);
+  return s;
+}
+
 // Stoh řeziva nebo ocelových plechů
 function stack(x: number, z: number, color: number, layers = 4): THREE.Object3D {
   const group = new THREE.Group();
@@ -243,16 +254,18 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
   ],
   forest: () => [
     ...[
-      [-1.05, -1.0, 0.9],
-      [-0.2, -1.1, 0.75],
-      [0.75, -0.95, 0.95],
-      [-1.0, -0.1, 0.8],
-      [0.1, -0.25, 0.85],
-      [1.0, 0.0, 0.7],
-      [-0.9, 0.85, 0.9],
-    ].map(([x, z, size], i) => tree(i % 3 === 1 ? 'tree-small' : 'tree-large', size, x, z)),
-    now(logPile(0.3, 0.8)),
-    now(logPile(0.95, 0.95, Math.PI / 2)),
+      [-1.05, -1.05, 0.6],
+      [-0.2, -1.15, 0.5],
+      [0.8, -1.0, 0.65],
+    ].map(([x, z, size], i) => tree(i === 1 ? 'tree-small' : 'tree-large', size, x, z)),
+    ...[
+      [-0.6, -0.4],
+      [0.3, -0.55],
+      [1.1, -0.3],
+      [-1.15, -0.25],
+    ].map(([x, z]) => now(stump(x, z))),
+    // Skládka klád v řadách
+    ...[-0.85, 0, 0.85].flatMap((x) => [now(logPile(x, 0.25, Math.PI / 2)), now(logPile(x, 0.95, Math.PI / 2))]),
   ],
   sawmill: () => [
     kenney('building-c', 1.4, -0.5, -0.55),
