@@ -285,9 +285,11 @@ export function restoreGame(data: SaveData): Game {
       renewing: t.renewing ?? false,
       cargo: isCargo(t.cargo) ? t.cargo : ('passengers' as const),
       fullLoad: Array.isArray(t.fullLoad) ? t.fullLoad.filter((id) => Number.isInteger(id)) : [],
+      orderGroup: Number.isInteger(t.orderGroup) ? t.orderGroup : null,
     })),
   );
   game.fleet.nextId = data.fleet.nextId;
+  game.fleet.nextGroupId = Math.max(0, ...game.fleet.trains.map((t) => t.orderGroup ?? 0)) + 1;
   game.view = validView(data.view);
   // Cizí soubor může obsahovat nesmysly; místo se před stavbou kontroluje znovu
   game.construction.restore((data.construction ?? []).filter((job) => validJob(job, width, height)));

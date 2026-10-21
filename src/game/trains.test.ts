@@ -166,6 +166,35 @@ describe('stárnutí vlaků', () => {
   });
 });
 
+describe('sdílený jízdní řád', () => {
+  it('změna řádu nebo plného naložení platí pro celou linku, po zrušení jen pro jeden vlak', () => {
+    const { game, a, b, depot } = buildLine();
+    const first = buyTrain(game, depot, 1);
+    const second = buyTrain(game, depot, 1);
+    const third = buyTrain(game, depot, 1);
+    game.fleet.setOrders(first, [a.id, b.id]);
+    expect(game.fleet.shareOrders(second, third)).toMatch(/nemá jízdní řád/);
+    expect(game.fleet.shareOrders(second, first)).toBeNull();
+    expect(game.fleet.shareOrders(third, second)).toBeNull();
+    expect(game.fleet.lineOf(first)).toEqual([first, second, third]);
+
+    game.fleet.setOrders(third, [b.id, a.id]);
+    expect([first, second].map((t) => t.orders)).toEqual([
+      [b.id, a.id],
+      [b.id, a.id],
+    ]);
+    game.fleet.toggleFullLoad(first, a.id);
+    expect(third.fullLoad).toEqual([a.id]);
+
+    game.fleet.unshareOrders(third);
+    game.fleet.setOrders(third, [a.id, b.id]);
+    expect(first.orders).toEqual([b.id, a.id]);
+    // Z linky se dvěma vlaky po odchodu jednoho zbude obyčejný vlak
+    game.fleet.unshareOrders(second);
+    expect(first.orderGroup).toBeNull();
+  });
+});
+
 describe('jízdní řád', () => {
   // Linka A – B prodloužená za B na nástupiště C
   function threeStops() {

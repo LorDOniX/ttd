@@ -56,6 +56,8 @@ export interface Train {
   orders: number[] | null;
   // Zastávky (id nástupišť), kde vlak čeká na plné naložení
   fullLoad: number[];
+  // Linka se sdíleným jízdním řádem; změna řádu platí pro všechny její vlaky
+  orderGroup: number | null;
   // Index cíle v orders, -1 = návrat do depa
   target: number;
   state: TrainState;
@@ -157,6 +159,8 @@ export function ordersError(orders: number[]): string | null {
 export class Fleet {
   readonly trains: Train[] = [];
   nextId = 1;
+  // Číslo další linky; po načtení se dopočítá z vlaků
+  nextGroupId = 1;
   readonly reservations: Reservations;
   // Jak dlouho vlak stojí před obsazenou tratí: celkem a od posledního hledání jiné cesty
   private readonly blocked = new Map<number, { total: number; sinceReplan: number }>();
@@ -197,6 +201,7 @@ export class Fleet {
       depotId: depot.id,
       orders: null,
       fullLoad: [],
+      orderGroup: null,
       target: 0,
       state: 'depot',
       path: [],
@@ -320,21 +325,58 @@ export class Fleet {
     return null;
   }
 
-  // Zapne nebo vypne čekání na plné naložení na zastávce
+  // Zapne nebo vypne čekání na plné naložení na zastávce (u sdíleného řádu pro celou linku)
   toggleFullLoad(train: Train, stationId: number): void {
     const waits = train.fullLoad.includes(stationId);
-    train.fullLoad = waits ? train.fullLoad.filter((id) => id !== stationId) : [...train.fullLoad, stationId];
+    const next = waits ? train.fullLoad.filter((id) => id !== stationId) : [...train.fullLoad, stationId];
+    for (const member of this.lineOf(train)) member.fullLoad = [...next];
     this.changed();
   }
 
-  // Změní jízdní řád i za jízdy; vlak pokračuje k aktuálnímu cíli, pokud v řádu zůstal.
+  // Vlaky se stejným sdíleným řádem včetně tohoto; bez linky jen on sám
+  lineOf(train: Train): Train[] {
+    return train.orderGroup === null ? [train] : this.trains.filter((t) => t.orderGroup === train.orderGroup);
+  }
+
+  // Připojí vlak k jízdnímu řádu jiného vlaku; vznikne nebo se rozšíří linka
+  shareOrders(train: Train, other: Train): string | null {
+    if (train === other) return null;
+    if (!other.orders) return `${other.name} nemá jízdní řád.`;
+    const error = train.state === 'depot' ? null : ordersError(other.orders);
+    if (error) return error;
+    other.orderGroup ??= this.nextGroupId++;
+    train.orderGroup = other.orderGroup;
+    train.fullLoad = [...other.fullLoad];
+    this.applyOrders(train, [...other.orders]);
+    this.changed();
+    return null;
+  }
+
+  // Vlak si ponechá kopii řádu, ale dál ho upravuje samostatně
+  unshareOrders(train: Train): void {
+    const line = this.lineOf(train);
+    train.orderGroup = null;
+    // Z linky s jediným vlakem se stává obyčejný vlak
+    if (line.length === 2) for (const t of line) t.orderGroup = null;
+    this.changed();
+  }
+
+  // Změní jízdní řád i za jízdy, u sdíleného řádu všem vlakům linky.
   // V depu smí být řád rozpracovaný, ověří se až při výjezdu.
   setOrders(train: Train, orders: number[]): string | null {
-    const error = train.state === 'depot' ? null : ordersError(orders);
+    const line = this.lineOf(train);
+    const error = line.some((t) => t.state !== 'depot') ? ordersError(orders) : null;
     if (error) return error;
     if (orders.some((id) => !this.station(id))) return 'Nástupiště neexistuje.';
+    for (const member of line) this.applyOrders(member, orders);
+    this.changed();
+    return null;
+  }
+
+  // Vlak pokračuje k aktuálnímu cíli, pokud v řádu zůstal
+  private applyOrders(train: Train, orders: number[]): void {
     const current = train.orders && train.target >= 0 ? train.orders[train.target] : null;
-    train.orders = orders.length > 0 ? orders : null;
+    train.orders = orders.length > 0 ? [...orders] : null;
     train.fullLoad = train.fullLoad.filter((id) => orders.includes(id));
     if (train.target !== -1 && train.state !== 'depot') {
       const kept = current === null ? -1 : orders.indexOf(current);
@@ -342,8 +384,6 @@ export class Fleet {
       train.target = kept >= 0 ? kept : train.state === 'loading' ? orders.length - 1 : 0;
       if (kept < 0 && train.state === 'running') this.replan(train);
     }
-    this.changed();
-    return null;
   }
 
   sendToDepot(train: Train): void {

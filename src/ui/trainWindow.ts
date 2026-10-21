@@ -140,11 +140,47 @@ function ordersEditor(game: Game, train: Train, choice: { station: number | null
   );
 }
 
+// Sdílený jízdní řád: připojení k řádu jiného vlaku nebo odpojení od linky
+function sharingEditor(game: Game, train: Train, choice: { train: number | null }): HTMLElement {
+  const report = (error: string | null): void => {
+    if (error) game.news(error);
+  };
+  if (train.orderGroup !== null) {
+    const others = game.fleet.lineOf(train).filter((t) => t !== train);
+    const leave = h('button', { className: 'small-button', textContent: 'Zrušit sdílení' });
+    leave.addEventListener('click', () => game.fleet.unshareOrders(train));
+    return h(
+      'div',
+      { className: 'train__actions' },
+      `Linka ${train.orderGroup}: řád sdílí s ${others.map((t) => t.name).join(', ') || 'žádným vlakem'}`,
+      leave,
+    );
+  }
+  const candidates = game.fleet.trains.filter((t) => t !== train && t.orders);
+  if (candidates.length === 0) return h('div', {});
+  const select = h('select', {});
+  for (const t of candidates) {
+    select.append(h('option', { value: String(t.id), selected: t.id === choice.train }, t.name));
+  }
+  select.addEventListener('change', () => (choice.train = Number(select.value)));
+  const share = h('button', {
+    className: 'small-button',
+    textContent: 'Sdílet řád',
+    title: 'Vlak převezme jízdní řád vybraného vlaku; změna řádu pak platí pro oba',
+  });
+  share.addEventListener('click', () => {
+    const other = game.fleet.trains.find((t) => t.id === Number(select.value));
+    if (other) report(game.fleet.shareOrders(train, other));
+  });
+  return h('div', { className: 'train__actions' }, select, share);
+}
+
 // Okno vlaku: cíl, náklad, hospodaření, jízdní řád a akce
 export function openTrain(windows: WindowManager, game: Game, train: Train, links: TrainLinks): void {
   const id = `train-${train.id}`;
-  // Výběr zastávky k přidání musí přežít obnovení okna
+  // Výběr zastávky a vlaku ke sdílení musí přežít obnovení okna
   const choice = { station: null as number | null };
+  const shareChoice = { train: null as number | null };
   const render = (): HTMLElement => {
     const model = trainModel(train);
     const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
@@ -205,6 +241,7 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
       h('div', { className: 'train__actions' }, toDepot, depot, renew),
       h('h4', {}, 'Jízdní řád'),
       ordersEditor(game, train, choice),
+      sharingEditor(game, train, shareChoice),
     );
   };
 
@@ -225,15 +262,20 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
   windows.open(id, train.name, render(), options);
 }
 
-// Seznam všech vlaků, filtrovatelný podle nákladu; kliknutím na řádek se otevře okno vlaku
+// Seznam všech vlaků, filtrovatelný podle nákladu a linky; kliknutím na řádek se otevře okno vlaku
 export function openTrainList(windows: WindowManager, game: Game, links: TrainLinks): void {
   let filter: Cargo | null = null;
+  let line: number | null = null;
   const render = (): HTMLElement => {
     const all = game.fleet.trains;
     if (all.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádné vlaky.');
     const used = (Object.keys(CARGOS) as Cargo[]).filter((c) => all.some((t) => t.cargo === c));
     if (filter && !used.includes(filter)) filter = null;
-    const trains = filter ? all.filter((t) => t.cargo === filter) : all;
+    const lines = [...new Set(all.map((t) => t.orderGroup).filter((g): g is number => g !== null))].sort(
+      (a, b) => a - b,
+    );
+    if (line !== null && !lines.includes(line)) line = null;
+    const trains = all.filter((t) => (!filter || t.cargo === filter) && (line === null || t.orderGroup === line));
     const filterButton = (label: string, value: Cargo | null): HTMLButtonElement => {
       const b = h('button', { className: 'small-button', textContent: label });
       b.classList.toggle('small-button--active', filter === value);
@@ -243,7 +285,16 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
       });
       return b;
     };
-    const filters =
+    const lineButton = (label: string, value: number | null): HTMLButtonElement => {
+      const b = h('button', { className: 'small-button', textContent: label });
+      b.classList.toggle('small-button--active', line === value);
+      b.addEventListener('click', () => {
+        line = value;
+        refresh();
+      });
+      return b;
+    };
+    const cargoFilters =
       used.length > 1
         ? h(
             'div',
@@ -252,6 +303,20 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
             filterButton(`Vše (${all.length})`, null),
             ...used.map((c) => filterButton(`${CARGOS[c].name} (${all.filter((t) => t.cargo === c).length})`, c)),
           )
+        : null;
+    const lineFilters =
+      lines.length > 0
+        ? h(
+            'div',
+            { className: 'train__actions' },
+            'Linka:',
+            lineButton('Vše', null),
+            ...lines.map((g) => lineButton(`${g} (${all.filter((t) => t.orderGroup === g).length})`, g)),
+          )
+        : null;
+    const filters =
+      cargoFilters || lineFilters
+        ? h('div', { className: 'form' }, ...[cargoFilters, lineFilters].filter((f) => f !== null))
         : null;
     const table = h(
       'table',
@@ -270,7 +335,7 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
         const tr = h(
           'tr',
           { title: 'Otevřít okno vlaku' },
-          h('td', {}, t.name),
+          h('td', {}, t.orderGroup === null ? t.name : `${t.name} · linka ${t.orderGroup}`),
           h('td', {}, stateText(game, t)),
           h('td', { className: isOld(t, today) ? 'num warning' : 'num' }, formatYears(trainAge(t, today))),
           h('td', { className: 'num' }, formatLoad(t)),
