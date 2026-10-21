@@ -526,6 +526,8 @@ kbd {
   position: absolute;
   top: 0;
   left: 0;
+  /* Vlastní vrstva: z-index jednotlivých popisků (řadí je CSS2DRenderer) nepřeroste lištu, okna ani úvodní panel */
+  z-index: 1;
   pointer-events: none;
 }
 
