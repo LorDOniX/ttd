@@ -64,22 +64,30 @@ export class Hud {
 
     this.infoButton = button('❓', 'Informace o dlaždici a dosah nástupiště (I)', actions.toggleInfo);
 
+    // Skupiny v pořadí jako v OpenTTD: čas, hra, mapa, finance, vozidla, pohled, stavba, zprávy a nápověda
+    const groups: HTMLElement[][] = [
+      [pause, speed],
+      [
+        button('⚙️', 'Nastavení a klávesové zkratky', actions.openSettings),
+        button('💾', 'Uložit / načíst hru', actions.openSaveLoad),
+      ],
+      [button('🗺️', 'Minimapa (M)', actions.openMinimap)],
+      [button('💰', 'Finance (F)', actions.openFinance)],
+      [
+        button('🚆', 'Seznam vlaků (V)', actions.openTrainList),
+        button('🚌', 'Seznam aut (A)', actions.openVehicleList),
+      ],
+      [rotate],
+      [
+        button('🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild),
+        button('🛣️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild),
+      ],
+      [button('📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
+    ];
     const toolbar = h(
       'div',
       { className: 'toolbar' },
-      pause,
-      speed,
-      button('💾', 'Uložit / načíst hru', actions.openSaveLoad),
-      button('⚙️', 'Nastavení a klávesové zkratky', actions.openSettings),
-      button('💰', 'Finance (F)', actions.openFinance),
-      button('🚆', 'Seznam vlaků (V)', actions.openTrainList),
-      button('🚌', 'Seznam aut (A)', actions.openVehicleList),
-      button('📰', 'Historie zpráv (H)', actions.openNews),
-      button('🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild),
-      button('🛣️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild),
-      this.infoButton,
-      rotate,
-      button('🗺️', 'Minimapa (M)', actions.openMinimap),
+      ...groups.flatMap((group, i) => (i === 0 ? group : [h('span', { className: 'toolbar__gap' }), ...group])),
     );
 
     const center = h('span', { className: 'statusbar__center', title: 'Historie zpráv' }, this.companyEl, this.newsEl);

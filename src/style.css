@@ -101,6 +101,10 @@ body {
   font-weight: 600;
 }
 
+.toolbar__gap {
+  width: 6px;
+}
+
 .toolbar__button:disabled {
   opacity: 0.4;
   cursor: default;
