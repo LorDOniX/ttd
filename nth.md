@@ -10,21 +10,18 @@ Volitelná rozšíření mimo hlavní fáze ze [ttd.md](ttd.md).
 - **Pozice kamery v uložení** – po načtení se obnoví pohled
 - **Rozpracovaná výstavba v uložení** – po načtení se stavba dokončí
 - **Umístění oken** – nová okna u levého okraje, přetažené si pamatují polohu
+- **Pošta** – druh nákladu mezi městy, vzniká u stanic s poštovním vlakem
+- **Reklamní kampaň a financování výstavby** – akce v okně města
+- **Klik na zprávu ukáže místo** – zprávy s polohou v historii zpráv
+- **Automatická obnova vlaků** – volba v Nastavení
+- **Pobyt ve stanici podle množství nákladu** – den plus den na 150 přeložených jednotek
+- **Okno stanice** – kliknutím na nástupiště
+- **Hodnocení stanice podle druhu nákladu**
+- **Hodnota a hodnocení společnosti** – záložka Společnost ve financích
+- **Sdílené jízdní řády a linky** – v okně vlaku, filtr linek v seznamu vlaků
 
 ## Zbývá
 - **Auta do měst** – modely jsou v `assets/car kit`; samostatný větší krok (jízda po silnicích měst, bez vlivu na hru)
+- **zvířata do lesa** - modely jsou v `assets/cube pets`;
 - **Výška terénu** – teď nedává smysl: koleje, mosty, stavba i generátor počítají s rovinou, šlo by o přestavbu celé mapy
-
-## Návrhy převzetí z OpenTTD
-Jednoduché (stačí stávající systémy):
-- **Pošta** – další druh nákladu mezi městy (krytý vagon), malé množství, vysoká sazba
-- **Reklamní kampaň a financování výstavby** – akce v okně města: na pár měsíců vyšší hodnocení stanic, rychlejší růst
-- **Klik na zprávu ukáže místo** – zprávy o vlacích, stanicích a závodech s polohou
-- **Automatická obnova vlaků** – volba v nastavení: starý vlak se při průjezdu depem sám obnoví
-- **Postupné nakládání** – doba stání podle množství nákladu místo pevných 2 dnů
-
-Středně náročné:
-- **Okno stanice** – čekající náklad podle druhu, hodnocení a vlaky, které ji obsluhují
-- **Hodnocení stanice podle druhu nákladu** – jako v OpenTTD každý náklad zvlášť
-- **Hodnota a hodnocení společnosti** – roční přehled výkonu firmy
-- **Sdílené jízdní řády a skupiny vlaků**
+- **další továrny podle modelů** - zkusit navrhnout další továrny
