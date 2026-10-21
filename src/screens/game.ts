@@ -18,6 +18,8 @@ import { openTrain, openTrainList } from '../ui/trainWindow';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
 import { NO_OWNER } from '../world/map';
+import { industryAt, type Industry } from '../world/industry';
+import { openIndustry } from '../ui/industry';
 import type { Depot } from '../world/rail';
 import { hashSeed } from '../world/rng';
 import type { Town } from '../world/town';
@@ -80,6 +82,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     focus,
     openDepot: (depot: Depot) => openDepot(windows, game, depot, focus),
     openTown: (town: Town) => openTown(windows, game, town, focus),
+    openIndustry: (industry: Industry) => openIndustry(windows, game, industry, focus),
   };
   buildTools.onInspect = (tile) => openTileInfo(windows, game, tile, links);
   const actions: ToolbarActions = {
@@ -200,6 +203,11 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     const depot = world.rail.depotAt(tile.x, tile.y);
     if (depot) {
       links.openDepot(depot);
+      return;
+    }
+    const industry = industryAt(world.industries, tile.x, tile.y);
+    if (industry) {
+      links.openIndustry(industry);
       return;
     }
     const owner = map.getOwner(tile.x, tile.y);

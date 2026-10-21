@@ -87,7 +87,17 @@ export class GameView {
     });
 
     const rebuildStationLabels = (): void =>
-      stationLabels.rebuild(world.rail.stations, (s) => game.passengers.townsInReach(s).length > 0);
+      stationLabels.rebuild(world.rail.stations, (s) => {
+        const towns = game.passengers.townsInReach(s).length > 0;
+        const mine = game.freight.industriesInReach(s, 'coal-mine').length > 0;
+        const plant = game.freight.acceptsCoal(s);
+        const parts = [s.name];
+        if (towns) parts.push(`čeká ${Math.floor(s.waiting)}`);
+        if (mine) parts.push(`uhlí ${Math.floor(s.coal)} t`);
+        if (plant) parts.push('výkup uhlí');
+        parts.push(towns || mine || plant ? `${Math.round(s.rating * 100)} %` : 'mimo dosah města a průmyslu');
+        return parts.join(' · ');
+      });
     rebuildStationLabels();
 
     // Terén, silnice a stromy čtou změny mapy samy jednou za snímek; koleje se přestaví nejvýš jednou za snímek

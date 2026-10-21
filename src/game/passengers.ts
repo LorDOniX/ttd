@@ -37,9 +37,9 @@ export function inArea(area: Area, x: number, y: number): boolean {
   return x >= area.x0 && x <= area.x1 && y >= area.y0 && y <= area.y1;
 }
 
-export function fare(passengers: number, tiles: number, days: number): number {
-  const tier = FARE_TIERS.find((t) => days <= t.maxDays)!;
-  return Math.round(passengers * tiles * tier.rate);
+export function fare(amount: number, tiles: number, days: number, tiers = FARE_TIERS): number {
+  const tier = tiers.find((t) => days <= t.maxDays)!;
+  return Math.round(amount * tiles * tier.rate);
 }
 
 // Cestující: vznikají ve městech u nástupišť, vlaky je vozí a dostávají za ně zaplaceno

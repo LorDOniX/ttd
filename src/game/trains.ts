@@ -7,6 +7,7 @@ import {
   TRAIN_MODELS,
   TRAIN_SELL_REFUND,
   VEHICLE_LENGTH,
+  WAGON_CAPACITY,
   WAGON_PRICE,
   WAGON_RUNNING_COST,
   type TrainModel,
@@ -38,12 +39,15 @@ const BLOCKED_REPLAN_DAYS = 3;
 const BLOCKED_WARN_DAYS = 30;
 
 export type TrainState = 'depot' | 'running' | 'loading' | 'lost';
+export type Cargo = 'passengers' | 'coal';
 
 export interface Train {
   id: number;
   name: string;
   modelId: string;
   wagons: number;
+  // Všechny vagony vlaku vezou stejný druh nákladu
+  cargo: Cargo;
   depotId: number;
   // Zastávky, které vlak objíždí dokola; v depu si je pamatuje pro další výjezd
   orders: number[] | null;
@@ -57,7 +61,7 @@ export interface Train {
   waitDays: number;
   // Lokomotiva je na konci soupravy (po otočení směru jízdy)
   flipped: boolean;
-  // Cestující na palubě: odkud a kdy nastoupili, kolik dlaždic ujeli
+  // Náklad na palubě (cestující nebo tuny uhlí): odkud a kdy naložen, kolik dlaždic ujel
   passengers: number;
   boardedStation: number;
   boardedAt: number;
@@ -83,6 +87,16 @@ export function trainModel(train: Train): TrainModel {
 
 export function trainLength(train: Train): number {
   return (train.wagons + 1) * VEHICLE_LENGTH;
+}
+
+export const CARGO_NAMES: Record<Cargo, string> = { passengers: 'Cestující', coal: 'Uhlí' };
+
+// Náklad na palubě a kapacita, např. „12 / 60 cestujících“ nebo „60 / 60 t uhlí“
+export function formatLoad(train: Train): string {
+  const capacity = train.wagons * WAGON_CAPACITY;
+  return train.cargo === 'coal'
+    ? `${train.passengers} / ${capacity} t uhlí`
+    : `${train.passengers} / ${capacity} cestujících`;
 }
 
 // Vagony stojící na nástupišti; jen ty nakládají a vykládají
@@ -179,6 +193,7 @@ export class Fleet {
       name: `Vlak ${id}`,
       modelId: model.id,
       wagons: 0,
+      cargo: 'passengers',
       depotId: depot.id,
       orders: null,
       target: 0,
@@ -295,6 +310,14 @@ export class Fleet {
 
   // Změní jízdní řád i za jízdy; vlak pokračuje k aktuálnímu cíli, pokud v řádu zůstal.
   // V depu smí být řád rozpracovaný, ověří se až při výjezdu.
+  // Změna druhu nákladu jen v depu, kde je vlak prázdný
+  setCargo(train: Train, cargo: Cargo): string | null {
+    if (train.state !== 'depot') return 'Druh nákladu lze změnit jen v depu.';
+    train.cargo = cargo;
+    this.changed();
+    return null;
+  }
+
   setOrders(train: Train, orders: number[]): string | null {
     const error = train.state === 'depot' ? null : ordersError(orders);
     if (error) return error;
@@ -438,7 +461,10 @@ export class Fleet {
       train.waitDays = TRAIN_LOADING_DAYS;
       this.reservations.reset(train, this.tail(train));
       const station = this.goal(train);
-      if (station && !('entrance' in station)) this.game.passengers.exchange(train, station);
+      if (station && !('entrance' in station)) {
+        if (train.cargo === 'coal') this.game.freight.exchange(train, station);
+        else this.game.passengers.exchange(train, station);
+      }
     }
     this.changed();
   }

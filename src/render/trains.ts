@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { loadModel } from '../assets';
-import { VEHICLE_LENGTH } from '../game/balance';
+import { COAL_WAGON_MODEL, VEHICLE_LENGTH } from '../game/balance';
 import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
 import { pointAt } from '../world/route';
@@ -19,7 +19,7 @@ interface TrainView {
 }
 
 function trainKey(train: Train): string {
-  return `${train.modelId}:${train.wagons}`;
+  return `${train.modelId}:${train.wagons}:${train.cargo}`;
 }
 
 // Soupravy jedoucích vlaků; vozy sledují trasu vlaku za hlavou soupravy
@@ -70,7 +70,8 @@ export class TrainsView {
   private createView(train: Train): TrainView {
     const model = trainModel(train);
     const view: TrainView = { key: trainKey(train), group: new THREE.Group(), vehicles: [] };
-    const names = [model.model, ...Array.from({ length: train.wagons }, () => model.wagonModel)];
+    const wagonModel = train.cargo === 'coal' ? COAL_WAGON_MODEL : model.wagonModel;
+    const names = [model.model, ...Array.from({ length: train.wagons }, () => wagonModel)];
     void Promise.all(names.map((n) => loadModel('train kit', n))).then((objects) => {
       for (const o of objects) {
         o.scale.setScalar(SCALE);

@@ -4,7 +4,7 @@ import { Game, formatMoney } from '../game/game';
 import { catchmentArea, inArea } from '../game/passengers';
 import { ratingParts, targetRating } from '../game/rating';
 import { NO_OWNER, TileType, type TilePos } from '../world/map';
-import { industryAt } from '../world/industry';
+import { industryAt, type Industry } from '../world/industry';
 import type { Depot } from '../world/rail';
 import { buildingAt, buildingCapacity, type Town } from '../world/town';
 import { h } from './dom';
@@ -28,6 +28,7 @@ export interface TileInfoLinks {
   focus: (x: number, z: number) => void;
   openDepot: (depot: Depot) => void;
   openTown: (town: Town) => void;
+  openIndustry: (industry: Industry) => void;
 }
 
 const monthly = (value: number): string => `${formatMoney(Math.round((value * MAINTENANCE_RATE) / 12))} měsíčně`;
@@ -63,7 +64,10 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
     }
     if (town) action(`Město ${town.name}`, () => links.openTown(town));
     const industry = type === TileType.Industry ? industryAt(game.world.industries, x, y) : undefined;
-    if (industry) rows.push(['Název', industry.name]);
+    if (industry) {
+      rows.push(['Název', industry.name]);
+      action('Otevřít závod', () => links.openIndustry(industry));
+    }
 
     if (type === TileType.Rail || type === TileType.Crossing || type === TileType.Bridge) {
       const value = rail.pieceCount(x, y) * trackPieceCost(map, x, y);
@@ -81,10 +85,16 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
       const now = game.clock.now;
       const parts = ratingParts(station, now);
       const visit = station.lastVisit < 0 ? 'nikdy' : `před ${Math.floor(now - station.lastVisit)} dny`;
+      const industries = [
+        ...game.freight.industriesInReach(station, 'coal-mine'),
+        ...game.freight.industriesInReach(station, 'power-station'),
+      ].map((i) => i.name);
       rows.push(
         ['Název', station.name],
         ['Rozměr', `${station.tracks}×${station.length}`],
         ['Čeká cestujících', String(Math.floor(station.waiting))],
+        ['Uhlí k odvozu', `${Math.floor(station.coal)} t`],
+        ['Výkup uhlí', game.freight.acceptsCoal(station) ? 'ano' : 'ne'],
         ['Hodnocení', `${percent(station.rating)} (směřuje k ${percent(targetRating(station, now))})`],
         [
           'Složení hodnocení',
@@ -92,7 +102,8 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
             `čekající: ${percent(parts.waiting)}`,
         ],
         ['Příliv za měsíc', String(Math.round(game.passengers.inflow(station)))],
-        ['Města v dosahu', reach.length > 0 ? reach.join(', ') : 'žádné – nástupiště nikdo nevyužije'],
+        ['Města v dosahu', reach.length > 0 ? reach.join(', ') : 'žádná'],
+        ['Průmysl v dosahu', industries.length > 0 ? industries.join(', ') : 'žádný'],
         ['Obsluhují vlaky', served.length > 0 ? served.join(', ') : 'žádné'],
         ['Údržba', monthly(stationCost(station))],
       );

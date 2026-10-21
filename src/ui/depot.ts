@@ -1,6 +1,17 @@
-import { MAX_WAGONS, WAGON_CAPACITY, WAGON_PRICE } from '../game/balance';
+import { MAX_WAGONS, WAGON_PRICE } from '../game/balance';
 import { Game, formatMoney } from '../game/game';
-import { isOld, ordersError, sellPrice, trainAge, trainLength, trainModel, type Train } from '../game/trains';
+import {
+  CARGO_NAMES,
+  formatLoad,
+  isOld,
+  ordersError,
+  sellPrice,
+  trainAge,
+  trainLength,
+  trainModel,
+  type Cargo,
+  type Train,
+} from '../game/trains';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { h } from './dom';
@@ -49,7 +60,7 @@ export function openDepot(
       h('strong', {}, train.name),
       ` · ${model.name} · ${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'}`,
       ` (${formatTiles(trainLength(train))})`,
-      ` · ${train.passengers}/${train.wagons * WAGON_CAPACITY} cestujících`,
+      ` · ${formatLoad(train)}`,
       h('span', { className: isOld(train, game.clock.day) ? 'warning' : '' }, ` · ${formatYears(trainAge(train, game.clock.day))}`),
       h('div', { className: 'form__hint' }, stateText(game, train)),
     );
@@ -68,6 +79,16 @@ export function openDepot(
           button('− vagon', () => fleet.removeWagon(train), train.wagons === 0),
           button(`Prodat (${formatMoney(sellPrice(train, game.clock.day))})`, () => fleet.sell(train)),
           button(`Obnovit (${formatMoney(fleet.renewalOffer(train).cost)})`, () => report(fleet.renew(train))),
+        ),
+        h(
+          'div',
+          { className: 'train__actions' },
+          'Náklad:',
+          ...(Object.keys(CARGO_NAMES) as Cargo[]).map((cargo) => {
+            const b = button(CARGO_NAMES[cargo], () => report(fleet.setCargo(train, cargo)));
+            b.classList.toggle('small-button--active', train.cargo === cargo);
+            return b;
+          }),
         ),
       );
       const orders = train.orders;

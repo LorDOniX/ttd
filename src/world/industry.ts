@@ -1,3 +1,4 @@
+import { COAL_PRODUCTION } from '../game/balance';
 import { GameMap, TileType } from './map';
 import type { Rng } from './rng';
 import { KIND_RULES, type Town } from './town';
@@ -13,6 +14,10 @@ export interface Industry {
   y: number;
   // Natočení areálu po 90°
   rotation: number;
+  // Těžba v tunách za měsíc (elektrárna nic nevyrábí) a odvoz letos a minulý měsíc
+  production: number;
+  transported: number;
+  lastTransported: number;
 }
 
 export const INDUSTRY_SIZE = 3;
@@ -51,7 +56,17 @@ export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng):
     for (let attempt = 0; attempt < count * 80 && placed < count; attempt++) {
       const x = rng.int(EDGE_MARGIN, map.width - EDGE_MARGIN - INDUSTRY_SIZE);
       const y = rng.int(EDGE_MARGIN, map.height - EDGE_MARGIN - INDUSTRY_SIZE);
-      const candidate: Industry = { id: industries.length, kind, name: '', x, y, rotation: rng.int(0, 3) };
+      const candidate: Industry = {
+        id: industries.length,
+        kind,
+        name: '',
+        x,
+        y,
+        rotation: rng.int(0, 3),
+        production: 0,
+        transported: 0,
+        lastTransported: 0,
+      };
       const tiles = industryTiles(candidate);
       if (!tiles.every((t) => map.isFree(t.x, t.y))) continue;
       const cx = x + INDUSTRY_SIZE / 2;
@@ -63,6 +78,7 @@ export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng):
       if (nearTown || nearIndustry) continue;
 
       candidate.name = industryName(kind, towns, industries, cx, cy);
+      if (kind === 'coal-mine') candidate.production = rng.int(COAL_PRODUCTION.min, COAL_PRODUCTION.max);
       for (const t of tiles) map.set(t.x, t.y, TileType.Industry);
       industries.push(candidate);
       placed++;

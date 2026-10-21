@@ -1,4 +1,4 @@
-import { RATING_START, STATION_LENGTH } from './balance';
+import { COAL_PRODUCTION, RATING_START, STATION_LENGTH } from './balance';
 import { Game, emptyYear, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Train } from './trains';
@@ -8,8 +8,11 @@ import { GameMap } from '../world/map';
 import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
-// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl
-const SAVE_VERSION = 6;
+// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
+// 7: nákladní doprava uhlí
+const SAVE_VERSION = 7;
+// Důl ze staršího uložení nemá těžbu, dostane střední hodnotu
+const DEFAULT_MINE_PRODUCTION = Math.round((COAL_PRODUCTION.min + COAL_PRODUCTION.max) / 2);
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -115,7 +118,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function validIndustry(value: unknown, width: number, height: number): boolean {
+function validIndustry(value: unknown, width: number, height: number): value is Industry {
   if (!isObject(value)) return false;
   const { kind, name, x, y, rotation } = value;
   const inside = (v: unknown, size: number): boolean =>
@@ -130,6 +133,19 @@ function validIndustry(value: unknown, width: number, height: number): boolean {
   );
 }
 
+const finiteOr = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+function restoreIndustry(industry: Industry): Industry {
+  const production = industry.kind === 'coal-mine' ? DEFAULT_MINE_PRODUCTION : 0;
+  return {
+    ...industry,
+    production: finiteOr(industry.production, production),
+    transported: finiteOr(industry.transported, 0),
+    lastTransported: finiteOr(industry.lastTransported, 0),
+  };
+}
+
 // Kontrola struktury souboru; data pochází od uživatele, proto se neověřené nepoužijí
 export function parseSave(text: string): SaveData {
   let data: unknown;
@@ -138,7 +154,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -186,6 +202,7 @@ export function restoreGame(data: SaveData): Game {
       rating: s.rating ?? RATING_START,
       lastVisit: s.lastVisit ?? -1,
       lastSpeed: s.lastSpeed ?? 0,
+      coal: finiteOr(s.coal, 0),
     })),
   );
   rail.depots.push(...data.rail.depots);
@@ -202,14 +219,17 @@ export function restoreGame(data: SaveData): Game {
     towns: data.towns,
     rail,
     // Starší uložení průmysl nemá; cizí soubor může obsahovat nesmysly
-    industries: (data.industries ?? []).filter((i) => validIndustry(i, width, height)),
+    industries: (data.industries ?? [])
+      .filter((i) => validIndustry(i, width, height))
+      .map(restoreIndustry),
   };
   const game = new Game(world);
   game.companyName = data.game.companyName;
   game.money = data.game.money;
   game.loan = data.game.loan;
-  game.thisYear = data.game.thisYear;
-  game.history = data.game.history;
+  // Přepravené uhlí starší uložení nezná
+  game.thisYear = { ...data.game.thisYear, coal: finiteOr(data.game.thisYear.coal, 0) };
+  game.history = data.game.history.map((y) => ({ ...y, coal: finiteOr(y.coal, 0) }));
   game.rng.state = data.game.rngState;
   game.clock.date = data.clock.date;
   game.clock.day = data.clock.day;
@@ -221,6 +241,7 @@ export function restoreGame(data: SaveData): Game {
       builtDay: t.builtDay ?? 0,
       agingWarned: t.agingWarned ?? false,
       renewing: t.renewing ?? false,
+      cargo: t.cargo === 'coal' ? ('coal' as const) : ('passengers' as const),
     })),
   );
   game.fleet.nextId = data.fleet.nextId;

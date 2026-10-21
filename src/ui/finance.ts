@@ -82,6 +82,12 @@ function overview(game: Game): HTMLElement {
       'num',
       (n) => n.toLocaleString('cs-CZ'),
     ),
+    row(
+      'Přepraveno uhlí',
+      (s) => s.coal,
+      'num',
+      (n) => `${Math.round(n).toLocaleString('cs-CZ')} t`,
+    ),
     row('Příjmy', (s) => s.income),
     ...EXPENSE_KINDS.map((kind) => row(EXPENSE_LABELS[kind], (s) => 0 - s.costs[kind])),
     row('Zisk', (s) => s.income - s.expenses, 'num strong'),
@@ -108,6 +114,12 @@ function charts(game: Game): HTMLElement {
     h('h4', {}, 'Přepravení cestující'),
     barChart(labels, [{ label: 'Cestující', color: '#5a8fd9', values: records.map((r) => r.passengers) }], (v) =>
       v.toLocaleString('cs-CZ'),
+    ),
+    h('h4', {}, 'Přepravené uhlí'),
+    barChart(
+      labels,
+      [{ label: 'Uhlí', color: '#6b6b64', values: records.map((r) => r.coal) }],
+      (v) => `${Math.round(v).toLocaleString('cs-CZ')} t`,
     ),
     h('div', { className: 'form__hint' }, `Rok ${year} zatím neskončil.`),
   );

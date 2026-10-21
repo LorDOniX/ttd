@@ -1,6 +1,7 @@
-import { TRAIN_LIFETIME_YEARS, WAGON_CAPACITY } from '../game/balance';
+import { TRAIN_LIFETIME_YEARS } from '../game/balance';
 import { Game, formatMoney } from '../game/game';
 import {
+  formatLoad,
   isOld,
   nextStop,
   ordersError,
@@ -129,7 +130,6 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
   const choice = { station: null as number | null };
   const render = (): HTMLElement => {
     const model = trainModel(train);
-    const capacity = train.wagons * WAGON_CAPACITY;
     const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
       h('tr', {}, h('td', {}, label), h('td', { className }, value));
     const speed = (v: number): string => v.toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
@@ -141,7 +141,7 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
       { className: 'table' },
       row('Model', `${model.name} (${model.year})`),
       row('Stav', train.renewing ? `${stateText(game, train)} (na obnovu)` : stateText(game, train)),
-      row('Cestující', `${train.passengers} / ${capacity}`, 'num'),
+      row('Náklad', formatLoad(train), 'num'),
       row(
         'Délka',
         `${formatTiles(trainLength(train))} (${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'})`,
@@ -222,7 +222,7 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
         h('th', {}, 'Vlak'),
         h('th', {}, 'Stav'),
         h('th', { className: 'num' }, 'Stáří'),
-        h('th', { className: 'num' }, 'Cestující'),
+        h('th', { className: 'num' }, 'Náklad'),
         h('th', { className: 'num' }, 'Zisk letos'),
       ),
       ...trains.map((t) => {
@@ -233,7 +233,7 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
           h('td', {}, t.name),
           h('td', {}, stateText(game, t)),
           h('td', { className: isOld(t, today) ? 'num warning' : 'num' }, formatYears(trainAge(t, today))),
-          h('td', { className: 'num' }, `${t.passengers} / ${t.wagons * WAGON_CAPACITY}`),
+          h('td', { className: 'num' }, formatLoad(t)),
           h('td', { className: 'num' }, formatMoney(t.income - t.costs)),
         );
         tr.addEventListener('click', () => openTrain(windows, game, t, links));

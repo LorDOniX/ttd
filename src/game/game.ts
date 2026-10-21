@@ -2,6 +2,7 @@ import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN, START_MONEY } fro
 import { Construction, infrastructureValue } from './construction';
 import { Emitter } from './emitter';
 import { GameClock, formatDate, type GameDate } from './clock';
+import { Freight } from './freight';
 import { Passengers } from './passengers';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
@@ -24,6 +25,8 @@ export interface YearStats {
   income: number;
   expenses: number;
   passengers: number;
+  // Přepravené uhlí v tunách
+  coal: number;
   costs: Record<ExpenseKind, number>;
 }
 
@@ -36,6 +39,7 @@ export function emptyYear(): YearStats {
     income: 0,
     expenses: 0,
     passengers: 0,
+    coal: 0,
     costs: { construction: 0, vehicles: 0, running: 0, maintenance: 0, interest: 0 },
   };
 }
@@ -72,6 +76,7 @@ export class Game {
   readonly construction = new Construction(this);
   readonly fleet: Fleet;
   readonly passengers: Passengers;
+  readonly freight: Freight;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
   money = START_MONEY;
@@ -89,6 +94,7 @@ export class Game {
     this.rng = new Rng(world.seed ^ 0x5bd1e995);
     this.fleet = new Fleet(this);
     this.passengers = new Passengers(this);
+    this.freight = new Freight(this);
     this.clock.events.on('month', () => this.payMonthly());
     this.events.on('railChanged', () => (this.infrastructure = null));
     this.clock.events.on('year', (year) => this.onYearEnd(year));
@@ -174,9 +180,10 @@ export class Game {
   }
 
   private onYearEnd(year: number): void {
-    const { income, expenses, passengers } = this.thisYear;
+    const { income, expenses, passengers, coal } = this.thisYear;
+    const coalText = coal > 0 ? ` a ${Math.round(coal).toLocaleString('cs-CZ')} t uhlí` : '';
     this.news(
-      `Rok ${year} skončil – přepraveno ${passengers.toLocaleString('cs-CZ')} cestujících, ` +
+      `Rok ${year} skončil – přepraveno ${passengers.toLocaleString('cs-CZ')} cestujících${coalText}, ` +
         `příjmy ${formatMoney(income)}, výdaje ${formatMoney(expenses)}, zisk ${formatMoney(income - expenses)}.`,
     );
     this.history.push({ year, ...this.thisYear });

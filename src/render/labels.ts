@@ -42,18 +42,16 @@ export class TownLabels {
   }
 }
 
-// Popisky nástupišť s počtem čekajících cestujících; vykresluje je CSS2DRenderer z TownLabels
+// Popisky nástupišť (čekající cestující, uhlí, hodnocení); vykresluje je CSS2DRenderer z TownLabels
 export class StationLabels {
   readonly object = new THREE.Group();
 
-  rebuild(stations: readonly Station[], inReach: (station: Station) => boolean): void {
+  rebuild(stations: readonly Station[], describe: (station: Station) => string): void {
     this.object.clear();
     for (const station of stations) {
       const el = document.createElement('div');
       el.className = 'station-label';
-      el.textContent = inReach(station)
-        ? `${station.name} · čeká ${Math.floor(station.waiting)} · ${Math.round(station.rating * 100)} %`
-        : `${station.name} · mimo dosah města`;
+      el.textContent = describe(station);
       const label = new CSS2DObject(el);
       label.position.set(station.x + 0.5, 0.8, station.y + 0.5);
       this.object.add(label);

@@ -43,9 +43,50 @@ describe('uložení a načtení', () => {
     );
   });
 
+  it('uložení verze 6 načte vlaky na cestující, nástupiště bez uhlí a důl se střední těžbou', () => {
+    const { game, depot } = buildLine();
+    buyTrain(game, depot);
+    game.world.industries.push({
+      id: 0,
+      kind: 'coal-mine',
+      name: 'Důl',
+      x: 50,
+      y: 50,
+      rotation: 0,
+      production: 0,
+      transported: 0,
+      lastTransported: 0,
+    });
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.version = 6;
+    for (const train of data.fleet.trains) delete train.cargo;
+    for (const station of data.rail.stations) delete station.coal;
+    for (const industry of data.industries) {
+      delete industry.production;
+      delete industry.transported;
+      delete industry.lastTransported;
+    }
+    delete data.game.thisYear.coal;
+    const copy = restoreGame(parseSave(JSON.stringify(data)));
+    expect(copy.fleet.trains[0].cargo).toBe('passengers');
+    expect(copy.world.rail.stations.map((s) => s.coal)).toEqual([0, 0]);
+    expect(copy.world.industries[0].production).toBe(105);
+    expect(copy.thisYear.coal).toBe(0);
+  });
+
   it('průmysl se uloží a neplatný z cizího souboru zahodí', () => {
     const { game } = buildLine();
-    game.world.industries.push({ id: 0, kind: 'coal-mine', name: 'Důl', x: 50, y: 50, rotation: 1 });
+    game.world.industries.push({
+      id: 0,
+      kind: 'coal-mine',
+      name: 'Důl',
+      x: 50,
+      y: 50,
+      rotation: 1,
+      production: 80,
+      transported: 5,
+      lastTransported: 40,
+    });
     const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
     data.industries.push({ kind: 'castle', name: 'X', x: 1, y: 1, rotation: 0 }, { kind: 'coal-mine', x: 63 });
     const copy = restoreGame(parseSave(JSON.stringify(data)));

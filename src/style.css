@@ -383,6 +383,11 @@ kbd {
   cursor: default;
 }
 
+.small-button--active {
+  background: #3c5a8a;
+  border-color: #33332f #8e8e86 #8e8e86 #33332f;
+}
+
 .window select {
   max-width: 100%;
   min-width: 0;

@@ -86,6 +86,8 @@ export interface Station extends StationShape {
   townId: number;
   // Čekající cestující (necelé číslo kvůli průběžnému přírůstku)
   waiting: number;
+  // Uhlí připravené k odvozu v tunách
+  coal: number;
   // Hodnocení 0–1, herní den poslední návštěvy vlaku (−1 = nikdy) a jeho rychlost
   rating: number;
   lastVisit: number;
@@ -196,11 +198,12 @@ export class RailNetwork {
     );
   }
 
-  addStation(station: Omit<Station, 'id' | 'waiting' | 'rating' | 'lastVisit' | 'lastSpeed'>): Station {
+  addStation(station: Omit<Station, 'id' | 'waiting' | 'coal' | 'rating' | 'lastVisit' | 'lastSpeed'>): Station {
     const created = {
       ...station,
       id: this.nextStationId++,
       waiting: 0,
+      coal: 0,
       rating: RATING_START,
       lastVisit: -1,
       lastSpeed: 0,
