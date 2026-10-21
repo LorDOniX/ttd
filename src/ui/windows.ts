@@ -14,11 +14,29 @@ export interface WindowOptions {
   locate?: () => void;
 }
 
+const POSITIONS_KEY = 'ttd-window-positions';
+
+// Okna stejného druhu (např. všechny vlaky) sdílejí polohu: train-3 → train
+function positionKey(id: string): string {
+  return id.replace(/-\d+$/, '');
+}
+
+function loadPositions(): Record<string, { left: number; top: number }> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(POSITIONS_KEY) ?? '{}');
+    return typeof saved === 'object' && saved !== null ? (saved as Record<string, { left: number; top: number }>) : {};
+  } catch {
+    return {};
+  }
+}
+
 // Okna nad 3D scénou
 export class WindowManager {
   private readonly windows = new Map<string, OpenWindow>();
   private zIndex = 10;
   private pressed: OpenWindow | null = null;
+  // Poslední poloha podle druhu okna, uložená v prohlížeči
+  private readonly positions: Record<string, { left: number; top: number }> = loadPositions();
 
   constructor(private readonly root: HTMLElement) {
     window.addEventListener('pointerup', () => {
@@ -97,8 +115,15 @@ export class WindowManager {
     this.root.append(el);
 
     const offset = (this.windows.size % 6) * 24;
-    el.style.left = `${Math.max(8, (window.innerWidth - el.offsetWidth) / 2 + offset)}px`;
-    el.style.top = `${80 + offset}px`;
+    const key = positionKey(id);
+    const saved = this.positions[key];
+    // Další okno stejného druhu se posune, aby nezakrylo předchozí
+    const shift = [...this.windows.keys()].filter((k) => positionKey(k) === key).length * 24;
+    // Bez uložené polohy u levého okraje, aby okno nezakrývalo střed mapy
+    const left = saved ? saved.left + shift : 8 + offset;
+    const top = saved ? saved.top + shift : 44 + offset;
+    el.style.left = `${Math.max(0, Math.min(left, window.innerWidth - 80))}px`;
+    el.style.top = `${Math.max(0, Math.min(top, window.innerHeight - 60))}px`;
 
     const win: OpenWindow = { el, body, onClose: options.onClose, locate: options.locate, pending: null };
     el.addEventListener('pointerdown', () => {
@@ -110,7 +135,7 @@ export class WindowManager {
     el.addEventListener('change', (e) => {
       if (e.target instanceof HTMLSelectElement) e.target.blur();
     });
-    this.makeDraggable(el, header);
+    this.makeDraggable(el, header, () => this.remember(id, el));
     this.bringToFront(el);
     this.windows.set(id, win);
   }
@@ -145,7 +170,12 @@ export class WindowManager {
     el.style.zIndex = String(++this.zIndex);
   }
 
-  private makeDraggable(el: HTMLElement, handle: HTMLElement): void {
+  private remember(id: string, el: HTMLElement): void {
+    this.positions[positionKey(id)] = { left: el.offsetLeft, top: el.offsetTop };
+    localStorage.setItem(POSITIONS_KEY, JSON.stringify(this.positions));
+  }
+
+  private makeDraggable(el: HTMLElement, handle: HTMLElement, onMoved: () => void): void {
     handle.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
       const startX = e.clientX - el.offsetLeft;
@@ -158,6 +188,7 @@ export class WindowManager {
       const up = (): void => {
         handle.removeEventListener('pointermove', move);
         handle.removeEventListener('pointerup', up);
+        onMoved();
       };
       handle.addEventListener('pointermove', move);
       handle.addEventListener('pointerup', up);
