@@ -31,6 +31,8 @@ export interface Industry {
   // Dovezený náklad tento a minulý měsíc; zpracovatel z něj vyrábí
   received: number;
   lastReceived: number;
+  // Den poslední dodávky nebo založení; zpracovatel bez dodávek časem zanikne
+  lastDelivery: number;
 }
 
 export const INDUSTRY_SIZE = 3;
@@ -145,46 +147,59 @@ export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng):
   const industries: Industry[] = [];
   const area = map.width * map.height;
   for (const kind of Object.keys(INDUSTRY_TYPES) as IndustryKind[]) {
-    const type = INDUSTRY_TYPES[kind];
-    const count = Math.max(1, Math.round(area / type.tilesPerIndustry));
+    const count = Math.max(1, Math.round(area / INDUSTRY_TYPES[kind].tilesPerIndustry));
     let placed = 0;
     for (let attempt = 0; attempt < count * 80 && placed < count; attempt++) {
-      const x = rng.int(EDGE_MARGIN, map.width - EDGE_MARGIN - INDUSTRY_SIZE);
-      const y = rng.int(EDGE_MARGIN, map.height - EDGE_MARGIN - INDUSTRY_SIZE);
-      const candidate: Industry = {
-        id: industries.length,
-        kind,
-        name: '',
-        x,
-        y,
-        rotation: rng.int(0, 3),
-        production: 0,
-        transported: 0,
-        lastTransported: 0,
-        received: 0,
-        lastReceived: 0,
-      };
-      const tiles = industryTiles(candidate);
-      if (!tiles.every((t) => map.isFree(t.x, t.y))) continue;
-      const cx = x + INDUSTRY_SIZE / 2;
-      const cy = y + INDUSTRY_SIZE / 2;
-      const nearTown = towns.some(
-        (t) => Math.hypot(t.x - cx, t.y - cy) < KIND_RULES[t.kind].maxRadius + TOWN_CLEARANCE,
-      );
-      const nearIndustry = industries.some((i) => Math.hypot(i.x - x, i.y - y) < MIN_INDUSTRY_DISTANCE);
-      if (nearTown || nearIndustry) continue;
-
-      candidate.name = industryName(kind, towns, industries, cx, cy);
-      if (type.production) candidate.production = rng.int(type.production.min, type.production.max);
-      for (const t of tiles) map.set(t.x, t.y, TileType.Industry);
-      industries.push(candidate);
+      const industry = tryPlaceIndustry(map, towns, industries, kind, rng);
+      if (!industry) continue;
+      industries.push(industry);
       placed++;
     }
   }
   return industries;
 }
 
-// Podle nejbližšího města, další stejného druhu u téhož města dostane číslo
+// Jeden pokus o založení závodu na náhodném místě; při úspěchu zabere dlaždice, do seznamu ho nepřidá
+export function tryPlaceIndustry(
+  map: GameMap,
+  towns: readonly Town[],
+  industries: readonly Industry[],
+  kind: IndustryKind,
+  rng: Rng,
+  day = 0,
+): Industry | null {
+  const type = INDUSTRY_TYPES[kind];
+  const x = rng.int(EDGE_MARGIN, map.width - EDGE_MARGIN - INDUSTRY_SIZE);
+  const y = rng.int(EDGE_MARGIN, map.height - EDGE_MARGIN - INDUSTRY_SIZE);
+  const candidate: Industry = {
+    id: industries.reduce((max, i) => Math.max(max, i.id + 1), 0),
+    kind,
+    name: '',
+    x,
+    y,
+    rotation: rng.int(0, 3),
+    production: 0,
+    transported: 0,
+    lastTransported: 0,
+    received: 0,
+    lastReceived: 0,
+    lastDelivery: day,
+  };
+  const tiles = industryTiles(candidate);
+  if (!tiles.every((t) => map.isFree(t.x, t.y))) return null;
+  const cx = x + INDUSTRY_SIZE / 2;
+  const cy = y + INDUSTRY_SIZE / 2;
+  const nearTown = towns.some((t) => Math.hypot(t.x - cx, t.y - cy) < KIND_RULES[t.kind].maxRadius + TOWN_CLEARANCE);
+  const nearIndustry = industries.some((i) => Math.hypot(i.x - x, i.y - y) < MIN_INDUSTRY_DISTANCE);
+  if (nearTown || nearIndustry) return null;
+
+  candidate.name = industryName(kind, towns, industries, cx, cy);
+  if (type.production) candidate.production = rng.int(type.production.min, type.production.max);
+  for (const t of tiles) map.set(t.x, t.y, TileType.Industry);
+  return candidate;
+}
+
+// Podle nejbližšího města, další stejného druhu u téhož města dostane první volné číslo
 function industryName(
   kind: IndustryKind,
   towns: readonly Town[],
@@ -195,6 +210,9 @@ function industryName(
   const town = [...towns].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
   const name = INDUSTRY_TYPES[kind].name;
   const base = town ? `${name} ${town.name}` : name;
-  const same = industries.filter((i) => i.name === base || i.name.startsWith(`${base} `)).length;
-  return same === 0 ? base : `${base} ${same + 1}`;
+  const taken = new Set(industries.map((i) => i.name));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base} ${n}`)) n++;
+  return `${base} ${n}`;
 }

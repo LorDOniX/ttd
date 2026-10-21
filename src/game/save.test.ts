@@ -58,6 +58,7 @@ describe('uložení a načtení', () => {
       lastTransported: 0,
       received: 0,
       lastReceived: 0,
+      lastDelivery: 0,
     });
     const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
     data.version = 6;
@@ -72,6 +73,7 @@ describe('uložení a načtení', () => {
       delete industry.lastTransported;
       delete industry.received;
       delete industry.lastReceived;
+      delete industry.lastDelivery;
     }
     delete data.game.thisYear.freight;
     const copy = restoreGame(parseSave(JSON.stringify(data)));
@@ -119,6 +121,7 @@ describe('uložení a načtení', () => {
       lastTransported: 40,
       received: 0,
       lastReceived: 0,
+      lastDelivery: 0,
     });
     const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
     data.industries.push({ kind: 'castle', name: 'X', x: 1, y: 1, rotation: 0 }, { kind: 'coal-mine', x: 63 });

@@ -51,7 +51,7 @@ export class GameView {
     const trees = new TreesView(map);
     void trees.refresh();
     const industries = new IndustriesView();
-    void industries.build(world.industries);
+    void industries.sync(world.industries);
     const railView = new RailView(world.rail);
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
@@ -120,6 +120,7 @@ export class GameView {
     });
     game.events.on('railChanged', () => (this.railDirty = true));
     game.events.on('stationsChanged', rebuildStationLabels);
+    game.events.on('industriesChanged', () => void industries.sync(world.industries));
     game.events.on('income', (amount, x, z) =>
       this.floatingTexts.show(`+${formatMoney(amount)}`, x, z, 'income-label'),
     );

@@ -321,24 +321,42 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
 // Průmyslové areály složené z modelů Kenney a jednoduchých těles, s popiskem názvu
 export class IndustriesView {
   readonly object = new THREE.Group();
+  private readonly views = new Map<number, { area: THREE.Object3D; label: CSS2DObject }>();
 
-  async build(industries: readonly Industry[]): Promise<void> {
-    const groups = await Promise.all(
-      industries.map(async (industry) => {
-        const group = new THREE.Group();
-        group.add(...(await Promise.all(LAYOUTS[industry.kind]())));
-        const half = INDUSTRY_SIZE / 2;
-        group.position.set(industry.x + half, 0, industry.y + half);
-        group.rotation.y = (industry.rotation * Math.PI) / 2;
+  // Doplní nově založené závody a odebere zaniklé
+  async sync(industries: readonly Industry[]): Promise<void> {
+    const ids = new Set(industries.map((i) => i.id));
+    for (const [id, view] of this.views) {
+      if (ids.has(id)) continue;
+      // Popisek musí odejít sám, jinak jeho element zůstane v DOM
+      this.object.remove(view.area, view.label);
+      this.views.delete(id);
+    }
+    const added = industries.filter((i) => !this.views.has(i.id));
+    for (const industry of added) this.views.set(industry.id, { area: new THREE.Group(), label: this.label(industry) });
+    await Promise.all(added.map((industry) => this.build(industry)));
+  }
 
-        const el = document.createElement('div');
-        el.className = 'industry-label';
-        el.textContent = industry.name;
-        const label = new CSS2DObject(el);
-        label.position.set(industry.x + half, 2.2, industry.y + half);
-        return [group, label];
-      }),
-    );
-    this.object.add(...groups.flat());
+  private label(industry: Industry): CSS2DObject {
+    const el = document.createElement('div');
+    el.className = 'industry-label';
+    el.textContent = industry.name;
+    const label = new CSS2DObject(el);
+    const half = INDUSTRY_SIZE / 2;
+    label.position.set(industry.x + half, 2.2, industry.y + half);
+    return label;
+  }
+
+  private async build(industry: Industry): Promise<void> {
+    const parts = await Promise.all(LAYOUTS[industry.kind]());
+    const view = this.views.get(industry.id);
+    // Mezitím mohl závod zaniknout
+    if (!view) return;
+    const { area, label } = view;
+    area.add(...parts);
+    const half = INDUSTRY_SIZE / 2;
+    area.position.set(industry.x + half, 0, industry.y + half);
+    area.rotation.y = (industry.rotation * Math.PI) / 2;
+    this.object.add(area, label);
   }
 }

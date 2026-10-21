@@ -82,7 +82,10 @@ export class Freight {
         train.income += income;
         // Dodávku dostane první závod v dosahu, který ji přijímá (zboží pro město žádný)
         const consumer = this.industriesInReach(station).find((i) => INDUSTRY_TYPES[i.kind].accepts.includes(type));
-        if (consumer) consumer.received += unloaded;
+        if (consumer) {
+          consumer.received += unloaded;
+          consumer.lastDelivery = game.clock.day;
+        }
         game.news(
           `${train.name} přivezl ${unloaded} ${spec.unit} do stanice ${station.name}: ` +
             `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}.`,

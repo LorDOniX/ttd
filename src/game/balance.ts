@@ -118,6 +118,19 @@ export const GOODS_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
   { maxDays: Infinity, rate: 3 },
 ];
 
+// Živý průmysl: měsíční šance na změnu výroby těžebního závodu; dobře obsloužený spíš roste
+export const INDUSTRY_CHANGE_CHANCE = 0.04;
+export const INDUSTRY_WELL_SERVED = 0.6;
+export const INDUSTRY_GROWTH_CHANCE = { served: 0.67, unserved: 0.33 } as const;
+export const INDUSTRY_CHANGE_FACTOR = 1.5;
+// Výroba nejvýš tolikrát horní mez druhu; pod polovinou dolní meze závod zanikne
+export const INDUSTRY_MAX_GROWTH = 4;
+// Zpracovatel bez dodávek tolik let může každý měsíc s touto šancí zaniknout
+export const INDUSTRY_IDLE_YEARS = 5;
+export const INDUSTRY_IDLE_CLOSE_CHANCE = 0.05;
+// Měsíční šance na založení nového závodu na dlaždici mapy (256×256 ≈ jednou za půl roku)
+export const NEW_INDUSTRY_CHANCE_PER_TILE = 1 / 400_000;
+
 // Hodnocení nástupiště 0–1 se denně posouvá k cílové hodnotě složené ze tří částí
 export const RATING_START = 0.5;
 export const RATING_DAILY_CHANGE = 0.01;

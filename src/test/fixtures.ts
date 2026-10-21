@@ -1,6 +1,7 @@
 import { TRAIN_MODELS } from '../game/balance';
 import { Game } from '../game/game';
 import type { Train } from '../game/trains';
+import { INDUSTRY_TYPES, industryTiles, type Industry, type IndustryKind } from '../world/industry';
 import { GameMap, TileType } from '../world/map';
 import {
   Edge,
@@ -34,6 +35,27 @@ export function makeTown(id: number, x: number, y: number, population = 3000): T
 export function emptyGame(size = 64, towns: Town[] = []): Game {
   const map = new GameMap(size, size);
   return new Game({ seed: 1, map, towns, rail: new RailNetwork(map), industries: [] });
+}
+
+// Závod 3×3 s levým horním rohem v (x, y); těžební vyrábí 120 t měsíčně
+export function addIndustry(game: Game, kind: IndustryKind, x: number, y: number): Industry {
+  const industry: Industry = {
+    id: game.world.industries.length,
+    kind,
+    name: kind,
+    x,
+    y,
+    rotation: 0,
+    production: INDUSTRY_TYPES[kind].production ? 120 : 0,
+    transported: 0,
+    lastTransported: 0,
+    received: 0,
+    lastReceived: 0,
+    lastDelivery: 0,
+  };
+  for (const t of industryTiles(industry)) game.world.map.set(t.x, t.y, TileType.Industry);
+  game.world.industries.push(industry);
+  return industry;
 }
 
 // Budova města na dlaždici (x, y), aby bylo nástupiště v dosahu

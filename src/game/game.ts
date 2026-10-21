@@ -4,6 +4,7 @@ import { Construction, infrastructureValue } from './construction';
 import { Emitter } from './emitter';
 import { GameClock, formatDate, type GameDate } from './clock';
 import { Freight } from './freight';
+import { IndustryLife } from './industryLife';
 import { Passengers } from './passengers';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
@@ -54,6 +55,8 @@ type GameEvents = {
   roadsChanged: [];
   trainsChanged: [];
   stationsChanged: [];
+  // Závod vznikl nebo zanikl
+  industriesChanged: [];
   treesChanged: [];
   // Výdělek za přepravu a místo, kde vznikl
   income: [number, number, number];
@@ -78,6 +81,7 @@ export class Game {
   readonly fleet: Fleet;
   readonly passengers: Passengers;
   readonly freight: Freight;
+  readonly industryLife: IndustryLife;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
   money = START_MONEY;
@@ -96,6 +100,8 @@ export class Game {
     this.fleet = new Fleet(this);
     this.passengers = new Passengers(this);
     this.freight = new Freight(this);
+    // Až po Freight, aby měsíční změny viděly uzavřený odvoz
+    this.industryLife = new IndustryLife(this);
     this.clock.events.on('month', () => this.payMonthly());
     this.events.on('railChanged', () => (this.infrastructure = null));
     this.clock.events.on('year', (year) => this.onYearEnd(year));

@@ -1,27 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLine, buyTrain, runDays } from '../test/fixtures';
-import { INDUSTRY_TYPES, industryTiles, type Industry, type IndustryKind } from '../world/industry';
-import { TileType } from '../world/map';
-import type { Game } from './game';
-
-function addIndustry(game: Game, kind: IndustryKind, x: number, y: number): Industry {
-  const industry: Industry = {
-    id: game.world.industries.length,
-    kind,
-    name: kind,
-    x,
-    y,
-    rotation: 0,
-    production: INDUSTRY_TYPES[kind].production ? 120 : 0,
-    transported: 0,
-    lastTransported: 0,
-    received: 0,
-    lastReceived: 0,
-  };
-  for (const t of industryTiles(industry)) game.world.map.set(t.x, t.y, TileType.Industry);
-  game.world.industries.push(industry);
-  return industry;
-}
+import { addIndustry, buildLine, buyTrain, runDays } from '../test/fixtures';
 
 // Linka A – B s dolem v dosahu A a elektrárnou v dosahu B
 function coalLine(withPlant = true) {

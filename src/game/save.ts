@@ -10,8 +10,9 @@ import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
-// 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům
-const SAVE_VERSION = 10;
+// 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům;
+// 11: den poslední dodávky (zánik závodů)
+const SAVE_VERSION = 11;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -135,7 +136,7 @@ function validIndustry(value: unknown, width: number, height: number): value is 
 const finiteOr = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
-function restoreIndustry(industry: Industry): Industry {
+function restoreIndustry(industry: Industry, day: number): Industry {
   // Závod ze staršího uložení nemá těžbu, dostane střední hodnotu
   return {
     ...industry,
@@ -144,6 +145,8 @@ function restoreIndustry(industry: Industry): Industry {
     lastTransported: finiteOr(industry.lastTransported, 0),
     received: finiteOr(industry.received, 0),
     lastReceived: finiteOr(industry.lastReceived, 0),
+    // Starší uložení: lhůta bez dodávek běží až od načtení
+    lastDelivery: finiteOr(industry.lastDelivery, day),
   };
 }
 
@@ -165,7 +168,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -232,7 +235,7 @@ export function restoreGame(data: SaveData): Game {
     // Starší uložení průmysl nemá; cizí soubor může obsahovat nesmysly
     industries: (data.industries ?? [])
       .filter((i) => validIndustry(i, width, height))
-      .map(restoreIndustry),
+      .map((i) => restoreIndustry(i, data.clock.day)),
   };
   const game = new Game(world);
   game.companyName = data.game.companyName;

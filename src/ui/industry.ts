@@ -1,3 +1,4 @@
+import { INDUSTRY_IDLE_YEARS, INDUSTRY_WELL_SERVED } from '../game/balance';
 import { CARGOS } from '../game/cargo';
 import { Game } from '../game/game';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
@@ -35,6 +36,12 @@ export function openIndustry(
         `Náklad (${noun}) se sváží na nástupiště v dosahu, kam jezdí vlak s odpovídajícími vagony. ` +
           'Čím lepší hodnocení nástupiště, tím víc nákladu.',
       );
+      if (type.production) {
+        hints.push(
+          `Výroba občas stoupne nebo klesne; při odvozu aspoň ${Math.round(INDUSTRY_WELL_SERVED * 100)} % ` +
+            'spíš stoupá. Vyčerpaný závod zanikne.',
+        );
+      }
     }
     if (type.accepts.length > 0) {
       const stations = game.world.rail.stations
@@ -48,7 +55,10 @@ export function openIndustry(
       );
       hints.push('Vlak náklad vyloží a dostane zaplaceno na nástupišti, které má závod v dosahu.');
       if (type.produces) {
-        hints.push(`Z dovezeného nákladu vyrobí následující měsíc stejně tun (${CARGOS[type.produces].genitive}).`);
+        hints.push(
+          `Z dovezeného nákladu vyrobí následující měsíc stejně tun (${CARGOS[type.produces].genitive}). ` +
+            `Bez dodávek déle než ${INDUSTRY_IDLE_YEARS} let může závod zaniknout.`,
+        );
       }
     }
     return h(
@@ -67,7 +77,13 @@ export function openIndustry(
     if (windows.isOpen(id)) windows.update(id, render());
   };
   // Nástupiště se mění denně (příliv), to stačí i na obnovu odvozu
-  const unsubscribe = [game.events.on('trainsChanged', refresh), game.events.on('stationsChanged', refresh)];
+  const unsubscribe = [
+    game.events.on('trainsChanged', refresh),
+    game.events.on('stationsChanged', refresh),
+    game.events.on('industriesChanged', () => {
+      if (!game.world.industries.includes(industry)) windows.close(id);
+    }),
+  ];
   const half = INDUSTRY_SIZE / 2;
   windows.open(id, industry.name, render(), {
     width: 320,
