@@ -75,6 +75,9 @@ export const FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
 
 // Cestující
 export const PASSENGERS_MONTHLY_SHARE = 0.03;
+// Prvních tolik obyvatel města cestuje dvakrát častěji: na začátku hry jsou města malá a osobní doprava
+// by jinak za nákladem zůstávala daleko; velké město už bonus skoro nepozná
+export const PASSENGERS_BOOSTED_RESIDENTS = 3_000;
 export const PASSENGERS_MAX_WAITING_MONTHS = 3;
 export const STATION_CATCHMENT_RADIUS = 4;
 

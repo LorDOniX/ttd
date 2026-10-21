@@ -14,20 +14,22 @@ describe('jízdné', () => {
 });
 
 describe('cestující', () => {
-  it('město posílá 3 % obyvatel měsíčně a dělí je mezi svá nástupiště', () => {
-    const town = makeTown(0, 20, 20, 3000);
+  it('město posílá 3 % obyvatel měsíčně, prvních 3 000 dvojnásob, a dělí je mezi svá nástupiště', () => {
+    const town = makeTown(0, 20, 20, 1000);
     const game = emptyGame(64, [town]);
     addBuilding(game, town, 20, 22);
     const { rail } = game.world;
     const a = rail.addStation({ ...defaultStationShape(20, 20, 'x'), name: 'A', townId: 0 });
-    expect(game.passengers.monthlyPassengers(a)).toBeCloseTo(90);
+    expect(game.passengers.monthlyPassengers(a)).toBeCloseTo(60);
+    town.population = 9000;
+    expect(game.passengers.monthlyPassengers(a)).toBeCloseTo(360);
     const b = rail.addStation({ ...defaultStationShape(20, 24, 'x'), name: 'B', townId: 0 });
-    expect(game.passengers.monthlyPassengers(a)).toBeCloseTo(45);
-    expect(game.passengers.monthlyPassengers(b)).toBeCloseTo(45);
+    expect(game.passengers.monthlyPassengers(a)).toBeCloseTo(180);
+    expect(game.passengers.monthlyPassengers(b)).toBeCloseTo(180);
   });
 
   it('nástupiště dostane jen díl města podle zástavby v dosahu', () => {
-    const town = makeTown(0, 20, 20, 3000);
+    const town = makeTown(0, 20, 20, 1500);
     const game = emptyGame(64, [town]);
     addBuilding(game, town, 20, 22);
     addBuilding(game, town, 21, 22);

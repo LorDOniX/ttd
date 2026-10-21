@@ -1,5 +1,6 @@
 import {
   FARE_TIERS,
+  PASSENGERS_BOOSTED_RESIDENTS,
   PASSENGERS_MAX_WAITING_MONTHS,
   PASSENGERS_MONTHLY_SHARE,
   STATION_CATCHMENT_RADIUS,
@@ -117,7 +118,10 @@ export class Passengers {
   // Měsíční příliv cestujících na nástupiště z části města v dosahu
   monthlyPassengers(station: Station): number {
     let sum = 0;
-    for (const [town, share] of this.townShares(station)) sum += town.population * PASSENGERS_MONTHLY_SHARE * share;
+    for (const [town, share] of this.townShares(station)) {
+      const travelling = town.population + Math.min(town.population, PASSENGERS_BOOSTED_RESIDENTS);
+      sum += travelling * PASSENGERS_MONTHLY_SHARE * share;
+    }
     return sum;
   }
 

@@ -129,7 +129,9 @@ describe('výrobní řetězce', () => {
 describe('vyvážení', () => {
   // Příjem vlaku se 4 vagony za 11 měsíců prvního roku po měsíci rozjezdu
   function yearIncome(cargo: 'passengers' | 'coal'): number {
-    const { game, a, b, depot } = cargo === 'coal' ? coalLine() : buildLine();
+    const { game, a, b, depot, townA, townB } = cargo === 'coal' ? coalLine() : buildLine();
+    // Města jako na začátku hry
+    townA.population = townB.population = 1500;
     if (cargo === 'coal') game.world.industries[0].production = 105;
     const train = buyTrain(game, depot, 4);
     game.fleet.setCargo(train, cargo);
@@ -141,7 +143,7 @@ describe('vyvážení', () => {
     return income;
   }
 
-  it('uhelný vlak od průměrného dolu vydělá zhruba jako osobní mezi dvěma městy', () => {
+  it('uhelný vlak od průměrného dolu vydělá zhruba jako osobní mezi dvěma malými městy', () => {
     const ratio = yearIncome('coal') / yearIncome('passengers');
     expect(ratio).toBeGreaterThan(0.7);
     expect(ratio).toBeLessThan(1.3);

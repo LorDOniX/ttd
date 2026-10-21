@@ -28,7 +28,9 @@ describe('hodnocení nástupiště', () => {
   });
 
   it('obsluhované nástupiště hodnocení zvedá, opuštěné klesá a cestující odcházejí', () => {
-    const { game, a, b, depot } = buildLine();
+    const { game, a, b, depot, townA, townB } = buildLine();
+    // Menší města, aby jeden vlak stačil odvážet
+    townA.population = townB.population = 1500;
     const train = buyTrain(game, depot);
     game.fleet.start(train, [a.id, b.id]);
     runDays(game, 90);
