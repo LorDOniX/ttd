@@ -45,12 +45,12 @@ export class Freight {
     return rail.stations.filter((s) => served.has(s.id) && this.industriesInReach(s, 'coal-mine').includes(mine));
   }
 
-  // Vyloží uhlí, pokud nástupiště zásobuje elektrárnu, a naloží čekající
-  exchange(train: Train, station: Station): void {
+  // Vyloží uhlí, pokud nástupiště zásobuje elektrárnu, a naloží čekající; loadOnly jen doplní
+  exchange(train: Train, station: Station, loadOnly = false): void {
     const { game } = this;
     const atPlatform = wagonsAtStation(train, station) * WAGON_CAPACITY;
     let unloaded = 0;
-    if (train.passengers > 0 && train.boardedStation !== station.id && this.acceptsCoal(station)) {
+    if (!loadOnly && train.passengers > 0 && train.boardedStation !== station.id && this.acceptsCoal(station)) {
       unloaded = Math.min(train.passengers, atPlatform);
       train.passengers -= unloaded;
       if (unloaded > 0) {

@@ -89,12 +89,12 @@ export class Passengers {
   }
 
   // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající.
-  // Vystupuje a nastupuje se jen ve vagonech, které stojí na nástupišti.
-  exchange(train: Train, station: Station): void {
+  // Vystupuje a nastupuje se jen ve vagonech, které stojí na nástupišti; loadOnly jen doplní (čekání na plné naložení).
+  exchange(train: Train, station: Station, loadOnly = false): void {
     const { game } = this;
     const atPlatform = wagonsAtStation(train, station) * WAGON_CAPACITY;
     let unloaded = 0;
-    if (train.passengers > 0 && train.boardedStation !== station.id) {
+    if (!loadOnly && train.passengers > 0 && train.boardedStation !== station.id) {
       unloaded = Math.min(train.passengers, atPlatform);
       train.passengers -= unloaded;
       const stayed = train.passengers > 0 ? ` (${train.passengers} nevystoupilo z vagonů mimo nástupiště)` : '';

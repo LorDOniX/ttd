@@ -9,8 +9,8 @@ import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
-// 7: nákladní doprava uhlí
-const SAVE_VERSION = 7;
+// 7: nákladní doprava uhlí; 8: čekání na plné naložení
+const SAVE_VERSION = 8;
 // Důl ze staršího uložení nemá těžbu, dostane střední hodnotu
 const DEFAULT_MINE_PRODUCTION = Math.round((COAL_PRODUCTION.min + COAL_PRODUCTION.max) / 2);
 const MAX_MAP_SIZE = 1024;
@@ -154,7 +154,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -242,6 +242,7 @@ export function restoreGame(data: SaveData): Game {
       agingWarned: t.agingWarned ?? false,
       renewing: t.renewing ?? false,
       cargo: t.cargo === 'coal' ? ('coal' as const) : ('passengers' as const),
+      fullLoad: Array.isArray(t.fullLoad) ? t.fullLoad.filter((id) => Number.isInteger(id)) : [],
     })),
   );
   game.fleet.nextId = data.fleet.nextId;

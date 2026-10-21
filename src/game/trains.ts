@@ -37,6 +37,8 @@ const LOST_RETRY_DAYS = 5;
 // Vlak čekající na obsazenou trať po této době hledá jinou cestu (třeba volnou kolej nástupiště)
 const BLOCKED_REPLAN_DAYS = 3;
 const BLOCKED_WARN_DAYS = 30;
+// Vlak čekající na plné naložení zkusí doplnit náklad jednou denně
+const FULL_LOAD_CHECK_DAYS = 1;
 
 export type TrainState = 'depot' | 'running' | 'loading' | 'lost';
 export type Cargo = 'passengers' | 'coal';
@@ -51,6 +53,8 @@ export interface Train {
   depotId: number;
   // Zastávky, které vlak objíždí dokola; v depu si je pamatuje pro další výjezd
   orders: number[] | null;
+  // Zastávky (id nástupišť), kde vlak čeká na plné naložení
+  fullLoad: number[];
   // Index cíle v orders, -1 = návrat do depa
   target: number;
   state: TrainState;
@@ -196,6 +200,7 @@ export class Fleet {
       cargo: 'passengers',
       depotId: depot.id,
       orders: null,
+      fullLoad: [],
       target: 0,
       state: 'depot',
       path: [],
@@ -308,8 +313,6 @@ export class Fleet {
     return null;
   }
 
-  // Změní jízdní řád i za jízdy; vlak pokračuje k aktuálnímu cíli, pokud v řádu zůstal.
-  // V depu smí být řád rozpracovaný, ověří se až při výjezdu.
   // Změna druhu nákladu jen v depu, kde je vlak prázdný
   setCargo(train: Train, cargo: Cargo): string | null {
     if (train.state !== 'depot') return 'Druh nákladu lze změnit jen v depu.';
@@ -318,12 +321,22 @@ export class Fleet {
     return null;
   }
 
+  // Zapne nebo vypne čekání na plné naložení na zastávce
+  toggleFullLoad(train: Train, stationId: number): void {
+    const waits = train.fullLoad.includes(stationId);
+    train.fullLoad = waits ? train.fullLoad.filter((id) => id !== stationId) : [...train.fullLoad, stationId];
+    this.changed();
+  }
+
+  // Změní jízdní řád i za jízdy; vlak pokračuje k aktuálnímu cíli, pokud v řádu zůstal.
+  // V depu smí být řád rozpracovaný, ověří se až při výjezdu.
   setOrders(train: Train, orders: number[]): string | null {
     const error = train.state === 'depot' ? null : ordersError(orders);
     if (error) return error;
     if (orders.some((id) => !this.station(id))) return 'Nástupiště neexistuje.';
     const current = train.orders && train.target >= 0 ? train.orders[train.target] : null;
     train.orders = orders.length > 0 ? orders : null;
+    train.fullLoad = train.fullLoad.filter((id) => orders.includes(id));
     if (train.target !== -1 && train.state !== 'depot') {
       const kept = current === null ? -1 : orders.indexOf(current);
       // Ve stanici se po nástupu posune na další zastávku, tedy na začátek řádu
@@ -350,9 +363,38 @@ export class Fleet {
       if (train.state === 'running') this.move(train, days);
       else {
         train.waitDays -= days;
-        if (train.waitDays <= 0) this.replan(train);
+        if (train.waitDays > 0) continue;
+        if (this.fillingUp(train)) train.waitDays = FULL_LOAD_CHECK_DAYS;
+        else this.replan(train);
       }
     }
+  }
+
+  // Vlak, který na zastávce čeká na plné naložení, ale ještě není plný
+  isFillingUp(train: Train): boolean {
+    const station = this.loadingStation(train);
+    return station !== null && train.fullLoad.includes(station.id) && !this.isFull(train, station);
+  }
+
+  // Doloží náklad; vrací true, když má vlak dál čekat
+  private fillingUp(train: Train): boolean {
+    const station = this.loadingStation(train);
+    if (!station || !train.fullLoad.includes(station.id)) return false;
+    if (train.cargo === 'coal') this.game.freight.exchange(train, station, true);
+    else this.game.passengers.exchange(train, station, true);
+    this.changed();
+    return !this.isFull(train, station);
+  }
+
+  private loadingStation(train: Train): Station | null {
+    if (train.state !== 'loading' || train.target === -1 || !train.orders) return null;
+    return this.station(train.orders[train.target]) ?? null;
+  }
+
+  // Plné jsou všechny vagony, které stojí u nástupiště – ostatní naložit nejdou
+  private isFull(train: Train, station: Station): boolean {
+    const loadable = Math.min(train.wagons, wagonsAtStation(train, station)) * WAGON_CAPACITY;
+    return train.passengers >= loadable;
   }
 
   // Vlak stojí před tratí obsazenou jiným vlakem

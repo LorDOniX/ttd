@@ -25,6 +25,7 @@ export function stateText(game: Game, train: Train): string {
     case 'running':
       return game.fleet.isBlocked(train) ? `Čeká na volnou trať: ${target}` : `Jede: ${target}`;
     case 'loading':
+      if (game.fleet.isFillingUp(train)) return `Nakládá do plna: ${formatLoad(train)}`;
       return `Ve stanici, další cíl: ${
         train.target === -1 ? 'depo' : train.orders ? game.fleet.stationName(train.orders[nextStop(train)]) : ''
       }`;
@@ -71,6 +72,18 @@ function trainPosition(game: Game, train: Train): [number, number] | null {
 }
 
 // Seznam zastávek s posunem, odebráním a přidáním; změny platí hned
+function fullLoadButton(game: Game, train: Train, stationId: number): HTMLButtonElement {
+  const b = h('button', {
+    className: 'small-button',
+    textContent: 'Do plna',
+    title: 'Vlak na této zastávce počká, dokud nenaloží všechny vagony u nástupiště',
+  });
+  b.classList.toggle('small-button--active', train.fullLoad.includes(stationId));
+  b.addEventListener('click', () => game.fleet.toggleFullLoad(train, stationId));
+  return b;
+}
+
+// Seznam zastávek s posunem, odebráním a přidáním; změny platí hned
 function ordersEditor(game: Game, train: Train, choice: { station: number | null }): HTMLElement {
   const orders = train.orders ?? [];
   const apply = (next: number[]): void => {
@@ -97,6 +110,7 @@ function ordersEditor(game: Game, train: Train, choice: { station: number | null
       button('↑', 'Posunout výš', () => apply(moved(i, i - 1)), i === 0),
       button('↓', 'Posunout níž', () => apply(moved(i, i + 1)), i === orders.length - 1),
       button('✕', 'Odebrat zastávku', () => apply(orders.filter((_, k) => k !== i))),
+      fullLoadButton(game, train, stationId),
     ),
   );
 
@@ -118,7 +132,9 @@ function ordersEditor(game: Game, train: Train, choice: { station: number | null
     h(
       'div',
       { className: 'form__hint' },
-      problem ?? 'Vlak objíždí zastávky dokola, na každé vyloží a naloží cestující.',
+      problem ??
+        'Vlak objíždí zastávky dokola, na každé vyloží a naloží náklad. ' +
+          'Se zapnutým „Do plna“ na zastávce počká, dokud nenaloží všechny vagony u nástupiště.',
     ),
   );
 }

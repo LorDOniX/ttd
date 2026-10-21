@@ -63,6 +63,43 @@ describe('nákladní doprava uhlí', () => {
     expect(game.thisYear.passengers).toBe(0);
   });
 
+  it('s čekáním na plné naložení odveze vždy plný vlak', () => {
+    const deliveries = (fullLoad: boolean): number[] => {
+      const { game, a, b, depot } = coalLine();
+      const train = buyTrain(game, depot, 2);
+      game.fleet.setCargo(train, 'coal');
+      game.fleet.setOrders(train, [a.id, b.id]);
+      if (fullLoad) game.fleet.toggleFullLoad(train, a.id);
+      game.fleet.start(train, train.orders!);
+      const amounts: number[] = [];
+      let filling = false;
+      game.events.on('news', (text) => {
+        const match = /přivezl (\d+) t uhlí/.exec(text);
+        if (match) amounts.push(Number(match[1]));
+      });
+      for (let i = 0; i < 20_000 && amounts.length < 2; i++) {
+        game.update(200);
+        filling ||= game.fleet.isFillingUp(train);
+      }
+      expect(filling).toBe(fullLoad);
+      return amounts;
+    };
+    expect(deliveries(true)).toEqual([60, 60]);
+    expect(deliveries(false)[0]).toBeLessThan(60);
+  });
+
+  it('odebraná zastávka zruší i čekání na plné naložení', () => {
+    const { game, a, b, depot } = coalLine();
+    const train = buyTrain(game, depot, 2);
+    game.fleet.setOrders(train, [a.id, b.id]);
+    game.fleet.toggleFullLoad(train, a.id);
+    game.fleet.toggleFullLoad(train, b.id);
+    game.fleet.toggleFullLoad(train, b.id);
+    expect(train.fullLoad).toEqual([a.id]);
+    game.fleet.setOrders(train, [b.id]);
+    expect(train.fullLoad).toEqual([]);
+  });
+
   it('bez elektrárny v dosahu zůstane uhlí ve vlaku', () => {
     const { game, a, b, depot } = coalLine(false);
     const train = buyTrain(game, depot, 2);
