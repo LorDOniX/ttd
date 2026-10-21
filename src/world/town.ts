@@ -8,7 +8,7 @@ import {
 import { GameMap, NO_OWNER, TileType } from './map';
 import type { Rng } from './rng';
 
-export type TownKind = 'city' | 'village';
+export type TownKind = 'city' | 'town' | 'village';
 
 export interface Building {
   x: number;
@@ -41,6 +41,7 @@ interface KindRules {
 
 export const KIND_RULES: Record<TownKind, KindRules> = {
   city: { roadSpacing: 3, maxRadius: 16, gardenRatio: 0 },
+  town: { roadSpacing: 4, maxRadius: 14, gardenRatio: 0.15 },
   village: { roadSpacing: 4, maxRadius: 12, gardenRatio: 0.3 },
 };
 
@@ -147,6 +148,11 @@ function roadFacing(map: GameMap, town: Town, x: number, y: number): number | nu
 function pickModel(town: Town, distance: number, year: number, rng: Rng): string {
   if (town.kind === 'village') return rng.pick(HOUSES);
   const ratio = distance / Math.max(town.radius, 4);
+  // Městečko: kanceláře převážně v centru, jinak domky
+  if (town.kind === 'town') {
+    if (ratio >= 0.7 || !rng.chance(0.6)) return rng.pick(HOUSES);
+    return rng.chance(0.5) ? rng.pick(LOW_OFFICES) : rng.pick(OFFICES);
+  }
   if (year >= SKYSCRAPER_YEAR && ratio < 0.35 && rng.chance(0.6)) return rng.pick(SKYSCRAPERS);
   if (ratio > 0.7 && rng.chance(0.5)) return rng.pick(LOW_OFFICES);
   return rng.pick(OFFICES);

@@ -159,10 +159,11 @@ export const RATING_WAITING_TIERS: readonly { max: number; points: number }[] = 
 // Při hodnocení 0 odejde denně 2 % čekajících, od 50 % nikdo
 export const RATING_MAX_DAILY_LEAVE = 0.02;
 
-// Města
+// Města: velikosti navazují, aby jako v OpenTTD byla i středně velká města
 export const TOWN_POPULATION = {
-  city: { min: 1000, max: 2000 },
-  village: { min: 250, max: 750 },
+  city: { min: 1200, max: 2500 },
+  town: { min: 600, max: 1200 },
+  village: { min: 200, max: 600 },
 } as const;
 export const TOWN_GROWTH_BASE = 0.02;
 export const TOWN_GROWTH_SERVED = 0.05;

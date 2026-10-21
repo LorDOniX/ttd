@@ -27,7 +27,7 @@ const DEFAULT_OPTIONS: GenerateOptions = { waterLevel: 0.34, townDensity: 1 };
 const WATER_SCALE = 1 / 28;
 const EDGE_MARGIN = 14;
 
-const TILES_PER_TOWN: Record<TownKind, number> = { city: 9000, village: 4500 };
+const TILES_PER_TOWN: Record<TownKind, number> = { city: 11_000, town: 8_000, village: 5_500 };
 
 function generateWater(map: GameMap, seed: number, level: number): void {
   for (let y = 0; y < map.height; y++) {
@@ -126,7 +126,10 @@ export function generateWorld(
   generateWater(map, seed, options.waterLevel);
 
   const towns: Town[] = [];
-  placeTowns(map, rng, 'city', rng.shuffle([...CITY_NAMES]), towns, year, options.townDensity);
+  // Města a městečka berou jména ze společného seznamu, aby se neopakovala
+  const townNames = rng.shuffle([...CITY_NAMES]);
+  placeTowns(map, rng, 'city', townNames, towns, year, options.townDensity);
+  placeTowns(map, rng, 'town', townNames, towns, year, options.townDensity);
   placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year, options.townDensity);
   generateTrees(map, seed);
   // Vlastní proud náhody, aby přidání průmyslu nezměnilo města na existujících seedech

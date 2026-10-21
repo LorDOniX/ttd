@@ -1,9 +1,11 @@
 import { formatDate } from '../game/clock';
 import { Game } from '../game/game';
 import { parseSave, serializeGame } from '../game/save';
-import type { Town } from '../world/town';
+import type { Town, TownKind } from '../world/town';
 import { h } from './dom';
 import type { WindowManager } from './windows';
+
+const KIND_LABELS: Record<TownKind, string> = { city: 'Město', town: 'Městečko', village: 'Vesnice' };
 
 export interface GridToggle {
   visible: () => boolean;
@@ -125,7 +127,7 @@ export function openTown(
     h(
       'table',
       { className: 'table' },
-      h('tr', {}, h('td', {}, 'Typ'), h('td', {}, town.kind === 'city' ? 'Město' : 'Vesnice')),
+      h('tr', {}, h('td', {}, 'Typ'), h('td', {}, KIND_LABELS[town.kind])),
       h('tr', {}, h('td', {}, 'Obyvatel'), h('td', { className: 'num' }, town.population.toLocaleString('cs-CZ'))),
       h('tr', {}, h('td', {}, 'Budov'), h('td', { className: 'num' }, String(town.buildings.length))),
     );

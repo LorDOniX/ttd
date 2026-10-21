@@ -44,8 +44,9 @@ export function loadPrototype(kit: Kit, model: string): Promise<Part[]> {
   return pending;
 }
 
-function kitFor(town: Town): Kit {
-  return town.kind === 'city' ? 'city kit commercial' : 'city kit suburban';
+// Domky jsou ze suburban kitu, ostatní budovy z commercial kitu
+function kitFor(model: string): Kit {
+  return model.startsWith('building-type-') ? 'city kit suburban' : 'city kit commercial';
 }
 
 // Budovy všech měst jako instancované meshe, jeden na každou část modelu
@@ -58,8 +59,8 @@ export class BuildingsView {
     const groups = new Map<string, { kit: Kit; model: string; matrices: THREE.Matrix4[] }>();
 
     for (const town of towns) {
-      const kit = kitFor(town);
       for (const b of town.buildings) {
+        const kit = kitFor(b.model);
         const key = `${kit}/${b.model}`;
         let group = groups.get(key);
         if (!group) {
