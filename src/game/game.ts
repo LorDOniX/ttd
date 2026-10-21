@@ -92,6 +92,8 @@ export class Game {
   readonly industryLife: IndustryLife;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
+  // Staré vlaky se samy pošlou do depa na obnovu
+  autoRenew = false;
   money = START_MONEY;
   loan = 0;
   thisYear: YearStats = emptyYear();

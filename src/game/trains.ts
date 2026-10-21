@@ -632,7 +632,12 @@ export class Fleet {
       const monthly = yearlyRunningCost(train, today) / 12;
       this.game.spend(monthly, 'running');
       train.costs += monthly;
-      if (!train.agingWarned && isOld(train, today)) {
+      if (!isOld(train, today)) continue;
+      const affordable = this.game.money >= this.renewalOffer(train).cost;
+      if (this.game.autoRenew && affordable && train.state !== 'depot' && !train.renewing) {
+        this.requestRenewal(train);
+        this.game.news(`${train.name} jede do depa na automatickou obnovu.`);
+      } else if (!train.agingWarned) {
         train.agingWarned = true;
         this.game.news(`${train.name} dosáhl konce životnosti – provoz je dražší, zvažte obnovu.`);
       }

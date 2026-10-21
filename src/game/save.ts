@@ -39,6 +39,7 @@ export interface SaveData {
     thisYear: YearStats;
     history: YearRecord[];
     rngState: number;
+    autoRenew?: boolean;
   };
   clock: { date: GameDate; day: number; dayProgress: number };
   // Starší uložení pohled kamery ani rozpracovanou výstavbu nemají
@@ -113,6 +114,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       thisYear: game.thisYear,
       history: game.history,
       rngState: game.rng.state,
+      autoRenew: game.autoRenew,
     },
     ...(game.view ? { view: game.view } : {}),
     ...(game.construction.busy ? { construction: [...game.construction.pending] } : {}),
@@ -245,6 +247,7 @@ export function restoreGame(data: SaveData): Game {
   };
   const game = new Game(world);
   game.companyName = data.game.companyName;
+  game.autoRenew = data.game.autoRenew === true;
   game.money = data.game.money;
   game.loan = data.game.loan;
   // Přepravený náklad starší uložení nezná nebo zná jen uhlí

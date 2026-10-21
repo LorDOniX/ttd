@@ -127,6 +127,17 @@ describe('stárnutí vlaků', () => {
     expect(news.filter((n) => n.includes('konce životnosti'))).toHaveLength(1);
   });
 
+  it('s automatickou obnovou jede starý vlak sám do depa a obnoví se', () => {
+    const { game, a, b, depot } = buildLine();
+    game.autoRenew = true;
+    const train = buyTrain(game, depot, 1);
+    game.fleet.start(train, [a.id, b.id]);
+    train.builtDay = game.clock.day - 26 * YEAR;
+    for (let i = 0; i < 20_000 && train.builtDay < 0; i++) game.update(200);
+    expect(train.builtDay).toBeGreaterThan(0);
+    expect(train.state).not.toBe('depot');
+  });
+
   it('obnova v depu vymění lokomotivu za nejnovější model a zachová vagony i řád', () => {
     const { game, a, b, depot } = buildLine();
     const train = buyTrain(game, depot, 3);

@@ -23,6 +23,9 @@ export function openSettings(
   const gridInput = h('input', { type: 'checkbox', checked: grid.visible() });
   gridInput.addEventListener('change', () => grid.setVisible(gridInput.checked));
 
+  const renewInput = h('input', { type: 'checkbox', checked: game.autoRenew });
+  renewInput.addEventListener('change', () => (game.autoRenew = renewInput.checked));
+
   const theme = loadTheme();
   const themeSelect = h(
     'select',
@@ -43,6 +46,7 @@ export function openSettings(
     'div',
     { className: 'form' },
     h('label', { className: 'form__row' }, gridInput, ' Zobrazit mřížku'),
+    h('label', { className: 'form__row' }, renewInput, ' Automaticky obnovovat staré vlaky'),
     h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),
     h('div', { className: 'form__hint' }, `Seed mapy: ${seed}`),
