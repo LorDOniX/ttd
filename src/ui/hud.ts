@@ -25,6 +25,9 @@ export class Hud {
   private readonly newsEl = h('span', { className: 'statusbar__news' });
   private readonly moneyEl = h('span', { className: 'statusbar__money' });
   private readonly infoButton: HTMLButtonElement;
+  // Okna staveb se otevírají pod svou ikonou
+  readonly roadButton: HTMLButtonElement;
+  readonly railButton: HTMLButtonElement;
   private newsTimer = 0;
 
   constructor(root: HTMLElement, game: Game, actions: ToolbarActions) {
@@ -63,6 +66,8 @@ export class Hud {
     });
 
     this.infoButton = button('❓', 'Informace o dlaždici a dosah nástupiště (I)', actions.toggleInfo);
+    this.roadButton = button('🛣️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild);
+    this.railButton = button('🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild);
 
     // Skupiny v pořadí jako v OpenTTD: čas, hra, mapa, finance, vozidla, pohled, stavba, zprávy a nápověda
     const groups: HTMLElement[][] = [
@@ -73,12 +78,12 @@ export class Hud {
       ],
       [button('🗺️', 'Minimapa (M)', actions.openMinimap)],
       [button('💰', 'Finance (F)', actions.openFinance)],
-      [button('�', 'Seznam aut (A)', actions.openVehicleList), button('🚆', 'Seznam vlaků (V)', actions.openTrainList)],
-      [rotate],
       [
-        button('�️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild),
-        button('🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild),
+        button('🚌', 'Seznam aut (A)', actions.openVehicleList),
+        button('🚆', 'Seznam vlaků (V)', actions.openTrainList),
       ],
+      [rotate],
+      [this.roadButton, this.railButton],
       [button('📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
     ];
     const toolbar = h(

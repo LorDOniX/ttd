@@ -121,6 +121,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     toggleInfo: () => buildTools.toggleTool('info'),
   };
   const hud = new Hud(container, game, actions);
+  buildTools.anchorFor = (id) => (id === 'rail-build' ? hud.railButton : hud.roadButton);
   buildTools.onToolChange = (tool) => hud.setInfoActive(tool === 'info');
 
   const { clock } = game;

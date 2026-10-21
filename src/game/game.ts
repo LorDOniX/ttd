@@ -79,6 +79,12 @@ export function formatMoney(amount: number): string {
   });
 }
 
+// Tisíce zkráceně: 25 000 → 25k Kč, 2 500 → 2,5k Kč
+export function formatMoneyShort(amount: number): string {
+  if (Math.abs(amount) < 1000) return formatMoney(amount);
+  return `${(amount / 1000).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })}k Kč`;
+}
+
 // Pohled kamery: střed na mapě, přiblížení a natočení po 90°
 export interface ViewState {
   x: number;

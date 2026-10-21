@@ -12,6 +12,8 @@ export interface WindowOptions {
   onClose?: () => void;
   // Vycentruje pohled na místo, ke kterému se okno váže
   locate?: () => void;
+  // Okno se otevře vždy pod tímto prvkem horní lišty (null = uprostřed pod lištou)
+  anchor?: HTMLElement | null;
 }
 
 const POSITIONS_KEY = 'ttd-window-positions';
@@ -124,6 +126,7 @@ export class WindowManager {
     const top = saved ? saved.top + shift : 44 + offset;
     el.style.left = `${Math.max(0, Math.min(left, window.innerWidth - 80))}px`;
     el.style.top = `${Math.max(0, Math.min(top, window.innerHeight - 60))}px`;
+    if (options.anchor !== undefined) this.placeBelow(el, options.anchor);
 
     const win: OpenWindow = { el, body, onClose: options.onClose, locate: options.locate, pending: null };
     el.addEventListener('pointerdown', () => {
@@ -168,6 +171,15 @@ export class WindowManager {
 
   private bringToFront(el: HTMLElement): void {
     el.style.zIndex = String(++this.zIndex);
+  }
+
+  private placeBelow(el: HTMLElement, anchor: HTMLElement | null): void {
+    const bar = this.root.querySelector('.toolbar');
+    const target = (anchor ?? bar)?.getBoundingClientRect();
+    if (!target) return;
+    const left = target.left + target.width / 2 - el.offsetWidth / 2;
+    el.style.left = `${Math.max(0, Math.min(left, window.innerWidth - el.offsetWidth))}px`;
+    el.style.top = `${(bar?.getBoundingClientRect().bottom ?? 0) + 4}px`;
   }
 
   private remember(id: string, el: HTMLElement): void {

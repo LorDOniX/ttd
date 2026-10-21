@@ -400,10 +400,50 @@ body {
   white-space: nowrap;
 }
 
-.tool-button__icon {
-  display: inline-block;
-  width: 24px;
-  font-size: 16px;
+.build-tools {
+  display: flex;
+  gap: 4px;
+}
+
+.build-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 72px;
+  padding: 6px 6px 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--button-text);
+  background: var(--button);
+  border: 1px solid;
+  border-color: var(--bevel-light) var(--bevel-dark) var(--bevel-dark) var(--bevel-light);
+  cursor: pointer;
+}
+
+.build-tool:hover {
+  background: var(--button-hover);
+}
+
+.build-tool__icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.build-tool--active,
+.build-tool--active:hover {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--bevel-dark) var(--bevel-light) var(--bevel-light) var(--bevel-dark);
+}
+
+/* Text se zalomí na šířku řady tlačítek, okno neroztáhne */
+.build-text {
+  contain: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
 }
 
 kbd {

@@ -13,7 +13,7 @@ import {
 } from '../game/balance';
 import { CARGOS } from '../game/cargo';
 import { stationCost, trackPieceCost } from '../game/construction';
-import { Game, formatMoney } from '../game/game';
+import { Game, formatMoneyShort } from '../game/game';
 import { catchmentArea } from '../game/passengers';
 import type { BuildPreview } from '../render/preview';
 import { TileType, type TilePos } from '../world/map';
@@ -40,6 +40,8 @@ export class BuildTools {
   tool: BuildTool | null = null;
   onInspect: (tile: TilePos) => void = () => {};
   onToolChange: (tool: BuildTool | null) => void = () => {};
+  // Ikona okna stavby v horní liště, pod kterou se okno otevře
+  anchorFor: (id: 'rail-build' | 'road-build') => HTMLElement | null = () => null;
   private axis: Axis = 'x';
   private entrance: Edge = Edge.E;
   private dragStart: TilePos | null = null;
@@ -63,57 +65,79 @@ export class BuildTools {
   }
 
   openRailWindow(): void {
-    this.openToolWindow('rail-build', 'Stavba železnice', [
+    this.openToolWindow(
+      'rail-build',
+      'Stavba železnice',
       [
-        'track',
-        '🛤️',
-        'Koleje',
-        'K',
-        `${formatMoney(TRACK_PIECE_COST)} / dílek, most ${formatMoney(BRIDGE_PIECE_COST)}`,
+        [
+          'track',
+          '🛤️',
+          'Koleje',
+          'K',
+          `${formatMoneyShort(TRACK_PIECE_COST)} / dílek, most ${formatMoneyShort(BRIDGE_PIECE_COST)}`,
+        ],
+        ['station', '🚉', 'Nástupiště', 'N', `${formatMoneyShort(PLATFORM_TILE_COST)} / dílek`],
+        ['depot', '🏭', 'Depo', 'D', formatMoneyShort(DEPOT_COST)],
+        ['signal', '🚦', 'Návěstidlo', 'B', `${formatMoneyShort(SIGNAL_COST)}, znovu = odstranit`],
+        ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
-      ['station', '🚉', 'Nástupiště', 'N', `${formatMoney(PLATFORM_TILE_COST)} / dílek`],
-      ['depot', '🏭', 'Depo', 'D', formatMoney(DEPOT_COST)],
-      ['signal', '🚦', 'Návěstidlo', 'B', `${formatMoney(SIGNAL_COST)}, znovu = odstranit`],
-      ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
-    ]);
+      'Koleje a demolice: táhněte levým tlačítkem, kliknutím položíte jeden dílek koleje ' +
+        '(podle polohy kurzoru rovný nebo v rohu dlaždice zatáčku). Nástupiště: kliknutím 1×3, tažením větší. ' +
+        'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. R – otočit, Esc – zrušit nástroj.',
+    );
   }
 
   openRoadWindow(): void {
-    this.openToolWindow('road-build', 'Stavba silnic', [
-      ['road', '🛣️', 'Silnice', 'S', `${formatMoney(ROAD_TILE_COST)} / dílek`],
-      ['road-stop', '🚏', 'Zastávka aut', 'Z', formatMoney(ROAD_STOP_COST)],
-      ['road-depot', '🏠', 'Garáž aut', 'U', formatMoney(ROAD_DEPOT_COST)],
-      ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
-    ]);
+    this.openToolWindow(
+      'road-build',
+      'Stavba silnic',
+      [
+        ['road', '🛣️', 'Silnice', 'S', `${formatMoneyShort(ROAD_TILE_COST)} / dílek`],
+        ['road-stop', '🚏', 'Zastávka', 'Z', formatMoneyShort(ROAD_STOP_COST)],
+        ['road-depot', '🏠', 'Garáž', 'U', formatMoneyShort(ROAD_DEPOT_COST)],
+        ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
+      ],
+      'Silnice a demolice: táhněte levým tlačítkem. Zastávka aut jde na rovnou silnici bez křižovatky, ' +
+        'garáž se natočí vjezdem k silnici. R – otočit garáž, Esc – zrušit nástroj.',
+    );
   }
 
-  private openToolWindow(id: string, title: string, tools: [BuildTool, string, string, string, string][]): void {
+  // Tlačítka vedle sebe (ikona, pod ní popisek), pod nimi ceny a nápověda na šířku tlačítek
+  private openToolWindow(
+    id: 'rail-build' | 'road-build',
+    title: string,
+    tools: [BuildTool, string, string, string, string][],
+    hint: string,
+  ): void {
     const buttons = new Map<BuildTool, HTMLButtonElement>();
-    const content = h('div', { className: 'form' });
+    const row = h('div', { className: 'build-tools' });
     for (const [tool, icon, label, key, price] of tools) {
       const b = h(
         'button',
-        { className: 'tool-button' },
-        h('span', {}, h('span', { className: 'tool-button__icon' }, icon), label, h('kbd', {}, key)),
-        h('small', {}, price),
+        { className: 'build-tool', title: `${label} (${key}) – ${price}` },
+        h('span', { className: 'build-tool__icon' }, icon),
+        h('span', {}, label),
       );
       b.addEventListener('click', () => this.setTool(this.tool === tool ? null : tool));
       buttons.set(tool, b);
-      content.append(b);
+      row.append(b);
     }
-    content.append(
+    const text = h(
+      'div',
+      { className: 'build-text' },
       h(
         'div',
-        { className: 'form__hint' },
-        'Koleje, silnice a demolice: táhněte levým tlačítkem. Kliknutím položíte jeden dílek koleje ' +
-          '(podle polohy kurzoru rovný nebo v rohu dlaždice zatáčku). Nástupiště: kliknutím 1×3, tažením větší. ' +
-          'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. ' +
-          'Zastávka aut jde na rovnou silnici, garáž se natočí vjezdem k silnici. ' +
-          'R – otočit, Esc – zrušit nástroj.',
+        {},
+        ...tools.flatMap(([, , label, key, price], i) => [
+          ...(i > 0 ? [' · '] : []),
+          h('kbd', {}, key),
+          ` ${label} ${price}`,
+        ]),
       ),
+      h('div', { className: 'form__hint' }, hint),
     );
-    this.windows.open(id, title, content, {
-      width: 320,
+    this.windows.open(id, title, h('div', { className: 'form' }, row, text), {
+      anchor: this.anchorFor(id),
       onClose: () => {
         this.buttons.delete(id);
         if (this.tool && buttons.has(this.tool)) this.setTool(null);
@@ -309,7 +333,7 @@ export class BuildTools {
 
   private renderButtons(): void {
     for (const buttons of this.buttons.values()) {
-      for (const [tool, b] of buttons) b.classList.toggle('tool-button--active', tool === this.tool);
+      for (const [tool, b] of buttons) b.classList.toggle('build-tool--active', tool === this.tool);
     }
   }
 
@@ -323,7 +347,7 @@ export class BuildTools {
     if (fresh.length === 0) return 'Kolej už je postavená';
     const n = fresh.length;
     const pieces = n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků';
-    return `${n} ${pieces}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoney(cost)}`;
+    return `${n} ${pieces}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoneyShort(cost)}`;
   }
 
   private refresh(): void {
@@ -348,20 +372,20 @@ export class BuildTools {
         this.preview.showStation(shape, ok && this.game.money >= cost);
         this.showCatchment(shape);
         text = ok
-          ? `Nástupiště ${shape.tracks}×${shape.length} · ${formatMoney(cost)} · ${this.reachText(shape)}`
+          ? `Nástupiště ${shape.tracks}×${shape.length} · ${formatMoneyShort(cost)} · ${this.reachText(shape)}`
           : 'Sem nástupiště postavit nelze';
       }
     } else if (this.tool === 'depot' && tile) {
       const ok = rail.canPlaceDepot(tile.x, tile.y);
       this.preview.showDepot(tile.x, tile.y, this.depotEntrance(tile), ok && this.game.money >= DEPOT_COST);
-      text = ok ? formatMoney(DEPOT_COST) : 'Sem depo postavit nelze';
+      text = ok ? formatMoneyShort(DEPOT_COST) : 'Sem depo postavit nelze';
     } else if (this.tool === 'road-stop' && tile) {
       const axis = rail.roadStopAxis(tile.x, tile.y);
       if (axis) {
         const shape = { x: tile.x, y: tile.y, axis, length: 1, tracks: 1 };
         this.preview.showRoadStop(tile.x, tile.y, axis, this.game.money >= ROAD_STOP_COST);
         this.showCatchment(shape);
-        text = `Zastávka aut · ${formatMoney(ROAD_STOP_COST)} · ${this.reachText(shape)}`;
+        text = `Zastávka aut · ${formatMoneyShort(ROAD_STOP_COST)} · ${this.reachText(shape)}`;
       } else {
         this.preview.showArea([tile], 'invalid');
         text = 'Zastávka aut jde jen na rovnou silnici bez křižovatky';
@@ -374,13 +398,13 @@ export class BuildTools {
         this.roadDepotEntrance(tile),
         ok && this.game.money >= ROAD_DEPOT_COST,
       );
-      text = ok ? `Garáž aut · ${formatMoney(ROAD_DEPOT_COST)}` : 'Sem garáž postavit nelze';
+      text = ok ? `Garáž aut · ${formatMoneyShort(ROAD_DEPOT_COST)}` : 'Sem garáž postavit nelze';
     } else if (this.tool === 'road' && this.dragStart) {
       if (this.roadPath) {
         const tiles = this.roadPath.filter((s) => s.isNew).length;
         const cost = tiles * ROAD_TILE_COST;
         this.preview.showArea(this.roadPath, cost <= this.game.money ? 'road' : 'invalid');
-        text = `${tiles} dílků · ${formatMoney(cost)}`;
+        text = `${tiles} dílků · ${formatMoneyShort(cost)}`;
       } else {
         text = 'Silnici nelze vést';
       }
@@ -394,10 +418,10 @@ export class BuildTools {
       const { x, y } = tile;
       if (rail.hasSignal(x, y)) {
         this.preview.showArea([tile], 'demolish');
-        text = `Odstranit návěstidlo · vrátí ${formatMoney(SIGNAL_COST * DEMOLISH_REFUND)}`;
+        text = `Odstranit návěstidlo · vrátí ${formatMoneyShort(SIGNAL_COST * DEMOLISH_REFUND)}`;
       } else if (rail.canPlaceSignal(x, y)) {
         this.preview.showArea([tile], this.game.money >= SIGNAL_COST ? 'valid' : 'invalid');
-        text = `Návěstidlo · ${formatMoney(SIGNAL_COST)}`;
+        text = `Návěstidlo · ${formatMoneyShort(SIGNAL_COST)}`;
       } else {
         this.preview.showArea([tile], 'invalid');
         text = 'Návěstidlo jen na rovnou kolej bez výhybky';
@@ -410,7 +434,7 @@ export class BuildTools {
       } else if (plan.tiles.length > 0 && plan.cost === 0) {
         text = 'Demolice zdarma';
       } else if (plan.tiles.length > 0) {
-        text = plan.cost > 0 ? `Demolice: ${formatMoney(plan.cost)}` : `Vrátí se: ${formatMoney(-plan.cost)}`;
+        text = plan.cost > 0 ? `Demolice: ${formatMoneyShort(plan.cost)}` : `Vrátí se: ${formatMoneyShort(-plan.cost)}`;
       }
     }
 
