@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { GameMap, MapChanges } from '../world/map';
+import { GameMap, MapChanges, TileType } from '../world/map';
+import { EDGE_DELTA, Edge, RailNetwork, opposite } from '../world/rail';
 
 // Bity propojení silnice se sousedy: S = y-1, V = x+1, J = y+1, Z = x-1
 const N = 1;
@@ -66,10 +67,22 @@ export function roadAtlas(): THREE.CanvasTexture {
   return atlas;
 }
 
-// Silnice na dlaždicích tiles, napojená na sousedy, pro které connects vrátí true
+// Napojení silnice na dlaždici (x, y) přes hranu edge: na sousední silnici nebo vjezd garáže
+export type RoadConnects = (x: number, y: number, edge: Edge) => boolean;
+
+export function roadConnects(map: GameMap, rail: RailNetwork): RoadConnects {
+  return (x, y, edge) => {
+    const nx = x + EDGE_DELTA[edge][0];
+    const ny = y + EDGE_DELTA[edge][1];
+    if (map.isRoad(nx, ny)) return true;
+    return map.isType(nx, ny, TileType.RoadDepot) && rail.roadDepotAt(nx, ny)?.entrance === opposite(edge);
+  };
+}
+
+// Silnice na dlaždicích tiles s napojením podle connects
 export function roadGeometry(
   tiles: Iterable<{ x: number; y: number }>,
-  connects: (x: number, y: number) => boolean,
+  connects: RoadConnects,
   lift: number,
 ): THREE.BufferGeometry {
   const positions: number[] = [];
@@ -78,10 +91,10 @@ export function roadGeometry(
   const inset = 0.5 / (CELL * VARIANTS);
   for (const { x, y } of tiles) {
     const mask =
-      (connects(x, y - 1) ? N : 0) |
-      (connects(x + 1, y) ? E : 0) |
-      (connects(x, y + 1) ? S : 0) |
-      (connects(x - 1, y) ? W : 0);
+      (connects(x, y, Edge.N) ? N : 0) |
+      (connects(x, y, Edge.E) ? E : 0) |
+      (connects(x, y, Edge.S) ? S : 0) |
+      (connects(x, y, Edge.W) ? W : 0);
     const u0 = mask / VARIANTS + inset;
     const u1 = (mask + 1) / VARIANTS - inset;
     const v = positions.length / 3;
@@ -99,11 +112,14 @@ export function roadGeometry(
 
 export class RoadView {
   readonly object: THREE.Mesh;
-  // Které dlaždice byly silnicí při poslední přestavbě
+  // Které dlaždice byly silnicí (1) nebo garáží (2) při poslední přestavbě
   private readonly roadTiles: Uint8Array;
   private readonly changes: MapChanges;
 
-  constructor(private readonly map: GameMap) {
+  constructor(
+    private readonly map: GameMap,
+    private readonly rail: RailNetwork,
+  ) {
     this.object = new THREE.Mesh(
       new THREE.BufferGeometry(),
       new THREE.MeshLambertMaterial({ map: roadAtlas(), alphaTest: 0.5 }),
@@ -113,29 +129,31 @@ export class RoadView {
     this.rebuild();
   }
 
-  // Přestavba jen při změně silniční sítě, ne při každé změně mapy
+  private code(x: number, y: number): number {
+    if (this.map.isRoad(x, y)) return 1;
+    return this.map.isType(x, y, TileType.RoadDepot) ? 2 : 0;
+  }
+
+  // Přestavba jen při změně silniční sítě nebo garáží, ne při každé změně mapy
   sync(): void {
     const changes = this.changes.take();
-    const { map } = this;
-    const width = map.width;
+    const width = this.map.width;
     const roadChanged =
-      changes === null ||
-      changes.some((i) => this.roadTiles[i] !== Number(map.isRoad(i % width, Math.floor(i / width))));
+      changes === null || changes.some((i) => this.roadTiles[i] !== this.code(i % width, Math.floor(i / width)));
     if (roadChanged) this.rebuild();
   }
 
   rebuild(): void {
     const { map } = this;
-    this.roadTiles.fill(0);
     const tiles: { x: number; y: number }[] = [];
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
-        if (!map.isRoad(x, y)) continue;
-        this.roadTiles[y * map.width + x] = 1;
-        tiles.push({ x, y });
+        const code = this.code(x, y);
+        this.roadTiles[y * map.width + x] = code;
+        if (code === 1) tiles.push({ x, y });
       }
     }
     this.object.geometry.dispose();
-    this.object.geometry = roadGeometry(tiles, (x, y) => map.isRoad(x, y), 0.005);
+    this.object.geometry = roadGeometry(tiles, roadConnects(map, this.rail), 0.005);
   }
 }

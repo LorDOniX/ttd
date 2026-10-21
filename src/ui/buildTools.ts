@@ -16,6 +16,7 @@ import { stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoneyShort } from '../game/game';
 import { catchmentArea } from '../game/passengers';
 import type { BuildPreview } from '../render/preview';
+import { roadConnects } from '../render/roads';
 import { TileType, type TilePos } from '../world/map';
 import { EDGE_DELTA, Edge, PIECES, defaultStationShape, opposite, type Axis, type StationShape } from '../world/rail';
 import { findTrackPath, pieceAtCursor, singlePieceStep, type PathStep } from '../world/railPath';
@@ -243,10 +244,10 @@ export class BuildTools {
 
   // Náhled silnice, vrací text s počtem nových dílků a cenou
   private showRoad(steps: RoadStep[]): string {
-    const { map } = this.game.world;
+    const { map, rail } = this.game.world;
     const n = steps.filter((s) => s.isNew).length;
     const cost = n * ROAD_TILE_COST;
-    this.preview.showRoad(steps, (x, y) => map.isRoad(x, y), cost <= this.game.money);
+    this.preview.showRoad(steps, roadConnects(map, rail), cost <= this.game.money);
     if (n === 0) return 'Silnice už je postavená';
     return `${n} ${n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků'} · ${formatMoneyShort(cost)}`;
   }
@@ -310,14 +311,14 @@ export class BuildTools {
     return this.entrance;
   }
 
-  // Garáž se natočí vjezdem k sousední silnici, jinak podle R
+  // Garáž se natočí vjezdem k sousední silnici; u více silnic rozhodne R, bez silnice jen R
   private roadDepotEntrance(tile: TilePos): Edge {
     const { map } = this.game.world;
-    for (let edge = 0; edge < 4; edge++) {
-      const [dx, dy] = EDGE_DELTA[edge];
-      if (map.isType(tile.x + dx, tile.y + dy, TileType.Road)) return edge;
-    }
-    return this.entrance;
+    const roads = [0, 1, 2, 3].filter((edge) =>
+      map.isType(tile.x + EDGE_DELTA[edge][0], tile.y + EDGE_DELTA[edge][1], TileType.Road),
+    );
+    if (roads.length === 0 || roads.includes(this.entrance)) return this.entrance;
+    return roads[0];
   }
 
   private report(error: string | null): void {
@@ -413,7 +414,7 @@ export class BuildTools {
         this.roadDepotEntrance(tile),
         ok && this.game.money >= ROAD_DEPOT_COST,
       );
-      text = ok ? `Garáž aut · ${formatMoneyShort(ROAD_DEPOT_COST)}` : 'Sem garáž postavit nelze';
+      text = ok ? `Garáž aut · ${formatMoneyShort(ROAD_DEPOT_COST)}` : 'Garáž jde jen na volnou dlaždici vedle silnice';
     } else if (this.tool === 'road' && this.dragStart) {
       if (this.roadPath) text = this.showRoad(this.roadPath);
       else if (tile && (tile.x !== this.dragStart.x || tile.y !== this.dragStart.y)) text = 'Silnici nelze vést';

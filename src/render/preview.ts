@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TilePos } from '../world/map';
-import type { Axis, Edge, StationShape } from '../world/rail';
+import { EDGE_DELTA, type Axis, type Edge, type StationShape } from '../world/rail';
 import {
   TrackView,
   createDepotMesh,
@@ -10,7 +10,7 @@ import {
   placeDepot,
   type TrackItem,
 } from './rail';
-import { roadAtlas, roadGeometry } from './roads';
+import { roadAtlas, roadGeometry, type RoadConnects } from './roads';
 
 const VALID = 0x9fff9f;
 const INVALID = 0xff7070;
@@ -65,11 +65,15 @@ export class BuildPreview {
   }
 
   // Silnice tak, jak bude vypadat: napojená na stávající silnice i na sebe
-  showRoad(tiles: TilePos[], isRoad: (x: number, y: number) => boolean, valid: boolean): void {
+  showRoad(tiles: TilePos[], connects: RoadConnects, valid: boolean): void {
     this.clear();
     const planned = new Set(tiles.map((t) => `${t.x},${t.y}`));
     this.road.geometry.dispose();
-    this.road.geometry = roadGeometry(tiles, (x, y) => planned.has(`${x},${y}`) || isRoad(x, y), 0.012);
+    this.road.geometry = roadGeometry(
+      tiles,
+      (x, y, edge) => planned.has(`${x + EDGE_DELTA[edge][0]},${y + EDGE_DELTA[edge][1]}`) || connects(x, y, edge),
+      0.012,
+    );
     this.roadMaterial.color.set(valid ? VALID : INVALID);
     this.road.visible = true;
   }

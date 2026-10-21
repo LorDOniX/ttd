@@ -123,7 +123,7 @@ export class Construction {
 
   buildRoadDepot(x: number, y: number, entrance: Edge): string | null {
     const { map, rail } = this.game.world;
-    if (!map.isFree(x, y)) return 'Sem garáž postavit nelze.';
+    if (!map.isFree(x, y)) return 'Garáž jde jen na volnou dlaždici vedle silnice.';
     if (this.game.money < ROAD_DEPOT_COST) return `Nedostatek peněz (${formatMoney(ROAD_DEPOT_COST)}).`;
     this.game.spend(ROAD_DEPOT_COST, 'construction');
     rail.addRoadDepot(x, y, entrance);

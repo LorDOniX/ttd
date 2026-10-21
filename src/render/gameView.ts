@@ -56,7 +56,7 @@ export class GameView {
     scene.add(sun);
 
     this.terrain = new TerrainView(map, towns);
-    const roads = new RoadView(map);
+    const roads = new RoadView(map, world.rail);
     const buildings = new BuildingsView();
     void buildings.rebuild(towns);
     const trees = new TreesView(map);
