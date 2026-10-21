@@ -1,6 +1,6 @@
 import { RATING_START, STATION_LENGTH } from './balance';
 import { FREIGHT_TYPES, emptyFreight, isCargo, type FreightStock } from './cargo';
-import { Game, emptyYear, type YearRecord, type YearStats } from './game';
+import { Game, emptyYear, type ViewState, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Train } from './trains';
 import type { World } from '../world/generator';
@@ -40,6 +40,8 @@ export interface SaveData {
     rngState: number;
   };
   clock: { date: GameDate; day: number; dayProgress: number };
+  // Starší uložení pohled kamery nemají
+  view?: ViewState;
 }
 
 // Verze 1 měla jen lonišní rok a výdaje bez rozpadu
@@ -110,6 +112,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       history: game.history,
       rngState: game.rng.state,
     },
+    ...(game.view ? { view: game.view } : {}),
     clock: { date: clock.date, day: clock.day, dayProgress: clock.dayProgress },
   };
 }
@@ -261,5 +264,13 @@ export function restoreGame(data: SaveData): Game {
     })),
   );
   game.fleet.nextId = data.fleet.nextId;
+  game.view = validView(data.view);
   return game;
+}
+
+function validView(view: unknown): ViewState | null {
+  if (!isObject(view)) return null;
+  const { x, z, zoom, rotation } = view;
+  const numbers = [x, z, zoom, rotation].every((n) => typeof n === 'number' && Number.isFinite(n));
+  return numbers && Number.isInteger(rotation) ? (view as unknown as ViewState) : null;
 }

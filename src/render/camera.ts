@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { ViewState } from '../game/game';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
@@ -44,6 +45,18 @@ export class IsoCamera {
   focus(x: number, z: number): void {
     this.target.set(x, 0, z);
     this.updatePosition();
+  }
+
+  get view(): ViewState {
+    const rotation = Math.round(this.targetAzimuth / ROTATION_STEP);
+    return { x: this.target.x, z: this.target.z, zoom: this.camera.zoom, rotation: ((rotation % 4) + 4) % 4 };
+  }
+
+  restore(view: ViewState): void {
+    this.camera.zoom = THREE.MathUtils.clamp(view.zoom, MIN_ZOOM, MAX_ZOOM);
+    this.camera.updateProjectionMatrix();
+    this.azimuth = this.targetAzimuth = view.rotation * ROTATION_STEP;
+    this.focus(view.x, view.z);
   }
 
   // Posun pohledu o zlomky výšky obrazovky (kladné dx doprava, dy nahoru), nezávisle na otočení a zoomu

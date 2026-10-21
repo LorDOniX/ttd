@@ -73,6 +73,14 @@ export function formatMoney(amount: number): string {
   });
 }
 
+// Pohled kamery: střed na mapě, přiblížení a natočení po 90°
+export interface ViewState {
+  x: number;
+  z: number;
+  zoom: number;
+  rotation: number;
+}
+
 // Stav rozehrané hry nezávislý na vykreslování
 export class Game {
   readonly events = new Emitter<GameEvents>();
@@ -91,6 +99,8 @@ export class Game {
   history: YearRecord[] = [];
   // Poslední zprávy od nejstarší; neukládají se
   readonly newsLog: NewsItem[] = [];
+  // Pohled kamery k uložení; null = výchozí u největšího města
+  view: ViewState | null = null;
   // Cena staveb pro údržbu; počítá se z celé mapy, proto jen po změně kolejí
   private infrastructure: number | null = null;
 

@@ -79,7 +79,8 @@ export class GameView {
       new THREE.Box2(new THREE.Vector2(0, 0), new THREE.Vector2(map.width, map.height)),
     );
     const biggest = [...towns].sort((a, b) => b.population - a.population)[0];
-    if (biggest) this.camera.focus(biggest.x + 0.5, biggest.y + 0.5);
+    if (game.view) this.camera.restore(game.view);
+    else if (biggest) this.camera.focus(biggest.x + 0.5, biggest.y + 0.5);
 
     window.addEventListener('resize', () => {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -146,5 +147,7 @@ export class GameView {
     this.floatingTexts.update(now);
     this.renderer.render(this.scene, this.camera.camera);
     this.labels.render(this.scene, this.camera.camera);
+    // Pohled se ukládá s hrou
+    this.game.view = this.camera.view;
   }
 }

@@ -129,6 +129,16 @@ describe('uložení a načtení', () => {
     expect(copy.world.industries).toEqual(game.world.industries);
   });
 
+  it('pohled kamery se uloží, neplatný se zahodí', () => {
+    const { game } = buildLine();
+    game.view = { x: 12.5, z: 30, zoom: 2, rotation: 3 };
+    const copy = restoreGame(parseSave(JSON.stringify(serializeGame(game, 'test'))));
+    expect(copy.view).toEqual(game.view);
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.view.zoom = 'x';
+    expect(restoreGame(parseSave(JSON.stringify(data))).view).toBeNull();
+  });
+
   it('návěstidla se uloží a neplatná se při načtení zahodí', () => {
     const { game } = buildLine();
     game.world.rail.addSignal(20, 12);
