@@ -3,8 +3,8 @@
 ## Popis
 - chtěl bych 2d izometrickou hru, renderovaná ve 3d grafice, rozdělená na dílky (čtverečky)
 - na mapě bude podle seedu generovaná tráva, voda, města, vesnice
-- města budou generována pomocí spojených cest a modelů city kit commercial, velikost 1000-5000
-- vesnice budou generována pomocí spojených cest a modelů city kit suburban, velikost 100-1000
+- města budou generována pomocí spojených cest a modelů city kit commercial, velikost 1000-2000
+- vesnice budou generována pomocí spojených cest a modelů city kit suburban, velikost 250-750
 - názvy měst převzít z českých vesnic a měst
 - města se budou v průběhu let zvětšovat např. o 5% za 1 rok
 - začíná se 1950, končí se 2050, jeden rok trvá 15m reálného času
@@ -109,7 +109,7 @@ Každá fáze končí samostatným commitem a spustitelnou hrou (Vite + TypeScri
 
 0. **Skelet projektu** – Vite, TypeScript, three.js, servírování `assets/`, prázdná scéna
 1. **Mapa a kamera** – izometrická ortografická kamera, dlaždicová mřížka, zoom kolečkem, posun pravým tlačítkem, výběr dlaždice levým
-2. **Generování světa** – PRNG ze seedu, tráva a voda, města (commercial, 1000–5000) a vesnice (suburban, 100–1000), silnice uvnitř sídel, české názvy, popisky
+2. **Generování světa** – PRNG ze seedu, tráva a voda, města (commercial, 1000–2000) a vesnice (suburban, 250–750), silnice uvnitř sídel, české názvy, popisky
 3. **Čas, HUD, dialogy** – kalendář 1950–2050 (15 min = 1 rok), peníze 1 000 000 CZK, horní a spodní lišta, notifikace, okna (Delete zavře vše), nastavení (mřížka, název společnosti), růst měst 5 %/rok
 4. **Stavba železnice** – koleje tažením včetně diagonál (A* trasa, postupná výstavba, stop při nedostatku peněz), nástupiště 1×3, depo, procedurální textury, automatické navazování kolejí
 5. **Vlaky** – katalog z train kitu odemykaný v čase (+20 % cena a náklady, vyšší rychlost), nákup v depu, vagony 50 000, jízda po grafu kolejí, zpomalení před stanicí, kyvadlový provoz

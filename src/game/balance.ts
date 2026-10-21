@@ -102,8 +102,8 @@ export const RATING_MAX_DAILY_LEAVE = 0.02;
 
 // Města
 export const TOWN_POPULATION = {
-  city: { min: 1000, max: 5000 },
-  village: { min: 100, max: 1000 },
+  city: { min: 1000, max: 2000 },
+  village: { min: 250, max: 750 },
 } as const;
 export const TOWN_GROWTH_BASE = 0.02;
 export const TOWN_GROWTH_SERVED = 0.05;
