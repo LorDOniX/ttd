@@ -5,7 +5,7 @@ import { parseSave, restoreGame } from '../game/save';
 import { TileCursor } from '../render/cursor';
 import { GameView } from '../render/gameView';
 import { BuildPreview } from '../render/preview';
-import { BuildTools } from '../ui/buildTools';
+import { BuildTools, type PointerTile } from '../ui/buildTools';
 import { openDepot } from '../ui/depot';
 import { openNewsLog, openSaveLoad, openSettings, openTown } from '../ui/dialogs';
 import { h } from '../ui/dom';
@@ -17,7 +17,7 @@ import { openTileInfo } from '../ui/tileInfo';
 import { openTrain, openTrainList } from '../ui/trainWindow';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
-import { NO_OWNER, type TilePos } from '../world/map';
+import { NO_OWNER } from '../world/map';
 import type { Depot } from '../world/rail';
 import { hashSeed } from '../world/rng';
 import type { Town } from '../world/town';
@@ -150,12 +150,12 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
 
   game.news(message);
 
-  function tileAt(clientX: number, clientY: number): TilePos | null {
+  function tileAt(clientX: number, clientY: number): PointerTile | null {
     const p = isoCamera.groundPoint(clientX, clientY);
     if (!p) return null;
     const x = Math.floor(p.x);
     const y = Math.floor(p.z);
-    return map.inBounds(x, y) ? { x, y } : null;
+    return map.inBounds(x, y) ? { x, y, fx: p.x - x, fy: p.z - y } : null;
   }
 
   const canvas = renderer.domElement;

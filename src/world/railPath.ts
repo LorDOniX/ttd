@@ -3,14 +3,15 @@ import { MinHeap } from './heap';
 import { TileType, type TilePos } from './map';
 import {
   EDGE_DELTA,
+  Edge,
   PIECES,
   RailNetwork,
+  axisPiece,
   heading,
   isCorner,
   opposite,
   pieceLength,
   turnAllowed,
-  type Edge,
 } from './rail';
 
 export interface PathStep {
@@ -36,6 +37,30 @@ interface Parent {
   piece: number;
 }
 
+// Hranice od středu dlaždice, za kterou kurzor v rohu vybere zatáčku
+const CORNER_ZONE = 0.25;
+
+// Kus koleje podle polohy kurzoru v dlaždici (fx, fy v 0..1): v rohu zatáčka k bližším hranám,
+// jinak rovný kus ve směru, kterým je kurzor od středu dál
+export function pieceAtCursor(fx: number, fy: number): number {
+  const dx = fx - 0.5;
+  const dy = fy - 0.5;
+  if (Math.abs(dx) > CORNER_ZONE && Math.abs(dy) > CORNER_ZONE) {
+    const vertical = dy < 0 ? Edge.N : Edge.S;
+    const horizontal = dx < 0 ? Edge.W : Edge.E;
+    return PIECES.findIndex(([a, b]) => (a === vertical || b === vertical) && (a === horizontal || b === horizontal));
+  }
+  return Math.abs(dx) >= Math.abs(dy) ? axisPiece('x') : axisPiece('y');
+}
+
+// Jediný kus koleje na dlaždici; když vybraný nejde položit (např. na silnici), zkusí rovný kus
+export function singlePieceStep(rail: RailNetwork, tile: TilePos, fx: number, fy: number): PathStep | null {
+  const chosen = pieceAtCursor(fx, fy);
+  const piece = [chosen, axisPiece('x'), axisPiece('y')].find((p) => rail.canPlace(tile.x, tile.y, p));
+  if (piece === undefined) return null;
+  return { x: tile.x, y: tile.y, piece, isNew: !rail.has(tile.x, tile.y, piece) };
+}
+
 // A* po kusech kolejí; stav = dlaždice, hrana, kterou vlak vjel, a směr jízdy
 export function findTrackPath(rail: RailNetwork, from: TilePos, to: TilePos): PathStep[] | null {
   if (from.x === to.x && from.y === to.y) return null;
@@ -56,8 +81,7 @@ export function findTrackPath(rail: RailNetwork, from: TilePos, to: TilePos): Pa
     return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
   };
   const stepCost = (x: number, y: number, piece: number): number =>
-    pieceLength(piece) *
-    (rail.has(x, y, piece) ? REUSE_FACTOR : map.get(x, y) === TileType.Water ? BRIDGE_FACTOR : 1);
+    pieceLength(piece) * (rail.has(x, y, piece) ? REUSE_FACTOR : map.get(x, y) === TileType.Water ? BRIDGE_FACTOR : 1);
   const endCost = (x: number, y: number, piece: number): number =>
     isCorner(piece) && !rail.has(x, y, piece) ? END_CORNER_PENALTY : 0;
 

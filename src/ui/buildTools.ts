@@ -15,12 +15,18 @@ import { catchmentArea } from '../game/passengers';
 import type { BuildPreview } from '../render/preview';
 import { TileType, type TilePos } from '../world/map';
 import { EDGE_DELTA, Edge, PIECES, defaultStationShape, opposite, type Axis, type StationShape } from '../world/rail';
-import { findTrackPath, type PathStep } from '../world/railPath';
+import { findTrackPath, pieceAtCursor, singlePieceStep, type PathStep } from '../world/railPath';
 import { findRoadPath, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
 export type BuildTool = 'track' | 'station' | 'depot' | 'signal' | 'road' | 'demolish' | 'info';
+
+// Dlaždice pod kurzorem a poloha kurzoru uvnitř ní (0..1)
+export interface PointerTile extends TilePos {
+  fx: number;
+  fy: number;
+}
 
 // Největší strana obdélníku pro demolici
 const MAX_DEMOLISH_SIZE = 64;
@@ -35,7 +41,7 @@ export class BuildTools {
   private dragStart: TilePos | null = null;
   private path: PathStep[] | null = null;
   private roadPath: RoadStep[] | null = null;
-  private hover: TilePos | null = null;
+  private hover: PointerTile | null = null;
   private readonly tooltip = h('div', { className: 'tooltip' });
   private readonly buttons = new Map<string, Map<BuildTool, HTMLButtonElement>>();
 
@@ -46,6 +52,10 @@ export class BuildTools {
     root: HTMLElement,
   ) {
     root.append(this.tooltip);
+    // Koleje se staví postupně, náhled pod kurzorem se musí obnovit po každé změně
+    game.events.on('railChanged', () => {
+      if (this.tool && !this.dragStart) this.refresh();
+    });
   }
 
   openRailWindow(): void {
@@ -83,7 +93,8 @@ export class BuildTools {
       h(
         'div',
         { className: 'form__hint' },
-        'Koleje, silnice a demolice: táhněte levým tlačítkem. Nástupiště: kliknutím 1×3, tažením větší. ' +
+        'Koleje, silnice a demolice: táhněte levým tlačítkem. Kliknutím položíte jeden dílek koleje ' +
+          '(podle polohy kurzoru rovný nebo v rohu dlaždice zatáčku). Nástupiště: kliknutím 1×3, tažením větší. ' +
           'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. ' +
           'R – otočit, Esc – zrušit nástroj.',
       ),
@@ -125,8 +136,9 @@ export class BuildTools {
     this.refresh();
   }
 
-  pointerDown(tile: TilePos | null): void {
+  pointerDown(tile: PointerTile | null): void {
     if (!tile || !this.tool) return;
+    this.hover = tile;
     if (this.tool === 'info') {
       this.onInspect(tile);
       return;
@@ -142,11 +154,19 @@ export class BuildTools {
     this.refresh();
   }
 
-  pointerMove(tile: TilePos | null, clientX: number, clientY: number): void {
+  pointerMove(tile: PointerTile | null, clientX: number, clientY: number): void {
     this.tooltip.style.left = `${clientX + 16}px`;
     this.tooltip.style.top = `${clientY + 16}px`;
-    if (tile?.x === this.hover?.x && tile?.y === this.hover?.y) return;
+    const previous = this.hover;
     this.hover = tile;
+    const sameTile = tile?.x === previous?.x && tile?.y === previous?.y;
+    // Na jedné dlaždici se u kolejí může změnit jen vybraný kus podle polohy kurzoru
+    const samePiece =
+      this.tool !== 'track' ||
+      !tile ||
+      !previous ||
+      pieceAtCursor(tile.fx, tile.fy) === pieceAtCursor(previous.fx, previous.fy);
+    if (sameTile && samePiece) return;
     if (this.dragStart) this.updatePath();
     this.refresh();
   }
@@ -171,8 +191,16 @@ export class BuildTools {
     const target = this.hover ?? this.dragStart;
     if (!this.dragStart || !target) return;
     const { rail } = this.game.world;
-    if (this.tool === 'track') this.path = findTrackPath(rail, this.dragStart, target);
+    if (this.tool === 'track') this.path = this.trackPath(this.dragStart, target);
     if (this.tool === 'road') this.roadPath = findRoadPath(rail, this.dragStart, target);
+  }
+
+  // Tažení na stejné dlaždici (nebo klik) staví jediný kus podle polohy kurzoru
+  private trackPath(start: TilePos, target: TilePos): PathStep[] | null {
+    const { rail } = this.game.world;
+    if (start.x !== target.x || start.y !== target.y) return findTrackPath(rail, start, target);
+    const step = this.hover && singlePieceStep(rail, start, this.hover.fx, this.hover.fy);
+    return step ? [step] : null;
   }
 
   // Obdélník mezi začátkem tažení a kurzorem, bez tažení jen dlaždice pod kurzorem
@@ -246,6 +274,19 @@ export class BuildTools {
     }
   }
 
+  // Náhled kolejí, vrací text s počtem nových dílků a cenou
+  private showTrack(path: PathStep[]): string {
+    const { map } = this.game.world;
+    const fresh = path.filter((s) => s.isNew);
+    const cost = fresh.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y), 0);
+    const bridges = fresh.filter((s) => map.get(s.x, s.y) === TileType.Water).length;
+    this.preview.showTrack(path, cost <= this.game.money);
+    if (fresh.length === 0) return 'Kolej už je postavená';
+    const n = fresh.length;
+    const pieces = n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků';
+    return `${n} ${pieces}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoney(cost)}`;
+  }
+
   private refresh(): void {
     const { rail } = this.game.world;
     const tile = this.hover;
@@ -253,16 +294,13 @@ export class BuildTools {
     this.preview.clear();
 
     if (this.tool === 'track' && this.dragStart) {
-      if (this.path) {
-        const fresh = this.path.filter((s) => s.isNew);
-        const { map } = this.game.world;
-        const cost = fresh.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y), 0);
-        const bridges = fresh.filter((s) => map.get(s.x, s.y) === TileType.Water).length;
-        this.preview.showTrack(this.path, cost <= this.game.money);
-        text = `${fresh.length} dílků${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoney(cost)}`;
-      } else if (tile && (tile.x !== this.dragStart.x || tile.y !== this.dragStart.y)) {
-        text = 'Trasu nelze vést';
-      }
+      if (this.path) text = this.showTrack(this.path);
+      else if (tile && (tile.x !== this.dragStart.x || tile.y !== this.dragStart.y)) text = 'Trasu nelze vést';
+      else text = 'Sem kolej položit nelze';
+    } else if (this.tool === 'track' && tile) {
+      // Bez tažení náhled kusu, který postaví kliknutí
+      const step = singlePieceStep(rail, tile, tile.fx, tile.fy);
+      text = step ? this.showTrack([step]) : 'Sem kolej položit nelze';
     } else if (this.tool === 'station' && tile) {
       const shape = this.stationShape();
       if (shape) {

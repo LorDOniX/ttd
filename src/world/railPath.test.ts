@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { assertContinuous, emptyGame, layTrack } from '../test/fixtures';
 import { TileType } from './map';
-import { Edge, defaultStationShape, isCorner } from './rail';
-import { findTrackPath } from './railPath';
+import { Edge, PIECES, defaultStationShape, isCorner } from './rail';
+import { findTrackPath, pieceAtCursor, singlePieceStep } from './railPath';
 
 const WE = 1;
 
@@ -68,5 +68,24 @@ describe('hledání trasy kolejí', () => {
     world.rail.addDepot(10, 20, Edge.E);
     const path = findTrackPath(world.rail, { x: 5, y: 20 }, { x: 15, y: 20 })!;
     expect(path.some((s) => s.x === 10 && s.y === 20)).toBe(false);
+  });
+
+  it('jeden dílek: rovný podle polohy kurzoru, v rohu dlaždice zatáčka', () => {
+    expect(pieceAtCursor(0.9, 0.55)).toBe(WE);
+    expect(pieceAtCursor(0.45, 0.1)).toBe(0);
+    expect(PIECES[pieceAtCursor(0.1, 0.1)]).toEqual([Edge.W, Edge.N]);
+    expect(PIECES[pieceAtCursor(0.9, 0.9)]).toEqual([Edge.E, Edge.S]);
+  });
+
+  it('jeden dílek na silnici položí jen přejezd, existující kus není nový', () => {
+    const game = emptyGame();
+    const { world } = game;
+    for (let x = 0; x < 64; x++) world.map.set(x, 10, TileType.Road);
+    // Kurzor míří podél silnice, položí se kolmý přejezd
+    expect(singlePieceStep(world.rail, { x: 5, y: 10 }, 0.9, 0.5)).toMatchObject({ piece: 0, isNew: true });
+    layTrack(game, { x: 20, y: 20 }, { x: 25, y: 20 });
+    expect(singlePieceStep(world.rail, { x: 22, y: 20 }, 0.8, 0.5)).toMatchObject({ piece: WE, isNew: false });
+    world.map.set(30, 30, TileType.Building);
+    expect(singlePieceStep(world.rail, { x: 30, y: 30 }, 0.5, 0.5)).toBeNull();
   });
 });
