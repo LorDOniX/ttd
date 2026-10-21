@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildLine, buyTrain, runDays } from '../test/fixtures';
-import { industryTiles, type Industry, type IndustryKind } from '../world/industry';
+import { INDUSTRY_TYPES, industryTiles, type Industry, type IndustryKind } from '../world/industry';
 import { TileType } from '../world/map';
 import type { Game } from './game';
 
@@ -12,9 +12,11 @@ function addIndustry(game: Game, kind: IndustryKind, x: number, y: number): Indu
     x,
     y,
     rotation: 0,
-    production: kind === 'coal-mine' ? 120 : 0,
+    production: INDUSTRY_TYPES[kind].production ? 120 : 0,
     transported: 0,
     lastTransported: 0,
+    received: 0,
+    lastReceived: 0,
   };
   for (const t of industryTiles(industry)) game.world.map.set(t.x, t.y, TileType.Industry);
   game.world.industries.push(industry);
@@ -56,7 +58,7 @@ describe('nákladní doprava uhlí', () => {
     let paid = 0;
     game.events.on('income', (amount) => (paid += amount));
     runDays(game, 120);
-    expect(game.freight.accepted(b)).toEqual(['coal']);
+    expect(game.freight.accepted(b)).toContain('coal');
     expect(game.thisYear.freight.coal).toBeGreaterThan(0);
     expect(paid).toBeGreaterThan(0);
     expect(train.income).toBe(paid);
@@ -109,5 +111,36 @@ describe('nákladní doprava uhlí', () => {
     runDays(game, 120);
     expect(game.thisYear.freight.coal).toBe(0);
     expect(train.passengers).toBe(60);
+  });
+});
+
+describe('výrobní řetězce', () => {
+  it('dovezené dřevo dostane pila v dosahu nástupiště', () => {
+    const { game, a, b, depot } = buildLine();
+    const sawmill = addIndustry(game, 'sawmill', 43, 16);
+    expect(game.freight.accepted(b)).toEqual(['wood', 'goods']);
+    const train = buyTrain(game, depot, 2);
+    game.fleet.setCargo(train, 'wood');
+    game.fleet.start(train, [a.id, b.id]);
+    a.freight.wood = 60;
+    for (let i = 0; i < 20_000 && game.thisYear.freight.wood === 0; i++) game.update(200);
+    expect(game.thisYear.freight.wood).toBe(60);
+    expect(sawmill.received).toBe(60);
+  });
+
+  it('pila vyrobí z minulého měsíce zboží a město ho vykoupí', () => {
+    const { game, a, b, depot } = buildLine();
+    const sawmill = addIndustry(game, 'sawmill', 43, 16);
+    sawmill.received = 90;
+    // Zboží vykupuje každé nástupiště s městem v dosahu
+    expect(game.freight.accepted(a)).toEqual(['goods']);
+    const train = buyTrain(game, depot, 2);
+    game.fleet.setCargo(train, 'goods');
+    game.fleet.start(train, [b.id, a.id]);
+    runDays(game, 31);
+    expect(sawmill.lastReceived).toBe(90);
+    expect(sawmill.production).toBe(90);
+    for (let i = 0; i < 200 && game.thisYear.freight.goods === 0; i++) runDays(game, 1);
+    expect(game.thisYear.freight.goods).toBeGreaterThan(0);
   });
 });

@@ -56,6 +56,8 @@ describe('uložení a načtení', () => {
       production: 0,
       transported: 0,
       lastTransported: 0,
+      received: 0,
+      lastReceived: 0,
     });
     const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
     data.version = 6;
@@ -68,6 +70,8 @@ describe('uložení a načtení', () => {
       delete industry.production;
       delete industry.transported;
       delete industry.lastTransported;
+      delete industry.received;
+      delete industry.lastReceived;
     }
     delete data.game.thisYear.freight;
     const copy = restoreGame(parseSave(JSON.stringify(data)));
@@ -75,6 +79,7 @@ describe('uložení a načtení', () => {
     expect(copy.fleet.trains[0].fullLoad).toEqual([]);
     expect(copy.world.rail.stations.map((s) => s.freight.coal)).toEqual([0, 0]);
     expect(copy.world.industries[0].production).toBe(105);
+    expect(copy.world.industries[0].received).toBe(0);
     expect(copy.thisYear.freight.coal).toBe(0);
   });
 
@@ -94,9 +99,10 @@ describe('uložení a načtení', () => {
     }
     const copy = restoreGame(parseSave(JSON.stringify(data)));
     expect(copy.fleet.trains[0].cargo).toBe('coal');
-    expect(copy.world.rail.stations.map((s) => s.freight)).toEqual([{ coal: 10 }, { coal: 20 }]);
-    expect(copy.thisYear.freight).toEqual({ coal: 70 });
-    expect(copy.history[0].freight).toEqual({ coal: 70 });
+    expect(copy.world.rail.stations.map((s) => s.freight.coal)).toEqual([10, 20]);
+    expect(copy.world.rail.stations[0].freight.wood).toBe(0);
+    expect(copy.thisYear.freight.coal).toBe(70);
+    expect(copy.history[0].freight.coal).toBe(70);
   });
 
   it('průmysl se uloží a neplatný z cizího souboru zahodí', () => {
@@ -111,6 +117,8 @@ describe('uložení a načtení', () => {
       production: 80,
       transported: 5,
       lastTransported: 40,
+      received: 0,
+      lastReceived: 0,
     });
     const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
     data.industries.push({ kind: 'castle', name: 'X', x: 1, y: 1, rotation: 0 }, { kind: 'coal-mine', x: 63 });

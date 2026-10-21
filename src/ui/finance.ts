@@ -83,9 +83,10 @@ function overview(game: Game): HTMLElement {
       'num',
       (n) => n.toLocaleString('cs-CZ'),
     ),
-    ...FREIGHT_TYPES.map((type) =>
+    // Jen druhy, které firma v těchto letech vozila
+    ...FREIGHT_TYPES.filter((type) => years.some(([, s]) => s.freight[type] > 0)).map((type) =>
       row(
-        `Přepraveno ${CARGOS[type].noun}`,
+        `Přepraveno ${CARGOS[type].genitive}`,
         (s) => s.freight[type],
         'num',
         (n) => `${Math.round(n).toLocaleString('cs-CZ')} t`,
@@ -102,6 +103,7 @@ function charts(game: Game): HTMLElement {
   const year = game.clock.date.year;
   const records = [...game.history.slice(-(CHART_YEARS - 1)), { ...game.thisYear, year }];
   const labels = records.map((r) => `${r.year}`);
+  const hauled = FREIGHT_TYPES.filter((type) => records.some((r) => r.freight[type] > 0));
   return h(
     'div',
     { className: 'form' },
@@ -119,15 +121,17 @@ function charts(game: Game): HTMLElement {
       v.toLocaleString('cs-CZ'),
     ),
     h('h4', {}, 'Přepravený náklad'),
-    barChart(
-      labels,
-      FREIGHT_TYPES.map((type) => ({
-        label: CARGOS[type].name,
-        color: CARGOS[type].color,
-        values: records.map((r) => r.freight[type]),
-      })),
-      (v) => `${Math.round(v).toLocaleString('cs-CZ')} t`,
-    ),
+    hauled.length > 0
+      ? barChart(
+          labels,
+          hauled.map((type) => ({
+            label: CARGOS[type].name,
+            color: CARGOS[type].color,
+            values: records.map((r) => r.freight[type]),
+          })),
+          (v) => `${Math.round(v).toLocaleString('cs-CZ')} t`,
+        )
+      : h('div', { className: 'form__hint' }, 'Zatím žádný.'),
     h('div', { className: 'form__hint' }, `Rok ${year} zatím neskončil.`),
   );
 }

@@ -1,5 +1,5 @@
 import { FREIGHT_MAX_WAITING_MONTHS, WAGON_CAPACITY } from './balance';
-import { CARGOS, FREIGHT_TYPES, type FreightType } from './cargo';
+import { CARGOS, FREIGHT_TYPES, TOWN_ACCEPTS, type FreightType } from './cargo';
 import { formatMoney, type Game } from './game';
 import { catchmentArea, fare, type Area } from './passengers';
 import { inflowFactor } from './rating';
@@ -26,6 +26,11 @@ export class Freight {
       for (const industry of game.world.industries) {
         industry.lastTransported = industry.transported;
         industry.transported = 0;
+        industry.lastReceived = industry.received;
+        industry.received = 0;
+        const type = INDUSTRY_TYPES[industry.kind];
+        // Zpracovatel vyrobí tolik, kolik mu minulý měsíc dovezli
+        if (type.produces && !type.production) industry.production = industry.lastReceived;
       }
     });
   }
@@ -41,9 +46,10 @@ export class Freight {
     return FREIGHT_TYPES.filter((type) => types.includes(type));
   }
 
-  // Druhy nákladu, které nástupiště vykupuje díky závodům v dosahu
+  // Druhy nákladu, které nástupiště vykupuje díky závodům a městům v dosahu
   accepted(station: Station): FreightType[] {
     const types = this.industriesInReach(station).flatMap((i) => INDUSTRY_TYPES[i.kind].accepts);
+    if (this.game.passengers.townsInReach(station).length > 0) types.push(...TOWN_ACCEPTS);
     return FREIGHT_TYPES.filter((type) => types.includes(type));
   }
 
@@ -74,6 +80,9 @@ export class Freight {
         game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
         game.thisYear.freight[type] += unloaded;
         train.income += income;
+        // Dodávku dostane první závod v dosahu, který ji přijímá (zboží pro město žádný)
+        const consumer = this.industriesInReach(station).find((i) => INDUSTRY_TYPES[i.kind].accepts.includes(type));
+        if (consumer) consumer.received += unloaded;
         game.news(
           `${train.name} přivezl ${unloaded} ${spec.unit} do stanice ${station.name}: ` +
             `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}.`,

@@ -42,9 +42,14 @@ export function openIndustry(
         .map((s) => s.name);
       rows.push(
         ['Přijímá', type.accepts.map((t) => CARGOS[t].noun).join(', ')],
+        ['Dovezeno minulý měsíc', tonnes(industry.lastReceived)],
+        ['Dovezeno tento měsíc', tonnes(industry.received)],
         ['Nástupiště s výkupem', list(stations)],
       );
       hints.push('Vlak náklad vyloží a dostane zaplaceno na nástupišti, které má závod v dosahu.');
+      if (type.produces) {
+        hints.push(`Z dovezeného nákladu vyrobí následující měsíc stejně tun (${CARGOS[type.produces].genitive}).`);
+      }
     }
     return h(
       'div',

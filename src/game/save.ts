@@ -4,14 +4,14 @@ import { Game, emptyYear, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Train } from './trains';
 import type { World } from '../world/generator';
-import { INDUSTRY_SIZE, averageProduction, isIndustryKind, INDUSTRY_TYPES, type Industry } from '../world/industry';
+import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
 import { GameMap } from '../world/map';
 import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
-// 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí)
-const SAVE_VERSION = 9;
+// 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům
+const SAVE_VERSION = 10;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -137,12 +137,13 @@ const finiteOr = (value: unknown, fallback: number): number =>
 
 function restoreIndustry(industry: Industry): Industry {
   // Závod ze staršího uložení nemá těžbu, dostane střední hodnotu
-  const production = INDUSTRY_TYPES[industry.kind].produces ? averageProduction(industry.kind) : 0;
   return {
     ...industry,
-    production: finiteOr(industry.production, production),
+    production: finiteOr(industry.production, averageProduction(industry.kind)),
     transported: finiteOr(industry.transported, 0),
     lastTransported: finiteOr(industry.lastTransported, 0),
+    received: finiteOr(industry.received, 0),
+    lastReceived: finiteOr(industry.lastReceived, 0),
   };
 }
 
@@ -164,7 +165,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;

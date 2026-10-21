@@ -1,10 +1,19 @@
-import { COAL_PRODUCTION } from '../game/balance';
+import { COAL_PRODUCTION, IRON_ORE_PRODUCTION, OIL_PRODUCTION, WOOD_PRODUCTION } from '../game/balance';
 import type { FreightType } from '../game/cargo';
 import { GameMap, TileType } from './map';
 import type { Rng } from './rng';
 import { KIND_RULES, type Town } from './town';
 
-export type IndustryKind = 'coal-mine' | 'power-station';
+export type IndustryKind =
+  | 'coal-mine'
+  | 'power-station'
+  | 'forest'
+  | 'sawmill'
+  | 'oil-wells'
+  | 'refinery'
+  | 'iron-mine'
+  | 'steel-mill'
+  | 'factory';
 
 export interface Industry {
   id: number;
@@ -15,10 +24,13 @@ export interface Industry {
   y: number;
   // Natočení areálu po 90°
   rotation: number;
-  // Těžba v tunách za měsíc (jen závody, které něco vyrábějí) a odvoz tento a minulý měsíc
+  // Výroba v tunách za měsíc a odvoz tento a minulý měsíc
   production: number;
   transported: number;
   lastTransported: number;
+  // Dovezený náklad tento a minulý měsíc; zpracovatel z něj vyrábí
+  received: number;
+  lastReceived: number;
 }
 
 export const INDUSTRY_SIZE = 3;
@@ -26,13 +38,15 @@ export const INDUSTRY_SIZE = 3;
 export interface IndustryType {
   name: string;
   produces: FreightType | null;
-  // Rozsah těžby v tunách za měsíc pro závod, který vyrábí
-  production: { min: number; max: number };
+  // Rozsah těžby suroviny za měsíc; null = vyrábí z dovezeného nákladu
+  production: { min: number; max: number } | null;
   accepts: readonly FreightType[];
   // Kolik dlaždic mapy připadá na jeden závod
   tilesPerIndustry: number;
 }
 
+// Řetězce jako v OpenTTD: uhlí → elektrárna, dřevo → pila, ropa → rafinerie, ruda → ocelárna → ocel → továrna;
+// zboží vykupují města
 export const INDUSTRY_TYPES: Record<IndustryKind, IndustryType> = {
   'coal-mine': {
     name: 'Uhelný důl',
@@ -44,9 +58,58 @@ export const INDUSTRY_TYPES: Record<IndustryKind, IndustryType> = {
   'power-station': {
     name: 'Elektrárna',
     produces: null,
-    production: { min: 0, max: 0 },
+    production: null,
     accepts: ['coal'],
     tilesPerIndustry: 16_000,
+  },
+  forest: {
+    name: 'Les',
+    produces: 'wood',
+    production: WOOD_PRODUCTION,
+    accepts: [],
+    tilesPerIndustry: 12_000,
+  },
+  sawmill: {
+    name: 'Pila',
+    produces: 'goods',
+    production: null,
+    accepts: ['wood'],
+    tilesPerIndustry: 22_000,
+  },
+  'oil-wells': {
+    name: 'Ropné vrty',
+    produces: 'oil',
+    production: OIL_PRODUCTION,
+    accepts: [],
+    tilesPerIndustry: 14_000,
+  },
+  refinery: {
+    name: 'Rafinerie',
+    produces: 'goods',
+    production: null,
+    accepts: ['oil'],
+    tilesPerIndustry: 26_000,
+  },
+  'iron-mine': {
+    name: 'Železorudný důl',
+    produces: 'iron-ore',
+    production: IRON_ORE_PRODUCTION,
+    accepts: [],
+    tilesPerIndustry: 14_000,
+  },
+  'steel-mill': {
+    name: 'Ocelárna',
+    produces: 'steel',
+    production: null,
+    accepts: ['iron-ore'],
+    tilesPerIndustry: 22_000,
+  },
+  factory: {
+    name: 'Továrna',
+    produces: 'goods',
+    production: null,
+    accepts: ['steel'],
+    tilesPerIndustry: 22_000,
   },
 };
 
@@ -54,10 +117,10 @@ export function isIndustryKind(value: unknown): value is IndustryKind {
   return typeof value === 'string' && value in INDUSTRY_TYPES;
 }
 
-// Střední těžba druhu závodu, např. pro starší uložení bez údaje
+// Střední těžba druhu závodu, např. pro starší uložení bez údaje; zpracovatelé začínají od nuly
 export function averageProduction(kind: IndustryKind): number {
-  const { min, max } = INDUSTRY_TYPES[kind].production;
-  return Math.round((min + max) / 2);
+  const range = INDUSTRY_TYPES[kind].production;
+  return range ? Math.round((range.min + range.max) / 2) : 0;
 }
 
 const MIN_INDUSTRY_DISTANCE = 12;
@@ -77,7 +140,7 @@ export function industryAt(industries: readonly Industry[], x: number, y: number
   return industries.find((i) => x >= i.x && x < i.x + INDUSTRY_SIZE && y >= i.y && y < i.y + INDUSTRY_SIZE);
 }
 
-// Rozmístí doly a elektrárny na volnou zem mimo města; les na místě areálu se vykácí
+// Rozmístí závody na volnou zem mimo města; les na místě areálu se vykácí
 export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng): Industry[] {
   const industries: Industry[] = [];
   const area = map.width * map.height;
@@ -98,6 +161,8 @@ export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng):
         production: 0,
         transported: 0,
         lastTransported: 0,
+        received: 0,
+        lastReceived: 0,
       };
       const tiles = industryTiles(candidate);
       if (!tiles.every((t) => map.isFree(t.x, t.y))) continue;
@@ -110,7 +175,7 @@ export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng):
       if (nearTown || nearIndustry) continue;
 
       candidate.name = industryName(kind, towns, industries, cx, cy);
-      if (type.produces) candidate.production = rng.int(type.production.min, type.production.max);
+      if (type.production) candidate.production = rng.int(type.production.min, type.production.max);
       for (const t of tiles) map.set(t.x, t.y, TileType.Industry);
       industries.push(candidate);
       placed++;

@@ -87,6 +87,36 @@ export const COAL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
   { maxDays: 90, rate: 5 },
   { maxDays: Infinity, rate: 3 },
 ];
+// Další suroviny; zpracovatelské závody vyrábějí tolik, kolik jim minulý měsíc dovezli
+export const WOOD_PRODUCTION = { min: 50, max: 130 } as const;
+export const OIL_PRODUCTION = { min: 50, max: 130 } as const;
+export const IRON_ORE_PRODUCTION = { min: 60, max: 150 } as const;
+export const WOOD_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
+  { maxDays: 40, rate: 7 },
+  { maxDays: 80, rate: 4 },
+  { maxDays: Infinity, rate: 2 },
+];
+export const OIL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
+  { maxDays: 40, rate: 8 },
+  { maxDays: 80, rate: 5 },
+  { maxDays: Infinity, rate: 3 },
+];
+export const IRON_ORE_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
+  { maxDays: 45, rate: 7 },
+  { maxDays: 90, rate: 5 },
+  { maxDays: Infinity, rate: 3 },
+];
+export const STEEL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
+  { maxDays: 35, rate: 10 },
+  { maxDays: 70, rate: 6 },
+  { maxDays: Infinity, rate: 3 },
+];
+// Zboží vynáší nejvíc, ale rychle ztrácí cenu
+export const GOODS_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
+  { maxDays: 25, rate: 12 },
+  { maxDays: 50, rate: 7 },
+  { maxDays: Infinity, rate: 3 },
+];
 
 // Hodnocení nástupiště 0–1 se denně posouvá k cílové hodnotě složené ze tří částí
 export const RATING_START = 0.5;
