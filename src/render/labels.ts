@@ -24,6 +24,8 @@ export class TownLabels {
     for (const town of towns) {
       const el = document.createElement('div');
       el.className = `town-label town-label--${town.kind}`;
+      el.dataset.kind = 'town';
+      el.dataset.id = String(town.id);
       const label = new CSS2DObject(el);
       label.position.set(town.x + 0.5, 1.5, town.y + 0.5);
       this.object.add(label);
@@ -51,6 +53,8 @@ export class StationLabels {
     for (const station of stations) {
       const el = document.createElement('div');
       el.className = 'station-label';
+      el.dataset.kind = 'station';
+      el.dataset.id = String(station.id);
       el.textContent = describe(station);
       const label = new CSS2DObject(el);
       label.position.set(station.x + 0.5, 0.8, station.y + 0.5);

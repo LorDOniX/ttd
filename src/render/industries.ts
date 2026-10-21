@@ -340,6 +340,8 @@ export class IndustriesView {
   private label(industry: Industry): CSS2DObject {
     const el = document.createElement('div');
     el.className = 'industry-label';
+    el.dataset.kind = 'industry';
+    el.dataset.id = String(industry.id);
     el.textContent = industry.name;
     const label = new CSS2DObject(el);
     const half = INDUSTRY_SIZE / 2;

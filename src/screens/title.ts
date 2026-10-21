@@ -161,6 +161,7 @@ export function runTitle(container: HTMLElement): void {
   const game = createDemo();
   const view = new GameView(container, game);
   view.terrain.setGridVisible(false);
+  view.setLabelsInteractive(false);
   // Mezi centrum největšího města s tratí a jeho nádraží, aby bylo vidět město i vlaky;
   // přiblížení skryje okraj mapy
   view.camera.camera.zoom = 1.6;

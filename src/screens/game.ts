@@ -130,7 +130,17 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
   };
   const hud = new Hud(container, game, actions);
   buildTools.anchorFor = (id) => (id === 'rail-build' ? hud.railButton : hud.roadButton);
-  buildTools.onToolChange = (tool) => hud.setInfoActive(tool === 'info');
+  buildTools.onToolChange = (tool) => {
+    hud.setInfoActive(tool === 'info');
+    view.setLabelsInteractive(tool === null);
+  };
+  view.onLabelClick = ({ kind, id }) => {
+    if (kind === 'town') links.openTown(towns[id]);
+    const station = kind === 'station' ? world.rail.stations.find((s) => s.id === id) : undefined;
+    if (station) links.openStation(station);
+    const industry = kind === 'industry' ? world.industries.find((i) => i.id === id) : undefined;
+    if (industry) links.openIndustry(industry);
+  };
 
   const { clock } = game;
   const shortcuts = new Shortcuts([

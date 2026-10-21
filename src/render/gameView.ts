@@ -14,12 +14,19 @@ import { TerrainView } from './terrain';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
 
+// Klikatelný popisek ve scéně: město, nástupiště nebo závod
+export interface LabelTarget {
+  kind: 'town' | 'station' | 'industry';
+  id: number;
+}
+
 // 3D scéna rozehrané hry: terén, města, koleje, vlaky a popisky, napojené na události hry
 export class GameView {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
   readonly scene = new THREE.Scene();
   readonly camera: IsoCamera;
   readonly terrain: TerrainView;
+  onLabelClick: (target: LabelTarget) => void = () => {};
   private readonly labels: TownLabels;
   private readonly trains: TrainsView;
   private readonly vehicles: RoadVehiclesView;
@@ -62,6 +69,7 @@ export class GameView {
     this.labels = new TownLabels(container);
     this.labels.setSize(window.innerWidth, window.innerHeight);
     this.labels.rebuild(towns);
+    this.bindLabelEvents();
     const stationLabels = new StationLabels();
     scene.add(
       this.terrain.object,
@@ -146,6 +154,33 @@ export class GameView {
   // Id auta pod kurzorem
   vehicleAt(clientX: number, clientY: number): number | null {
     return this.vehicles.pick(this.camera.ray(clientX, clientY));
+  }
+
+  // Se stavebním nástrojem popisky kliknutí nechytá, aby šlo stavět i pod nimi
+  setLabelsInteractive(interactive: boolean): void {
+    this.labels.renderer.domElement.classList.toggle('label-layer--passive', !interactive);
+  }
+
+  private bindLabelEvents(): void {
+    const layer = this.labels.renderer.domElement;
+    const canvas = this.renderer.domElement;
+    layer.addEventListener('click', (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-kind]');
+      if (el) this.onLabelClick({ kind: el.dataset.kind as LabelTarget['kind'], id: Number(el.dataset.id) });
+    });
+    // Kolečko a posun pravým tlačítkem nad popiskem patří kameře
+    layer.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        canvas.dispatchEvent(new WheelEvent('wheel', e));
+      },
+      { passive: false },
+    );
+    layer.addEventListener('pointerdown', (e) => {
+      if (e.button === 2) canvas.dispatchEvent(new PointerEvent('pointerdown', e));
+    });
+    layer.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   // Jeden snímek: posun hry o reálný čas dtMs a vykreslení
