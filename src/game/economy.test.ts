@@ -26,6 +26,18 @@ describe('cestující', () => {
     expect(game.passengers.monthlyPassengers(b)).toBeCloseTo(45);
   });
 
+  it('nástupiště dostane jen díl města podle zástavby v dosahu', () => {
+    const town = makeTown(0, 20, 20, 3000);
+    const game = emptyGame(64, [town]);
+    addBuilding(game, town, 20, 22);
+    addBuilding(game, town, 21, 22);
+    addBuilding(game, town, 40, 40);
+    addBuilding(game, town, 41, 40);
+    const a = game.world.rail.addStation({ ...defaultStationShape(20, 20, 'x'), name: 'A', townId: 0 });
+    expect(game.passengers.townShares(a).get(town)).toBeCloseTo(0.5);
+    expect(game.passengers.monthlyPassengers(a)).toBeCloseTo(45);
+  });
+
   it('dosah sahá 4 dlaždice od okraje nástupiště', () => {
     const area = catchmentArea(defaultStationShape(20, 20, 'x'));
     expect(area).toEqual({ x0: 15, x1: 25, y0: 16, y1: 24 });

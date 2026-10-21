@@ -10,7 +10,7 @@ import { inflowFactor, leaveShare, updateRating } from './rating';
 import { trainModel, wagonsAtStation, type Train } from './trains';
 import { TileType } from '../world/map';
 import { stationTiles, type Station, type StationShape } from '../world/rail';
-import type { Town } from '../world/town';
+import { buildingCapacity, townCapacity, type Town } from '../world/town';
 
 const DAYS_PER_MONTH = 30;
 
@@ -44,8 +44,9 @@ export function fare(amount: number, tiles: number, days: number, tiers = FARE_T
 
 // Cestující: vznikají ve městech u nástupišť, vlaky je vozí a dostávají za ně zaplaceno
 export class Passengers {
-  // Dosah se mění jen se změnou mapy (stavba, budovy), proto je platný do další změny
-  private readonly reachCache = new Map<number, Town[]>();
+  // Dávka města pro každé nástupiště: podíl kapacity budov v dosahu, sdílené budovy dělené mezi nástupiště;
+  // mění se jen se změnou mapy (stavba, budovy), proto platí do další změny
+  private shares = new Map<number, Map<Town, number>>();
   private reachVersion = -1;
 
   constructor(private readonly game: Game) {
@@ -54,33 +55,59 @@ export class Passengers {
 
   // Města, jejichž zástavba leží v dosahu nástupiště
   townsInReach(station: Station): Town[] {
-    const { map, towns } = this.game.world;
+    return [...this.townShares(station).keys()];
+  }
+
+  // Kolik z města (0–1) připadá na nástupiště
+  townShares(station: Station): Map<Town, number> {
+    const { map } = this.game.world;
     if (this.reachVersion !== map.changeCursor) {
-      this.reachCache.clear();
+      this.shares = this.computeShares();
       this.reachVersion = map.changeCursor;
     }
-    const cached = this.reachCache.get(station.id);
-    if (cached) return cached;
+    return this.shares.get(station.id) ?? new Map();
+  }
 
-    const found = new Set<number>();
-    const { x0, x1, y0, y1 } = catchmentArea(station);
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        if (map.isType(x, y, TileType.Building)) found.add(map.getOwner(x, y));
+  private computeShares(): Map<number, Map<Town, number>> {
+    const { map, towns, rail } = this.game.world;
+    const weights = new Map<number, { town: Town; weight: number }>();
+    for (const town of towns) {
+      const capacity = townCapacity(town);
+      for (const b of town.buildings) {
+        if (!map.isType(b.x, b.y, TileType.Building)) continue;
+        weights.set(b.y * map.width + b.x, { town, weight: buildingCapacity(b.model) / capacity });
       }
     }
-    const result = [...found].map((id) => towns[id]);
-    this.reachCache.set(station.id, result);
+    const covered = rail.stations.map((station) => {
+      const tiles: number[] = [];
+      const { x0, x1, y0, y1 } = catchmentArea(station);
+      for (let y = Math.max(0, y0); y <= Math.min(map.height - 1, y1); y++) {
+        for (let x = Math.max(0, x0); x <= Math.min(map.width - 1, x1); x++) {
+          if (weights.has(y * map.width + x)) tiles.push(y * map.width + x);
+        }
+      }
+      return tiles;
+    });
+    const stationsAt = new Map<number, number>();
+    for (const tiles of covered) for (const t of tiles) stationsAt.set(t, (stationsAt.get(t) ?? 0) + 1);
+
+    const result = new Map<number, Map<Town, number>>();
+    rail.stations.forEach((station, i) => {
+      const shares = new Map<Town, number>();
+      for (const t of covered[i]) {
+        const { town, weight } = weights.get(t)!;
+        shares.set(town, (shares.get(town) ?? 0) + weight / stationsAt.get(t)!);
+      }
+      result.set(station.id, shares);
+    });
     return result;
   }
 
-  // Měsíční příliv cestujících na nástupiště; město se dělí mezi všechna svá nástupiště
+  // Měsíční příliv cestujících na nástupiště z části města v dosahu
   monthlyPassengers(station: Station): number {
-    const stations = this.game.world.rail.stations;
-    return this.townsInReach(station).reduce((sum, town) => {
-      const sharing = stations.filter((s) => this.townsInReach(s).includes(town)).length;
-      return sum + (town.population * PASSENGERS_MONTHLY_SHARE) / sharing;
-    }, 0);
+    let sum = 0;
+    for (const [town, share] of this.townShares(station)) sum += town.population * PASSENGERS_MONTHLY_SHARE * share;
+    return sum;
   }
 
   // Skutečný měsíční příliv po započtení hodnocení nástupiště

@@ -82,7 +82,8 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
     const station = rail.stationAt(x, y);
     if (station) {
       const served = game.fleet.trains.filter((t) => t.orders?.includes(station.id)).map((t) => t.name);
-      const reach = game.passengers.townsInReach(station).map((t) => t.name);
+      // Podíl zástavby města v dosahu určuje příliv cestujících
+      const reach = [...game.passengers.townShares(station)].map(([t, share]) => `${t.name} (${percent(share)})`);
       const now = game.clock.now;
       const parts = ratingParts(station, now);
       const visit = station.lastVisit < 0 ? 'nikdy' : `před ${Math.floor(now - station.lastVisit)} dny`;
