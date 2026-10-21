@@ -165,7 +165,8 @@ export const TOWN_POPULATION = {
   town: { min: 600, max: 1200 },
   village: { min: 200, max: 600 },
 } as const;
-export const TOWN_GROWTH_BASE = 0.02;
+// Město bez obsluhy skoro neroste; růst táhne hlavně doprava
+export const TOWN_GROWTH_BASE = 0.005;
 export const TOWN_GROWTH_SERVED = 0.05;
 export const BUILDING_CAPACITY = { house: 12, low: 25, office: 40, skyscraper: 150 } as const;
 export const SKYSCRAPER_YEAR = 2010;
