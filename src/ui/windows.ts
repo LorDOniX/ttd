@@ -12,8 +12,6 @@ export interface WindowOptions {
   onClose?: () => void;
   // Vycentruje pohled na místo, ke kterému se okno váže
   locate?: () => void;
-  // Okno se otevře vždy pod tímto prvkem horní lišty (null = uprostřed pod lištou)
-  anchor?: HTMLElement | null;
 }
 
 const POSITIONS_KEY = 'ttd-window-positions';
@@ -39,6 +37,8 @@ export class WindowManager {
   private pressed: OpenWindow | null = null;
   // Poslední poloha podle druhu okna, uložená v prohlížeči
   private readonly positions: Record<string, { left: number; top: number }> = loadPositions();
+  // Ikony horní lišty podle id okna
+  private readonly anchors = new Map<string, HTMLElement>();
 
   constructor(private readonly root: HTMLElement) {
     window.addEventListener('pointerup', () => {
@@ -51,6 +51,10 @@ export class WindowManager {
 
   isOpen(id: string): boolean {
     return this.windows.has(id);
+  }
+
+  setAnchor(id: string, anchor: HTMLElement): void {
+    this.anchors.set(id, anchor);
   }
 
   // Obnoví obsah otevřeného okna bez přenesení dopředu; během kliknutí nebo výběru v okně počká
@@ -126,7 +130,9 @@ export class WindowManager {
     const top = saved ? saved.top + shift : 44 + offset;
     el.style.left = `${Math.max(0, Math.min(left, window.innerWidth - 80))}px`;
     el.style.top = `${Math.max(0, Math.min(top, window.innerHeight - 60))}px`;
-    if (options.anchor !== undefined) this.placeBelow(el, options.anchor);
+    // Okna z horní lišty vždy pod svou ikonou
+    const anchor = this.anchors.get(id);
+    if (anchor) this.placeBelow(el, anchor);
 
     const win: OpenWindow = { el, body, onClose: options.onClose, locate: options.locate, pending: null };
     el.addEventListener('pointerdown', () => {
@@ -173,13 +179,11 @@ export class WindowManager {
     el.style.zIndex = String(++this.zIndex);
   }
 
-  private placeBelow(el: HTMLElement, anchor: HTMLElement | null): void {
-    const bar = this.root.querySelector('.toolbar');
-    const target = (anchor ?? bar)?.getBoundingClientRect();
-    if (!target) return;
+  private placeBelow(el: HTMLElement, anchor: HTMLElement): void {
+    const target = anchor.getBoundingClientRect();
     const left = target.left + target.width / 2 - el.offsetWidth / 2;
     el.style.left = `${Math.max(0, Math.min(left, window.innerWidth - el.offsetWidth))}px`;
-    el.style.top = `${(bar?.getBoundingClientRect().bottom ?? 0) + 4}px`;
+    el.style.top = `${(this.root.querySelector('.toolbar')?.getBoundingClientRect().bottom ?? target.bottom) + 4}px`;
   }
 
   private remember(id: string, el: HTMLElement): void {

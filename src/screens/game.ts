@@ -129,7 +129,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     toggleInfo: () => buildTools.toggleTool('info'),
   };
   const hud = new Hud(container, game, actions);
-  buildTools.anchorFor = (id) => (id === 'rail-build' ? hud.railButton : hud.roadButton);
+  for (const [id, button] of hud.windowButtons) windows.setAnchor(id, button);
   buildTools.onToolChange = (tool) => {
     hud.setInfoActive(tool === 'info');
     view.setLabelsInteractive(tool === null);

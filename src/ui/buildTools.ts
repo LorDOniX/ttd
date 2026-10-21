@@ -40,8 +40,6 @@ export class BuildTools {
   tool: BuildTool | null = null;
   onInspect: (tile: TilePos) => void = () => {};
   onToolChange: (tool: BuildTool | null) => void = () => {};
-  // Ikona okna stavby v horní liště, pod kterou se okno otevře
-  anchorFor: (id: 'rail-build' | 'road-build') => HTMLElement | null = () => null;
   private axis: Axis = 'x';
   private entrance: Edge = Edge.E;
   private dragStart: TilePos | null = null;
@@ -137,7 +135,6 @@ export class BuildTools {
       h('div', { className: 'form__hint' }, hint),
     );
     this.windows.open(id, title, h('div', { className: 'form' }, row, text), {
-      anchor: this.anchorFor(id),
       onClose: () => {
         this.buttons.delete(id);
         if (this.tool && buttons.has(this.tool)) this.setTool(null);

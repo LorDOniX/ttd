@@ -25,9 +25,8 @@ export class Hud {
   private readonly newsEl = h('span', { className: 'statusbar__news' });
   private readonly moneyEl = h('span', { className: 'statusbar__money' });
   private readonly infoButton: HTMLButtonElement;
-  // Okna staveb se otevírají pod svou ikonou
-  readonly roadButton: HTMLButtonElement;
-  readonly railButton: HTMLButtonElement;
+  // Ikony podle id okna, které otevírají; okno se zobrazí pod nimi
+  readonly windowButtons = new Map<string, HTMLButtonElement>();
   private newsTimer = 0;
 
   constructor(root: HTMLElement, game: Game, actions: ToolbarActions) {
@@ -59,6 +58,12 @@ export class Hud {
       return b;
     };
 
+    const windowButton = (id: string, icon: string, title: string, onClick: () => void): HTMLButtonElement => {
+      const b = button(icon, title, onClick);
+      this.windowButtons.set(id, b);
+      return b;
+    };
+
     const rotate = button('🔄', 'Otočit pohled o 90° (Q/E, pravé tlačítko opačně)', () => actions.rotateView(1));
     rotate.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -66,25 +71,26 @@ export class Hud {
     });
 
     this.infoButton = button('❓', 'Informace o dlaždici a dosah nástupiště (I)', actions.toggleInfo);
-    this.roadButton = button('🛣️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild);
-    this.railButton = button('🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild);
 
     // Skupiny v pořadí jako v OpenTTD: čas, hra, mapa, finance, vozidla, pohled, stavba, zprávy a nápověda
     const groups: HTMLElement[][] = [
       [pause, speed],
       [
-        button('⚙️', 'Nastavení a klávesové zkratky', actions.openSettings),
-        button('💾', 'Uložit / načíst hru', actions.openSaveLoad),
+        windowButton('settings', '⚙️', 'Nastavení a klávesové zkratky', actions.openSettings),
+        windowButton('save-load', '💾', 'Uložit / načíst hru', actions.openSaveLoad),
       ],
-      [button('🗺️', 'Minimapa (M)', actions.openMinimap)],
-      [button('💰', 'Finance (F)', actions.openFinance)],
+      [windowButton('minimap', '🗺️', 'Minimapa (M)', actions.openMinimap)],
+      [windowButton('finance', '💰', 'Finance (F)', actions.openFinance)],
       [
-        button('🚌', 'Seznam aut (A)', actions.openVehicleList),
-        button('🚆', 'Seznam vlaků (V)', actions.openTrainList),
+        windowButton('vehicle-list', '🚌', 'Seznam aut (A)', actions.openVehicleList),
+        windowButton('train-list', '🚆', 'Seznam vlaků (V)', actions.openTrainList),
       ],
       [rotate],
-      [this.roadButton, this.railButton],
-      [button('📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
+      [
+        windowButton('road-build', '🛣️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild),
+        windowButton('rail-build', '🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild),
+      ],
+      [windowButton('news', '📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
     ];
     const toolbar = h(
       'div',
