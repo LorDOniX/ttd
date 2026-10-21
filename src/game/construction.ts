@@ -107,7 +107,7 @@ export class Construction {
 
     this.game.spend(cost, 'construction');
     rail.addStation({ ...shape, name, townId: town.id });
-    this.game.news(`Postaveno nástupiště ${name}.`);
+    this.game.news(`Postaveno nástupiště ${name}.`, shape);
     this.game.events.emit('railChanged');
     return null;
   }

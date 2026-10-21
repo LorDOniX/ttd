@@ -94,6 +94,7 @@ export class Freight {
         game.news(
           `${train.name} přivezl ${unloaded} ${spec.unit} do stanice ${station.name}: ` +
             `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}.`,
+          station,
         );
       }
     }

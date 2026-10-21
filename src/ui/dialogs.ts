@@ -114,17 +114,27 @@ export function openSaveLoad(windows: WindowManager, game: Game, seedText: strin
 }
 
 // Historie zpráv od nejnovější
-export function openNewsLog(windows: WindowManager, game: Game): void {
+// Historie zpráv; zprávu s místem jde kliknutím ukázat na mapě
+export function openNewsLog(windows: WindowManager, game: Game, focus: (x: number, z: number) => void): void {
   const render = (): HTMLElement => {
     if (game.newsLog.length === 0) return h('div', { className: 'form__hint' }, 'Zatím žádné zprávy.');
     return h(
       'div',
       { className: 'news-log' },
-      ...[...game.newsLog]
-        .reverse()
-        .map((item) =>
-          h('div', { className: 'news-log__item' }, h('small', {}, formatDate(item.date)), h('div', {}, item.text)),
-        ),
+      ...[...game.newsLog].reverse().map((item) => {
+        const { at } = item;
+        const el = h(
+          'div',
+          { className: at ? 'news-log__item news-log__item--located' : 'news-log__item' },
+          h('small', {}, formatDate(item.date)),
+          h('div', {}, at ? `⌖ ${item.text}` : item.text),
+        );
+        if (at) {
+          el.title = 'Zobrazit na mapě';
+          el.addEventListener('click', () => focus(at.x, at.y));
+        }
+        return el;
+      }),
     );
   };
   const off = game.events.on('news', () => windows.update('news', render()));

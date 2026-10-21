@@ -150,6 +150,14 @@ body {
   color: var(--text-muted);
 }
 
+.news-log__item--located {
+  cursor: pointer;
+}
+
+.news-log__item--located:hover {
+  background: var(--hover);
+}
+
 .table--clickable tr:not(:first-child) {
   cursor: pointer;
 }

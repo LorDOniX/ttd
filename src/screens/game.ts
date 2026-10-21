@@ -101,7 +101,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
     openTrainList: () => openTrainList(windows, game, links),
-    openNews: () => openNewsLog(windows, game),
+    openNews: () => openNewsLog(windows, game, focus),
     toggleInfo: () => buildTools.toggleTool('info'),
   };
   const hud = new Hud(container, game, actions);

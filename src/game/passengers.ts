@@ -168,9 +168,10 @@ export class Passengers {
         game.news(
           `${train.name} přivezl ${unloaded} cestujících do stanice ${station.name}: ` +
             `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${stayed}.`,
+          station,
         );
       } else {
-        game.news(`${train.name} stojí ve stanici ${station.name} mimo nástupiště${stayed}.`);
+        game.news(`${train.name} stojí ve stanici ${station.name} mimo nástupiště${stayed}.`, station);
       }
     }
 

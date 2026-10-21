@@ -9,11 +9,23 @@ import {
   NEW_INDUSTRY_CHANCE_PER_TILE,
 } from './balance';
 import type { Game } from './game';
-import { INDUSTRY_TYPES, industryTiles, tryPlaceIndustry, type Industry, type IndustryKind } from '../world/industry';
+import {
+  INDUSTRY_SIZE,
+  INDUSTRY_TYPES,
+  industryTiles,
+  tryPlaceIndustry,
+  type Industry,
+  type IndustryKind,
+} from '../world/industry';
 import { TileType } from '../world/map';
 
 const DAYS_PER_YEAR = 365;
 const FOUND_ATTEMPTS = 60;
+
+const centre = (industry: Industry): { x: number; y: number } => ({
+  x: industry.x + INDUSTRY_SIZE / 2,
+  y: industry.y + INDUSTRY_SIZE / 2,
+});
 
 // Živý průmysl: výroba kolísá podle obsluhy, závody zanikají a vznikají nové
 export class IndustryLife {
@@ -49,7 +61,7 @@ export class IndustryLife {
     industry.production = production;
     // O závodech, kam firma nejezdí, zprávy nechodí
     if (game.freight.pickupStations(industry).length === 0) return;
-    game.news(`${industry.name}: výroba ${grows ? 'stoupla' : 'klesla'} na ${production} t měsíčně.`);
+    game.news(`${industry.name}: výroba ${grows ? 'stoupla' : 'klesla'} na ${production} t měsíčně.`, centre(industry));
   }
 
   private closeIfIdle(industry: Industry): void {
@@ -62,7 +74,7 @@ export class IndustryLife {
     const { world } = this.game;
     world.industries.splice(world.industries.indexOf(industry), 1);
     for (const t of industryTiles(industry)) world.map.set(t.x, t.y, TileType.Grass);
-    this.game.news(text);
+    this.game.news(text, centre(industry));
     this.game.events.emit('industriesChanged');
     this.game.events.emit('stationsChanged');
   }
@@ -80,7 +92,7 @@ export class IndustryLife {
       const industry = tryPlaceIndustry(map, towns, industries, kind, game.rng, game.clock.day);
       if (!industry) continue;
       industries.push(industry);
-      game.news(`Zahájen provoz: ${industry.name}.`);
+      game.news(`Zahájen provoz: ${industry.name}.`, centre(industry));
       game.events.emit('industriesChanged');
       game.events.emit('stationsChanged');
       return;

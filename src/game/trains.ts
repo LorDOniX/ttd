@@ -474,7 +474,10 @@ export class Fleet {
     state.sinceReplan += days;
     this.blocked.set(train.id, state);
     if (!warned && state.total >= BLOCKED_WARN_DAYS) {
-      this.game.news(`${train.name} už měsíc čeká na volnou trať – jednokolejka potřebuje výhybny nebo víc kolejí.`);
+      this.game.news(
+        `${train.name} už měsíc čeká na volnou trať – jednokolejka potřebuje výhybny nebo víc kolejí.`,
+        this.position(train),
+      );
     }
     if (state.sinceReplan >= BLOCKED_REPLAN_DAYS) {
       state.sinceReplan = 0;
@@ -494,7 +497,7 @@ export class Fleet {
       this.reservations.release(train);
       // Náklad zůstává ve vlaku a po výjezdu ho vlak vyloží na další zastávce
       const load = train.passengers > 0 ? ` s nákladem ${formatLoad(train)}` : '';
-      this.game.news(`${train.name} dorazil do depa${load}.`);
+      this.game.news(`${train.name} dorazil do depa${load}.`, this.position(train));
       if (train.renewing) this.finishRenewal(train);
     } else {
       train.state = 'loading';
@@ -550,7 +553,7 @@ export class Fleet {
   }
 
   private lose(train: Train): void {
-    if (train.state !== 'lost') this.game.news(`${train.name} nemůže najít cestu.`);
+    if (train.state !== 'lost') this.game.news(`${train.name} nemůže najít cestu.`, this.position(train));
     train.state = 'lost';
     train.speed = 0;
     train.waitDays = LOST_RETRY_DAYS;
@@ -636,12 +639,25 @@ export class Fleet {
       const affordable = this.game.money >= this.renewalOffer(train).cost;
       if (this.game.autoRenew && affordable && train.state !== 'depot' && !train.renewing) {
         this.requestRenewal(train);
-        this.game.news(`${train.name} jede do depa na automatickou obnovu.`);
+        this.game.news(`${train.name} jede do depa na automatickou obnovu.`, this.position(train));
       } else if (!train.agingWarned) {
         train.agingWarned = true;
-        this.game.news(`${train.name} dosáhl konce životnosti – provoz je dražší, zvažte obnovu.`);
+        this.game.news(
+          `${train.name} dosáhl konce životnosti – provoz je dražší, zvažte obnovu.`,
+          this.position(train),
+        );
       }
     }
+  }
+
+  // Kde vlak právě je: hlava soupravy, ve stojícím v depu depo
+  private position(train: Train): { x: number; y: number } | undefined {
+    if (train.state !== 'depot' && train.path.length > 0) {
+      const [x, y] = pointAt(train.path, train.pos);
+      return { x, y };
+    }
+    const depot = this.depot(train);
+    return depot && { x: depot.x + 0.5, y: depot.y + 0.5 };
   }
 
   private depot(train: Train): Depot | undefined {

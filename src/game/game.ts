@@ -17,6 +17,8 @@ const MAX_NEWS_LOG = 200;
 export interface NewsItem {
   date: GameDate;
   text: string;
+  // Místo na mapě, které se zprávy týká (střed dlaždice)
+  at?: { x: number; y: number };
 }
 
 export type ExpenseKind = 'construction' | 'vehicles' | 'running' | 'maintenance' | 'interest';
@@ -177,8 +179,8 @@ export class Game {
     return null;
   }
 
-  news(text: string): void {
-    this.newsLog.push({ date: this.clock.date, text });
+  news(text: string, at?: { x: number; y: number }): void {
+    this.newsLog.push({ date: this.clock.date, text, at: at && { x: at.x, y: at.y } });
     if (this.newsLog.length > MAX_NEWS_LOG) this.newsLog.shift();
     this.events.emit('news', text);
   }
