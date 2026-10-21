@@ -5,6 +5,7 @@ import {
   IRON_ORE_FARE_TIERS,
   MAIL_FARE_TIERS,
   OIL_FARE_TIERS,
+  RATING_START,
   STEEL_FARE_TIERS,
   WOOD_FARE_TIERS,
 } from './balance';
@@ -106,6 +107,21 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
 };
 
 export type FreightStock = Record<FreightType, number>;
+
+// Hodnocení 0–1, herní den poslední návštěvy vlaku s tímto nákladem (−1 = nikdy) a jeho rychlost
+export interface CargoRating {
+  rating: number;
+  lastVisit: number;
+  lastSpeed: number;
+}
+
+export const CARGO_TYPES = Object.keys(CARGOS) as Cargo[];
+
+export function newRatings(): Record<Cargo, CargoRating> {
+  return Object.fromEntries(
+    CARGO_TYPES.map((cargo) => [cargo, { rating: RATING_START, lastVisit: -1, lastSpeed: 0 }]),
+  ) as Record<Cargo, CargoRating>;
+}
 
 export function emptyFreight(): FreightStock {
   return Object.fromEntries(FREIGHT_TYPES.map((type) => [type, 0])) as FreightStock;

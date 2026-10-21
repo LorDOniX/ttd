@@ -1,5 +1,5 @@
 import { RATING_START, STATION_LENGTH } from './balance';
-import { FREIGHT_TYPES, emptyFreight, isCargo, type FreightStock } from './cargo';
+import { CARGO_TYPES, FREIGHT_TYPES, emptyFreight, isCargo, newRatings, type Cargo, type CargoRating, type FreightStock } from './cargo';
 import { Game, emptyYear, type ViewState, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Job } from './construction';
@@ -12,8 +12,8 @@ import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
 // 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům;
-// 11: den poslední dodávky (zánik závodů)
-const SAVE_VERSION = 11;
+// 11: den poslední dodávky (zánik závodů); 12: hodnocení nástupiště podle druhu nákladu
+const SAVE_VERSION = 12;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -168,6 +168,21 @@ function restoreFreight(value: unknown, legacyCoal: unknown): FreightStock {
 
 const legacyCoal = (value: object): unknown => (value as { coal?: unknown }).coal;
 
+// Hodnocení podle nákladu; starší uložení má jedno společné přímo na nástupišti
+function restoreRatings(value: unknown, legacy: object): Record<Cargo, CargoRating> {
+  const ratings = newRatings();
+  const saved = isObject(value) ? value : {};
+  for (const cargo of CARGO_TYPES) {
+    const entry = isObject(saved[cargo]) ? saved[cargo] : (legacy as Record<string, unknown>);
+    ratings[cargo] = {
+      rating: finiteOr(entry.rating, RATING_START),
+      lastVisit: finiteOr(entry.lastVisit, -1),
+      lastSpeed: finiteOr(entry.lastSpeed, 0),
+    };
+  }
+  return ratings;
+}
+
 // Kontrola struktury souboru; data pochází od uživatele, proto se neověřené nepoužijí
 export function parseSave(text: string): SaveData {
   let data: unknown;
@@ -176,7 +191,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -217,15 +232,18 @@ export function restoreGame(data: SaveData): Game {
   rail.pieces.set(decode(data.rail.pieces, width * height));
   // Starší uložení nezná velikost nástupišť (všechna byla 1×3) ani jejich hodnocení
   rail.stations.push(
-    ...data.rail.stations.map((s) => ({
-      ...s,
-      length: s.length ?? STATION_LENGTH,
-      tracks: s.tracks ?? 1,
-      rating: s.rating ?? RATING_START,
-      lastVisit: s.lastVisit ?? -1,
-      lastSpeed: s.lastSpeed ?? 0,
-      freight: restoreFreight(s.freight, legacyCoal(s)),
-    })),
+    ...data.rail.stations.map((s) => {
+      const station = {
+        ...s,
+        length: s.length ?? STATION_LENGTH,
+        tracks: s.tracks ?? 1,
+        freight: restoreFreight(s.freight, legacyCoal(s)),
+        ratings: restoreRatings(s.ratings, s),
+      };
+      // Verze 11 a starší měly jedno hodnocení pro všechen náklad
+      for (const key of ['rating', 'lastVisit', 'lastSpeed']) delete (station as Record<string, unknown>)[key];
+      return station;
+    }),
   );
   rail.depots.push(...data.rail.depots);
   rail.nextStationId = data.rail.nextStationId;

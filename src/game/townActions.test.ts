@@ -8,10 +8,11 @@ describe('akce ve městě', () => {
   it('reklama zvedne hodnocení stanic ve městě, bez stanice nejde', () => {
     const { game, a, b, townA } = buildLine();
     const before = game.money;
-    const rating = a.rating;
+    const rating = a.ratings.passengers.rating;
     expect(advertise(game, townA)).toBeNull();
-    expect(a.rating).toBeCloseTo(rating + AD_RATING_BOOST);
-    expect(b.rating).toBeCloseTo(rating);
+    expect(a.ratings.passengers.rating).toBeCloseTo(rating + AD_RATING_BOOST);
+    expect(a.ratings.coal.rating).toBeCloseTo(rating + AD_RATING_BOOST);
+    expect(b.ratings.passengers.rating).toBeCloseTo(rating);
     expect(before - game.money).toBe(AD_CAMPAIGN_COST);
     const lonely = makeTown(2, 50, 50);
     expect(advertise(game, lonely)).toMatch(/nástupiště/);

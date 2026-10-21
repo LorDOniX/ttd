@@ -1,5 +1,6 @@
 import { START_YEAR, formatDate } from '../game/clock';
 import { Game } from '../game/game';
+import type { Train } from '../game/trains';
 import { launch, returnToTitle, writeAutosave, type LaunchIntent, type NewGameOptions } from '../game/launch';
 import { parseSave, restoreGame } from '../game/save';
 import { TileCursor } from '../render/cursor';
@@ -20,7 +21,8 @@ import { generateWorld } from '../world/generator';
 import { NO_OWNER } from '../world/map';
 import { industryAt, type Industry } from '../world/industry';
 import { openIndustry } from '../ui/industry';
-import type { Depot } from '../world/rail';
+import { openStation } from '../ui/station';
+import type { Depot, Station } from '../world/rail';
 import { hashSeed } from '../world/rng';
 import type { Town } from '../world/town';
 
@@ -83,6 +85,8 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openDepot: (depot: Depot) => openDepot(windows, game, depot, focus),
     openTown: (town: Town) => openTown(windows, game, town, focus),
     openIndustry: (industry: Industry) => openIndustry(windows, game, industry, focus),
+    openStation: (station: Station) =>
+      openStation(windows, game, station, { focus, openTrain: (train: Train) => openTrain(windows, game, train, links) }),
   };
   buildTools.onInspect = (tile) => openTileInfo(windows, game, tile, links);
   const actions: ToolbarActions = {
@@ -208,6 +212,11 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     const industry = industryAt(world.industries, tile.x, tile.y);
     if (industry) {
       links.openIndustry(industry);
+      return;
+    }
+    const station = world.rail.stationAt(tile.x, tile.y);
+    if (station) {
+      links.openStation(station);
       return;
     }
     const owner = map.getOwner(tile.x, tile.y);

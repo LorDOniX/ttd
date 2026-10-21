@@ -1,14 +1,13 @@
-import { MAINTENANCE_RATE, TOWN_ACCEPTS_MIN_BUILDINGS } from '../game/balance';
-import { CARGOS } from '../game/cargo';
-import { stationCost, trackPieceCost } from '../game/construction';
+import { MAINTENANCE_RATE } from '../game/balance';
+import { trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
 import { catchmentArea, inArea } from '../game/passengers';
-import { ratingParts, targetRating } from '../game/rating';
 import { NO_OWNER, TileType, type TilePos } from '../world/map';
 import { industryAt, type Industry } from '../world/industry';
-import type { Depot } from '../world/rail';
+import type { Depot, Station } from '../world/rail';
 import { buildingAt, buildingCapacity, type Town } from '../world/town';
 import { h } from './dom';
+import { stationRows } from './station';
 import type { WindowManager } from './windows';
 
 const TILE_NAMES: Record<TileType, string> = {
@@ -30,10 +29,10 @@ export interface TileInfoLinks {
   openDepot: (depot: Depot) => void;
   openTown: (town: Town) => void;
   openIndustry: (industry: Industry) => void;
+  openStation: (station: Station) => void;
 }
 
 const monthly = (value: number): string => `${formatMoney(Math.round((value * MAINTENANCE_RATE) / 12))} měsíčně`;
-const percent = (value: number): string => `${Math.round(value * 100)} %`;
 
 // Okno nástroje „?“: co na dlaždici je a do dosahu kterých nástupišť patří
 export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, links: TileInfoLinks): void {
@@ -81,41 +80,8 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
 
     const station = rail.stationAt(x, y);
     if (station) {
-      const served = game.fleet.trains.filter((t) => t.orders?.includes(station.id)).map((t) => t.name);
-      // Podíl zástavby města v dosahu určuje příliv cestujících
-      const reach = [...game.passengers.townShares(station)].map(([t, share]) => `${t.name} (${percent(share)})`);
-      const now = game.clock.now;
-      const parts = ratingParts(station, now);
-      const visit = station.lastVisit < 0 ? 'nikdy' : `před ${Math.floor(now - station.lastVisit)} dny`;
-      const industries = game.freight.industriesInReach(station).map((i) => i.name);
-      const accepted = game.freight.accepted(station).map((t) => CARGOS[t].noun);
-      rows.push(
-        ['Název', station.name],
-        ['Rozměr', `${station.tracks}×${station.length}`],
-        ['Čeká cestujících', String(Math.floor(station.waiting))],
-        ...(game.passengers.townsInReach(station).length > 0
-          ? [['Pošta k odvozu', `${Math.floor(station.freight.mail)} t`] as [string, string]]
-          : []),
-        ...game.freight
-          .produced(station)
-          .map((t): [string, string] => [`K odvozu (${CARGOS[t].noun})`, `${Math.floor(station.freight[t])} t`]),
-        ['Výkup', accepted.length > 0 ? accepted.join(', ') : 'nic'],
-        ['Hodnocení', `${percent(station.rating)} (směřuje k ${percent(targetRating(station, now))})`],
-        [
-          'Složení hodnocení',
-          `poslední vlak ${visit}: ${percent(parts.visit)}, rychlost: ${percent(parts.speed)}, ` +
-            `čekající: ${percent(parts.waiting)}`,
-        ],
-        ['Příliv za měsíc', String(Math.round(game.passengers.inflow(station)))],
-        ['Města v dosahu', reach.length > 0 ? reach.join(', ') : 'žádná'],
-        [
-          'Budovy v dosahu',
-          `${game.passengers.buildingsInReach(station)} (zboží vykupuje od ${TOWN_ACCEPTS_MIN_BUILDINGS})`,
-        ],
-        ['Průmysl v dosahu', industries.length > 0 ? industries.join(', ') : 'žádný'],
-        ['Obsluhují vlaky', served.length > 0 ? served.join(', ') : 'žádné'],
-        ['Údržba', monthly(stationCost(station))],
-      );
+      rows.push(...stationRows(game, station));
+      action('Otevřít stanici', () => links.openStation(station));
     }
 
     const depot = rail.depotAt(x, y);

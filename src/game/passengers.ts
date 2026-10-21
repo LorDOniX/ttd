@@ -6,8 +6,9 @@ import {
   STATION_CATCHMENT_RADIUS,
   WAGON_CAPACITY,
 } from './balance';
+import { CARGO_TYPES } from './cargo';
 import { formatMoney, type Game } from './game';
-import { inflowFactor, leaveShare, updateRating } from './rating';
+import { inflowFactor, leaveShare, recordVisit, updateRating } from './rating';
 import { trainModel, wagonsAtStation, type Train } from './trains';
 import { TileType } from '../world/map';
 import { stationTiles, type Station, type StationShape } from '../world/rail';
@@ -144,7 +145,7 @@ export class Passengers {
 
   // Skutečný měsíční příliv po započtení hodnocení nástupiště
   inflow(station: Station): number {
-    return this.monthlyPassengers(station) * inflowFactor(station.rating);
+    return this.monthlyPassengers(station) * inflowFactor(station.ratings.passengers.rating);
   }
 
   // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající.
@@ -190,8 +191,7 @@ export class Passengers {
       train.boardedStation = station.id;
     }
     for (const town of this.townsInReach(station)) town.served = true;
-    station.lastVisit = game.clock.now;
-    station.lastSpeed = trainModel(train).speed;
+    recordVisit(station, 'passengers', game.clock.now, trainModel(train).speed);
     game.events.emit('stationsChanged');
     return unloaded + boarding;
   }
@@ -199,11 +199,11 @@ export class Passengers {
   private generate(): void {
     const now = this.game.clock.now;
     for (const station of this.game.world.rail.stations) {
-      updateRating(station, now);
+      for (const cargo of CARGO_TYPES) updateRating(station, cargo, now);
       const monthly = this.inflow(station);
       const max = monthly * PASSENGERS_MAX_WAITING_MONTHS;
       const waiting = Math.min(max, station.waiting + monthly / DAYS_PER_MONTH);
-      station.waiting = waiting * (1 - leaveShare(station.rating));
+      station.waiting = waiting * (1 - leaveShare(station.ratings.passengers.rating));
     }
     this.game.events.emit('stationsChanged');
   }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CARGOS } from '../game/cargo';
+import { CARGOS, type Cargo } from '../game/cargo';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { BuildingsView } from './buildings';
@@ -94,12 +94,13 @@ export class GameView {
         const produced = game.freight.produced(s);
         const accepted = game.freight.accepted(s);
         const parts = [s.name];
-        if (towns) parts.push(`čeká ${Math.floor(s.waiting)}`);
-        if (s.freight.mail >= 1) parts.push(`pošta ${Math.floor(s.freight.mail)} t`);
-        for (const type of produced) parts.push(`${CARGOS[type].noun} ${Math.floor(s.freight[type])} t`);
+        const rated = (text: string, cargo: Cargo): string =>
+          `${text} (${Math.round(s.ratings[cargo].rating * 100)} %)`;
+        if (towns) parts.push(rated(`čeká ${Math.floor(s.waiting)}`, 'passengers'));
+        if (s.freight.mail >= 1) parts.push(rated(`pošta ${Math.floor(s.freight.mail)} t`, 'mail'));
+        for (const type of produced) parts.push(rated(`${CARGOS[type].noun} ${Math.floor(s.freight[type])} t`, type));
         if (accepted.length > 0) parts.push(`výkup ${accepted.map((t) => CARGOS[t].genitive).join(', ')}`);
-        const served = towns || produced.length > 0 || accepted.length > 0;
-        parts.push(served ? `${Math.round(s.rating * 100)} %` : 'mimo dosah města a průmyslu');
+        if (!towns && produced.length === 0 && accepted.length === 0) parts.push('mimo dosah města a průmyslu');
         return parts.join(' · ');
       });
     rebuildStationLabels();

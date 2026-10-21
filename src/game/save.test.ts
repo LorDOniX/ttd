@@ -214,12 +214,27 @@ describe('uložení a načtení', () => {
     const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
     data.version = 2;
     for (const station of data.rail.stations) {
+      delete station.ratings;
       delete station.rating;
       delete station.lastVisit;
       delete station.lastSpeed;
     }
     const [a] = restoreGame(parseSave(JSON.stringify(data))).world.rail.stations;
-    expect([a.rating, a.lastVisit, a.lastSpeed]).toEqual([0.5, -1, 0]);
+    expect(a.ratings.passengers).toEqual({ rating: 0.5, lastVisit: -1, lastSpeed: 0 });
+  });
+
+  it('uložení verze 11 převede společné hodnocení nástupiště na každý druh nákladu', () => {
+    const { game } = buildLine();
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.version = 11;
+    for (const station of data.rail.stations) {
+      delete station.ratings;
+      Object.assign(station, { rating: 0.8, lastVisit: 12, lastSpeed: 3 });
+    }
+    const [a] = restoreGame(parseSave(JSON.stringify(data))).world.rail.stations;
+    expect(a.ratings.passengers).toEqual({ rating: 0.8, lastVisit: 12, lastSpeed: 3 });
+    expect(a.ratings.coal.rating).toBe(0.8);
+    expect('rating' in a).toBe(false);
   });
 
   it('uložení verze 3 načte vlaky jako koupené na začátku hry', () => {

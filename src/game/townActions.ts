@@ -18,7 +18,9 @@ export function advertise(game: Game, town: Town): string | null {
   const stations = game.world.rail.stations.filter((s) => game.passengers.townsInReach(s).includes(town));
   if (stations.length === 0) return `Ve městě ${town.name} nemáte žádné nástupiště.`;
   game.spend(AD_CAMPAIGN_COST, 'construction');
-  for (const station of stations) station.rating = Math.min(1, station.rating + AD_RATING_BOOST);
+  for (const station of stations) {
+    for (const entry of Object.values(station.ratings)) entry.rating = Math.min(1, entry.rating + AD_RATING_BOOST);
+  }
   game.news(`Reklamní kampaň ve městě ${town.name} zvedla hodnocení stanic.`, { x: town.x + 0.5, y: town.y + 0.5 });
   game.events.emit('stationsChanged');
   return null;

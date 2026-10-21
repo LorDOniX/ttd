@@ -2,7 +2,7 @@ import { FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDI
 import { CARGOS, FREIGHT_TYPES, TOWN_ACCEPTS, type FreightType } from './cargo';
 import { formatMoney, type Game } from './game';
 import { catchmentArea, fare, type Area } from './passengers';
-import { inflowFactor } from './rating';
+import { inflowFactor, recordVisit } from './rating';
 import { trainModel, wagonsAtStation, type Train } from './trains';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
 import type { Station, StationShape } from '../world/rail';
@@ -115,8 +115,7 @@ export class Freight {
       station.freight[type] = stock - loading;
       train.boardedStation = station.id;
     }
-    station.lastVisit = game.clock.now;
-    station.lastSpeed = trainModel(train).speed;
+    recordVisit(station, type, game.clock.now, trainModel(train).speed);
     game.events.emit('stationsChanged');
     return unloaded + loading;
   }
@@ -130,7 +129,7 @@ export class Freight {
       const daily = industry.production / DAYS_PER_MONTH / stations.length;
       const max = industry.production * FREIGHT_MAX_WAITING_MONTHS;
       for (const station of stations) {
-        const amount = daily * inflowFactor(station.rating);
+        const amount = daily * inflowFactor(station.ratings[type].rating);
         const added = Math.max(0, Math.min(amount, max - station.freight[type]));
         station.freight[type] += added;
         industry.transported += added;
@@ -149,7 +148,7 @@ export class Freight {
     for (const station of this.game.world.rail.stations) {
       if (!served.has(station.id)) continue;
       const monthly = this.monthlyMail(station);
-      const amount = (monthly / DAYS_PER_MONTH) * inflowFactor(station.rating);
+      const amount = (monthly / DAYS_PER_MONTH) * inflowFactor(station.ratings.mail.rating);
       const max = monthly * FREIGHT_MAX_WAITING_MONTHS;
       station.freight.mail += Math.max(0, Math.min(amount, max - station.freight.mail));
     }
