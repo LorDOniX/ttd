@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { loadModel } from '../assets';
-import { VEHICLE_LENGTH } from '../game/balance';
+import { VEHICLE_LENGTH, WAGON_CAPACITY } from '../game/balance';
 import { CARGOS } from '../game/cargo';
 import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
@@ -17,6 +17,28 @@ interface TrainView {
   key: string;
   group: THREE.Group;
   vehicles: THREE.Object3D[];
+  // Náklad každého vagonu (část modelu `cargo`), null u vagonů bez viditelného nákladu
+  loads: (THREE.Object3D | null)[];
+}
+
+const PLATE_MATERIAL = new THREE.MeshLambertMaterial({ color: 0xc4ced8, flatShading: true });
+
+// Plošina z kitu je prázdná, ocel na ní vezou tři vrstvy plechů
+function addSteelLoad(wagon: THREE.Object3D): void {
+  const box = new THREE.Box3().setFromObject(wagon);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const load = new THREE.Group();
+  load.name = 'cargo';
+  // Výška obrysu zahrnuje i klanice, ložná plocha je zhruba v jeho polovině
+  const floor = box.min.y + size.y * 0.42;
+  const thickness = size.y * 0.07;
+  for (let i = 0; i < 3; i++) {
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(size.x * 0.6, thickness, size.z * 0.7), PLATE_MATERIAL);
+    plate.position.set(center.x, floor + thickness * (i + 0.5), center.z + (i - 1) * size.z * 0.02);
+    load.add(plate);
+  }
+  wagon.add(load);
 }
 
 function trainKey(train: Train): string {
@@ -70,20 +92,28 @@ export class TrainsView {
 
   private createView(train: Train): TrainView {
     const model = trainModel(train);
-    const view: TrainView = { key: trainKey(train), group: new THREE.Group(), vehicles: [] };
-    const wagonModel = CARGOS[train.cargo].wagonModel ?? model.wagonModel;
-    const names = [model.model, ...Array.from({ length: train.wagons }, () => wagonModel)];
+    const view: TrainView = { key: trainKey(train), group: new THREE.Group(), vehicles: [], loads: [] };
+    const wagonModels = CARGOS[train.cargo].wagonModels ?? [model.wagonModel];
+    const names = [model.model, ...Array.from({ length: train.wagons }, (_, i) => wagonModels[i % wagonModels.length])];
     void Promise.all(names.map((n) => loadModel('train kit', n))).then((objects) => {
+      const [, ...wagons] = objects;
+      if (train.cargo === 'steel') wagons.forEach(addSteelLoad);
       for (const o of objects) {
         o.scale.setScalar(SCALE);
         view.group.add(o);
       }
       view.vehicles = objects;
+      view.loads = wagons.map((w) => w.getObjectByName('cargo') ?? null);
     });
     return view;
   }
 
   private place(train: Train, view: TrainView): void {
+    // Vagony se plní od lokomotivy
+    const loaded = Math.ceil(train.passengers / WAGON_CAPACITY);
+    view.loads.forEach((load, i) => {
+      if (load) load.visible = i < loaded;
+    });
     const count = view.vehicles.length;
     for (let i = 0; i < count; i++) {
       // Po otočení směru jízdy je lokomotiva na konci soupravy

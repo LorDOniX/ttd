@@ -24,8 +24,8 @@ export interface CargoSpec {
   noun: string;
   genitive: string;
   fareTiers: readonly { maxDays: number; rate: number }[];
-  // Model vagonu z train kitu; null = osobní vagon podle lokomotivy
-  wagonModel: string | null;
+  // Modely vagonů z train kitu, střídají se po řadě; null = osobní vagon podle lokomotivy
+  wagonModels: readonly string[] | null;
   color: string;
 }
 
@@ -36,7 +36,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     noun: 'cestující',
     genitive: 'cestujících',
     fareTiers: FARE_TIERS,
-    wagonModel: null,
+    wagonModels: null,
     color: '#5a8fd9',
   },
   coal: {
@@ -45,7 +45,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     noun: 'uhlí',
     genitive: 'uhlí',
     fareTiers: COAL_FARE_TIERS,
-    wagonModel: 'train-carriage-coal',
+    wagonModels: ['train-carriage-coal'],
     color: '#6b6b64',
   },
   wood: {
@@ -54,7 +54,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     noun: 'dřevo',
     genitive: 'dřeva',
     fareTiers: WOOD_FARE_TIERS,
-    wagonModel: 'train-carriage-wood',
+    wagonModels: ['train-carriage-wood'],
     color: '#8a5a2b',
   },
   oil: {
@@ -63,7 +63,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     noun: 'ropa',
     genitive: 'ropy',
     fareTiers: OIL_FARE_TIERS,
-    wagonModel: 'train-carriage-tank',
+    wagonModels: ['train-carriage-tank'],
     color: '#4b3f6b',
   },
   'iron-ore': {
@@ -72,7 +72,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     noun: 'ruda',
     genitive: 'rudy',
     fareTiers: IRON_ORE_FARE_TIERS,
-    wagonModel: 'train-carriage-dirt',
+    wagonModels: ['train-carriage-dirt'],
     color: '#a0522d',
   },
   steel: {
@@ -81,7 +81,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     noun: 'ocel',
     genitive: 'oceli',
     fareTiers: STEEL_FARE_TIERS,
-    wagonModel: 'train-carriage-flatbed',
+    wagonModels: ['train-carriage-flatbed'],
     color: '#8fa3b5',
   },
   goods: {
@@ -90,7 +90,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     noun: 'zboží',
     genitive: 'zboží',
     fareTiers: GOODS_FARE_TIERS,
-    wagonModel: 'train-carriage-box',
+    wagonModels: ['train-carriage-container-blue', 'train-carriage-container-red', 'train-carriage-container-green'],
     color: '#d9a441',
   },
 };
