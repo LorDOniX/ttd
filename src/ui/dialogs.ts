@@ -3,6 +3,7 @@ import { Game } from '../game/game';
 import { parseSave, serializeGame } from '../game/save';
 import type { Town, TownKind } from '../world/town';
 import { h } from './dom';
+import { loadTheme, saveTheme, type Theme } from './theme';
 import type { WindowManager } from './windows';
 
 const KIND_LABELS: Record<TownKind, string> = { city: 'Město', town: 'Městečko', village: 'Vesnice' };
@@ -22,6 +23,15 @@ export function openSettings(
   const gridInput = h('input', { type: 'checkbox', checked: grid.visible() });
   gridInput.addEventListener('change', () => grid.setVisible(gridInput.checked));
 
+  const theme = loadTheme();
+  const themeSelect = h(
+    'select',
+    {},
+    h('option', { value: 'light', selected: theme === 'light' }, 'Světlý'),
+    h('option', { value: 'dark', selected: theme === 'dark' }, 'Tmavý'),
+  );
+  themeSelect.addEventListener('change', () => saveTheme(themeSelect.value as Theme));
+
   const nameInput = h('input', { type: 'text', value: game.companyName, maxLength: 40 });
   const apply = (): void => game.setCompanyName(nameInput.value);
   nameInput.addEventListener('change', apply);
@@ -33,6 +43,7 @@ export function openSettings(
     'div',
     { className: 'form' },
     h('label', { className: 'form__row' }, gridInput, ' Zobrazit mřížku'),
+    h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),
     h('div', { className: 'form__hint' }, `Seed mapy: ${seed}`),
     h('h4', {}, 'Klávesové zkratky'),

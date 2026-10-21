@@ -2,6 +2,9 @@ import './style.css';
 import { takeLaunchIntent } from './game/launch';
 import { DEFAULT_OPTIONS, runGame } from './screens/game';
 import { runTitle } from './screens/title';
+import { applyTheme, loadTheme } from './ui/theme';
+
+applyTheme(loadTheme());
 
 const container = document.getElementById('app')!;
 const intent = takeLaunchIntent();
