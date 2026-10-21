@@ -1,7 +1,15 @@
 import * as THREE from 'three';
 import type { TilePos } from '../world/map';
-import type { Edge, StationShape } from '../world/rail';
-import { TrackView, createDepotMesh, createStationObject, placeDepot, type TrackItem } from './rail';
+import type { Axis, Edge, StationShape } from '../world/rail';
+import {
+  TrackView,
+  createDepotMesh,
+  createRoadDepotMesh,
+  createRoadStopMesh,
+  createStationObject,
+  placeDepot,
+  type TrackItem,
+} from './rail';
 
 const VALID = 0x9fff9f;
 const INVALID = 0xff7070;
@@ -88,5 +96,19 @@ export class BuildPreview {
     this.material.color.set(valid ? VALID : INVALID);
     placeDepot(this.depot, x, y, entrance);
     this.depot.visible = true;
+  }
+
+  showRoadStop(x: number, y: number, axis: Axis, valid: boolean): void {
+    this.clear();
+    this.material.color.set(valid ? VALID : INVALID);
+    this.station.add(createRoadStopMesh(this.material, x, y, axis));
+  }
+
+  showRoadDepot(x: number, y: number, entrance: Edge, valid: boolean): void {
+    this.clear();
+    this.material.color.set(valid ? VALID : INVALID);
+    const mesh = createRoadDepotMesh(this.material);
+    placeDepot(mesh, x, y, entrance);
+    this.station.add(mesh);
   }
 }

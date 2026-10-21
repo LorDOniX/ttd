@@ -7,6 +7,7 @@ import { IsoCamera } from './camera';
 import { IndustriesView } from './industries';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
 import { RailView } from './rail';
+import { RoadVehiclesView } from './roadVehicles';
 import { RoadView } from './roads';
 import { SignalsView } from './signals';
 import { TerrainView } from './terrain';
@@ -21,6 +22,7 @@ export class GameView {
   readonly terrain: TerrainView;
   private readonly labels: TownLabels;
   private readonly trains: TrainsView;
+  private readonly vehicles: RoadVehiclesView;
   private readonly signals: SignalsView;
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
@@ -56,6 +58,7 @@ export class GameView {
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
     this.trains = new TrainsView(game.fleet, map);
+    this.vehicles = new RoadVehiclesView(game.roadFleet);
     this.labels = new TownLabels(container);
     this.labels.setSize(window.innerWidth, window.innerHeight);
     this.labels.rebuild(towns);
@@ -69,6 +72,7 @@ export class GameView {
       railView.object,
       this.signals.object,
       this.trains.object,
+      this.vehicles.object,
       this.labels.object,
       stationLabels.object,
       this.floatingTexts.object,
@@ -139,11 +143,17 @@ export class GameView {
     return this.trains.pick(this.camera.ray(clientX, clientY));
   }
 
+  // Id auta pod kurzorem
+  vehicleAt(clientX: number, clientY: number): number | null {
+    return this.vehicles.pick(this.camera.ray(clientX, clientY));
+  }
+
   // Jeden snímek: posun hry o reálný čas dtMs a vykreslení
   frame(now: number, dtMs: number): void {
     this.game.update(dtMs);
     this.syncMap();
     this.trains.update();
+    this.vehicles.update();
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
     this.floatingTexts.update(now);

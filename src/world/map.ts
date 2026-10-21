@@ -14,6 +14,10 @@ export enum TileType {
   Bridge = 9,
   // Areál dolu, elektrárny apod.
   Industry = 10,
+  // Průjezdná zastávka aut na rovné silnici
+  RoadStop = 11,
+  // Garáž aut s vjezdem z jedné strany
+  RoadDepot = 12,
 }
 
 export interface TilePos {
@@ -98,7 +102,9 @@ export class GameMap {
   }
 
   isRoad(x: number, y: number): boolean {
-    return this.isType(x, y, TileType.Road) || this.isType(x, y, TileType.Crossing);
+    if (!this.inBounds(x, y)) return false;
+    const type = this.get(x, y);
+    return type === TileType.Road || type === TileType.Crossing || type === TileType.RoadStop;
   }
 
   // Směr silnice podle napojení na sousední silnice

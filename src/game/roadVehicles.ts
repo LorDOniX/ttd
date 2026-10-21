@@ -1,0 +1,474 @@
+import {
+  LOADING_PER_DAY,
+  OLD_TRAIN_COST_FACTOR,
+  ROAD_VEHICLE_LIFETIME_YEARS,
+  ROAD_VEHICLE_MODELS,
+  TRAIN_LOADING_DAYS,
+  TRAIN_MIN_SELL,
+  TRAIN_SELL_REFUND,
+  type RoadVehicleModel,
+} from './balance';
+import { CARGOS, isFreight, type Cargo } from './cargo';
+import { formatMoney, type Game } from './game';
+import { TileType, type TilePos } from '../world/map';
+import type { Depot, Station } from '../world/rail';
+import { findRoadRoute, roadMoves } from '../world/roadRoute';
+
+const DAYS_PER_YEAR = 365.25;
+const LOST_RETRY_DAYS = 5;
+// Auto čekající na plné naložení zkouší doložit jednou denně
+const FULL_LOAD_CHECK_DAYS = 1;
+
+export type RoadVehicleState = 'depot' | 'running' | 'loading' | 'lost';
+
+// Autobus nebo nákladní auto; náklad určuje model. Jede po středech dlaždic cesty (path),
+// pos je vzdálenost od první dlaždice v dlaždicích.
+export interface RoadVehicle {
+  id: number;
+  name: string;
+  modelId: string;
+  depotId: number;
+  orders: number[] | null;
+  fullLoad: number[];
+  // Index zastávky v řádu, −1 = jede do garáže
+  target: number;
+  state: RoadVehicleState;
+  path: TilePos[];
+  pos: number;
+  waitDays: number;
+  // Náklad na palubě (cestující nebo tuny)
+  passengers: number;
+  boardedStation: number;
+  boardedAt: number;
+  tiles: number;
+  income: number;
+  costs: number;
+  lastIncome: number;
+  lastCosts: number;
+  builtDay: number;
+  agingWarned: boolean;
+}
+
+export function roadVehicleModel(vehicle: RoadVehicle): RoadVehicleModel {
+  return ROAD_VEHICLE_MODELS.find((m) => m.id === vehicle.modelId)!;
+}
+
+export function vehicleCargo(vehicle: RoadVehicle): Cargo {
+  return roadVehicleModel(vehicle).cargo;
+}
+
+// Druh vozidla v mužském rodě, aby seděly zprávy „… přivezl …“
+export function vehicleKind(cargo: Cargo): string {
+  if (cargo === 'passengers') return 'Autobus';
+  if (cargo === 'mail') return 'Poštovní vůz';
+  return 'Nákladní vůz';
+}
+
+export function formatVehicleLoad(vehicle: RoadVehicle): string {
+  const model = roadVehicleModel(vehicle);
+  return `${vehicle.passengers} / ${model.capacity} ${CARGOS[model.cargo].unit}`;
+}
+
+export function vehicleAge(vehicle: RoadVehicle, today: number): number {
+  return Math.max(0, today - vehicle.builtDay) / DAYS_PER_YEAR;
+}
+
+export function isOldVehicle(vehicle: RoadVehicle, today: number): boolean {
+  return vehicleAge(vehicle, today) >= ROAD_VEHICLE_LIFETIME_YEARS;
+}
+
+export function vehicleSellPrice(vehicle: RoadVehicle, today: number): number {
+  const worn = Math.min(1, vehicleAge(vehicle, today) / ROAD_VEHICLE_LIFETIME_YEARS);
+  const factor = TRAIN_SELL_REFUND - (TRAIN_SELL_REFUND - TRAIN_MIN_SELL) * worn;
+  return Math.round(roadVehicleModel(vehicle).price * factor);
+}
+
+export function vehicleRunningCost(vehicle: RoadVehicle, today: number): number {
+  const base = roadVehicleModel(vehicle).runningCost;
+  return isOldVehicle(vehicle, today) ? base * OLD_TRAIN_COST_FACTOR : base;
+}
+
+// Bod na cestě a směr jízdy (jednotkový vektor) ve vzdálenosti pos
+export function vehiclePoint(path: TilePos[], pos: number): { x: number; y: number; dx: number; dy: number } {
+  if (path.length === 0) return { x: 0, y: 0, dx: 1, dy: 0 };
+  if (path.length === 1) return { x: path[0].x + 0.5, y: path[0].y + 0.5, dx: 1, dy: 0 };
+  const i = Math.max(0, Math.min(path.length - 2, Math.floor(pos)));
+  const t = Math.max(0, Math.min(1, pos - i));
+  const a = path[i];
+  const b = path[i + 1];
+  // Obrat na místě (A → B → A) má nulový směr; použije se směr k další dlaždici
+  return { x: a.x + 0.5 + (b.x - a.x) * t, y: a.y + 0.5 + (b.y - a.y) * t, dx: b.x - a.x, dy: b.y - a.y };
+}
+
+// Silniční vozidla společnosti: nákup, jízdní řád a jízda po silnicích
+export class RoadFleet {
+  readonly vehicles: RoadVehicle[] = [];
+  nextId = 1;
+
+  constructor(private readonly game: Game) {
+    game.clock.events.on('month', () => this.chargeRunningCosts());
+    game.clock.events.on('year', (ended) => {
+      for (const m of ROAD_VEHICLE_MODELS) {
+        if (m.year === ended + 1) game.news(`Nové silniční vozidlo k dispozici: ${m.name}.`);
+      }
+      for (const v of this.vehicles) {
+        v.lastIncome = v.income;
+        v.lastCosts = v.costs;
+        v.income = 0;
+        v.costs = 0;
+      }
+    });
+    game.events.on('railChanged', () => this.revalidate());
+    game.events.on('roadsChanged', () => this.revalidate());
+  }
+
+  // Od každého nákladu nejnovější model, který už se vyrábí
+  available(): RoadVehicleModel[] {
+    const year = this.game.clock.date.year;
+    return ROAD_VEHICLE_MODELS.filter((m) => m.year <= year);
+  }
+
+  inDepot(depot: Depot): RoadVehicle[] {
+    return this.vehicles.filter((v) => v.depotId === depot.id);
+  }
+
+  buy(depot: Depot, model: RoadVehicleModel): string | null {
+    if (this.game.money < model.price) return `Nedostatek peněz (${formatMoney(model.price)}).`;
+    this.game.spend(model.price, 'vehicles');
+    const id = this.nextId++;
+    this.vehicles.push({
+      id,
+      name: `${vehicleKind(model.cargo)} ${id}`,
+      modelId: model.id,
+      depotId: depot.id,
+      orders: null,
+      fullLoad: [],
+      target: 0,
+      state: 'depot',
+      path: [],
+      pos: 0,
+      waitDays: 0,
+      passengers: 0,
+      boardedStation: -1,
+      boardedAt: 0,
+      tiles: 0,
+      income: 0,
+      costs: 0,
+      lastIncome: 0,
+      lastCosts: 0,
+      builtDay: this.game.clock.day,
+      agingWarned: false,
+    });
+    this.changed();
+    return null;
+  }
+
+  sell(vehicle: RoadVehicle): void {
+    if (vehicle.state !== 'depot') return;
+    this.game.refund(vehicleSellPrice(vehicle, this.game.clock.day), 'vehicles');
+    this.vehicles.splice(this.vehicles.indexOf(vehicle), 1);
+    this.changed();
+  }
+
+  // Chyba řádu, nebo null: aspoň dvě zastávky aut, sousední různé
+  ordersError(orders: number[]): string | null {
+    if (orders.length < 2) return 'Jízdní řád potřebuje aspoň dvě zastávky.';
+    if (orders.some((id) => this.stop(id) === undefined)) return 'Auta zastavují jen na zastávkách aut.';
+    if (orders.some((id, i) => id === orders[(i + 1) % orders.length])) {
+      return 'Stejná zastávka nesmí následovat po sobě.';
+    }
+    return null;
+  }
+
+  // Vypraví auto z garáže na první zastávku řádu
+  start(vehicle: RoadVehicle, orders: number[]): string | null {
+    const error = this.ordersError(orders);
+    if (error) return error;
+    const depot = this.depot(vehicle);
+    if (vehicle.state !== 'depot' || !depot) return null;
+    vehicle.orders = [...orders];
+    vehicle.fullLoad = vehicle.fullLoad.filter((id) => orders.includes(id));
+    vehicle.target = 0;
+    const route = this.routeTo(depot, vehicle);
+    if (!route) {
+      this.changed();
+      return `Z garáže nevede silnice k zastávce ${this.stationName(orders[0])}.`;
+    }
+    vehicle.path = route;
+    vehicle.pos = 0;
+    vehicle.state = 'running';
+    this.changed();
+    return null;
+  }
+
+  // Změna řádu za jízdy; cíl se zachová, pokud v novém řádu zůstal
+  setOrders(vehicle: RoadVehicle, orders: number[]): string | null {
+    if (vehicle.state === 'depot' && orders.length < 2) {
+      vehicle.orders = orders.length > 0 ? orders : null;
+      this.changed();
+      return null;
+    }
+    const error = this.ordersError(orders);
+    if (error) return error;
+    const current = vehicle.orders && vehicle.target >= 0 ? vehicle.orders[vehicle.target] : undefined;
+    vehicle.orders = [...orders];
+    vehicle.fullLoad = vehicle.fullLoad.filter((id) => orders.includes(id));
+    if (vehicle.target !== -1) {
+      const kept = current === undefined ? -1 : orders.indexOf(current);
+      if (kept >= 0) vehicle.target = kept;
+      else {
+        vehicle.target = 0;
+        if (vehicle.state === 'running') this.replan(vehicle);
+      }
+    }
+    this.changed();
+    return null;
+  }
+
+  toggleFullLoad(vehicle: RoadVehicle, stationId: number): void {
+    const i = vehicle.fullLoad.indexOf(stationId);
+    if (i >= 0) vehicle.fullLoad.splice(i, 1);
+    else vehicle.fullLoad.push(stationId);
+    this.changed();
+  }
+
+  // Pošle auto do nejbližší garáže; tam zůstane stát
+  sendToDepot(vehicle: RoadVehicle): void {
+    if (vehicle.state === 'depot' || vehicle.target === -1) return;
+    vehicle.target = -1;
+    this.replan(vehicle);
+  }
+
+  update(days: number): void {
+    if (days <= 0) return;
+    for (const vehicle of this.vehicles) {
+      switch (vehicle.state) {
+        case 'running':
+          this.move(vehicle, days);
+          break;
+        case 'loading':
+          vehicle.waitDays -= days;
+          if (vehicle.waitDays <= 0 && !this.fillingUp(vehicle)) this.depart(vehicle);
+          break;
+        case 'lost':
+          vehicle.waitDays -= days;
+          if (vehicle.waitDays <= 0) this.replan(vehicle);
+          break;
+      }
+    }
+  }
+
+  stationName(id: number): string {
+    return this.game.world.rail.stations.find((s) => s.id === id)?.name ?? '?';
+  }
+
+  // Kde auto právě je (střed), v garáži poloha garáže
+  position(vehicle: RoadVehicle): { x: number; y: number } | undefined {
+    if (vehicle.state !== 'depot' && vehicle.path.length > 0) {
+      const { x, y } = vehiclePoint(vehicle.path, vehicle.pos);
+      return { x, y };
+    }
+    const depot = this.depot(vehicle);
+    return depot && { x: depot.x + 0.5, y: depot.y + 0.5 };
+  }
+
+  // Dlaždice, na které auto stojí nebo jede
+  tileOf(vehicle: RoadVehicle): TilePos | null {
+    if (vehicle.state === 'depot' || vehicle.path.length === 0) return null;
+    return vehicle.path[Math.min(vehicle.path.length - 1, Math.round(vehicle.pos))];
+  }
+
+  // Důvod, proč dlaždici nejde zbourat, nebo null
+  demolitionBlocker(x: number, y: number): string | null {
+    for (const vehicle of this.vehicles) {
+      const tile = this.tileOf(vehicle);
+      if (tile && tile.x === x && tile.y === y) return `Na silnici stojí ${vehicle.name}.`;
+      const depot = this.depot(vehicle);
+      if (depot && depot.x === x && depot.y === y) return `Garáž patří vozidlu ${vehicle.name}.`;
+      if (vehicle.state === 'depot') continue;
+      for (const id of vehicle.orders ?? []) {
+        const stop = this.stop(id);
+        if (stop && stop.x === x && stop.y === y) return `Zastávku ${stop.name} obsluhuje ${vehicle.name}.`;
+      }
+    }
+    return null;
+  }
+
+  private move(vehicle: RoadVehicle, days: number): void {
+    const { map } = this.game.world;
+    const { reservations } = this.game.fleet;
+    const end = vehicle.path.length - 1;
+    let pos = Math.min(end, vehicle.pos + roadVehicleModel(vehicle).speed * days);
+    // Vjezd na dlaždici k nastává v polovině cesty mezi středy (k − 0,5)
+    for (let k = Math.floor(vehicle.pos + 0.5) + 1; k <= end && k - 0.5 <= pos; k++) {
+      const from = vehicle.path[k - 1];
+      const to = vehicle.path[k];
+      if (!roadMoves(this.game.world.rail, from.x, from.y).some((t) => t.x === to.x && t.y === to.y)) {
+        this.replan(vehicle);
+        return;
+      }
+      // Na přejezd rezervovaný vlakem auto nevjede
+      if (map.get(to.x, to.y) === TileType.Crossing && reservations.ownerAt(to.x, to.y) !== undefined) {
+        pos = k - 0.5 - 0.01;
+        break;
+      }
+      vehicle.tiles++;
+    }
+    vehicle.pos = Math.max(vehicle.pos, pos);
+    if (vehicle.pos >= end) this.arrive(vehicle);
+  }
+
+  private arrive(vehicle: RoadVehicle): void {
+    const last = vehicle.path[vehicle.path.length - 1];
+    if (vehicle.target === -1) {
+      const depot = this.game.world.rail.roadDepotAt(last.x, last.y);
+      if (depot) vehicle.depotId = depot.id;
+      vehicle.state = 'depot';
+      vehicle.path = [];
+      vehicle.pos = 0;
+      const load = vehicle.passengers > 0 ? ` s nákladem ${formatVehicleLoad(vehicle)}` : '';
+      this.game.news(`${vehicle.name} dorazil do garáže${load}.`, this.position(vehicle));
+      this.changed();
+      return;
+    }
+    vehicle.state = 'loading';
+    vehicle.waitDays = TRAIN_LOADING_DAYS;
+    const station = this.goal(vehicle);
+    if (station) vehicle.waitDays += this.exchange(vehicle, station) / LOADING_PER_DAY;
+    this.changed();
+  }
+
+  private exchange(vehicle: RoadVehicle, station: Station, loadOnly = false): number {
+    const model = roadVehicleModel(vehicle);
+    const hold = { atPlatform: model.capacity, capacity: model.capacity, speed: model.speed };
+    const { cargo } = model;
+    if (isFreight(cargo)) return this.game.freight.exchange(vehicle, hold, station, cargo, loadOnly);
+    return this.game.passengers.exchange(vehicle, hold, station, loadOnly);
+  }
+
+  // Na zastávce s „Do plna“ doloží náklad; vrací true, když má auto dál čekat
+  private fillingUp(vehicle: RoadVehicle): boolean {
+    const station = this.goal(vehicle);
+    if (!station || !vehicle.fullLoad.includes(station.id)) return false;
+    this.exchange(vehicle, station, true);
+    if (vehicle.passengers >= roadVehicleModel(vehicle).capacity) return false;
+    vehicle.waitDays = FULL_LOAD_CHECK_DAYS;
+    this.changed();
+    return true;
+  }
+
+  isFillingUp(vehicle: RoadVehicle): boolean {
+    const station = vehicle.state === 'loading' ? this.goal(vehicle) : null;
+    return (
+      station !== null &&
+      vehicle.fullLoad.includes(station.id) &&
+      vehicle.passengers < roadVehicleModel(vehicle).capacity
+    );
+  }
+
+  private depart(vehicle: RoadVehicle): void {
+    if (vehicle.orders && vehicle.target !== -1) vehicle.target = (vehicle.target + 1) % vehicle.orders.length;
+    this.replan(vehicle);
+  }
+
+  // Naplánuje cestu k cíli z místa, kde auto je; jedoucí auto dojede rozjetý úsek
+  private replan(vehicle: RoadVehicle): void {
+    const { path } = vehicle;
+    const i = Math.max(0, Math.min(path.length - 1, Math.floor(vehicle.pos)));
+    const here = path[i] ?? this.depot(vehicle);
+    if (!here) {
+      this.lose(vehicle);
+      return;
+    }
+    const next = vehicle.state === 'running' && i + 1 < path.length ? path[i + 1] : null;
+    const fromNext =
+      next && roadMoves(this.game.world.rail, here.x, here.y).some((t) => t.x === next.x && t.y === next.y)
+        ? this.routeTo(next, vehicle)
+        : null;
+    if (fromNext && next) {
+      vehicle.path = [here, ...fromNext];
+      vehicle.pos -= i;
+    } else {
+      const route = this.routeTo(here, vehicle);
+      if (!route) {
+        this.lose(vehicle);
+        return;
+      }
+      vehicle.path = route;
+      vehicle.pos = 0;
+    }
+    vehicle.state = 'running';
+    if (vehicle.path.length === 1) this.arrive(vehicle);
+    this.changed();
+  }
+
+  private lose(vehicle: RoadVehicle): void {
+    if (vehicle.state !== 'lost') this.game.news(`${vehicle.name} nemůže najít cestu.`, this.position(vehicle));
+    vehicle.state = 'lost';
+    vehicle.waitDays = LOST_RETRY_DAYS;
+    this.changed();
+  }
+
+  // Do garáže kterékoli (nejbližší), jinak na cílovou zastávku
+  private routeTo(start: TilePos, vehicle: RoadVehicle): TilePos[] | null {
+    const { rail } = this.game.world;
+    if (vehicle.target === -1) {
+      return findRoadRoute(rail, start, (x, y) => rail.roadDepotAt(x, y) !== undefined);
+    }
+    const goal = this.goal(vehicle);
+    if (!goal) return null;
+    return findRoadRoute(rail, start, (x, y) => x === goal.x && y === goal.y);
+  }
+
+  private goal(vehicle: RoadVehicle): Station | null {
+    if (vehicle.target === -1 || !vehicle.orders) return null;
+    return this.stop(vehicle.orders[vehicle.target]) ?? null;
+  }
+
+  // Po změně silnic přeplánuje jedoucí auta s neplatnou cestou; auta v garáži zapomenou zbořené zastávky
+  private revalidate(): void {
+    const { rail } = this.game.world;
+    for (const vehicle of this.vehicles) {
+      if (vehicle.state === 'depot' && vehicle.orders) {
+        const kept = vehicle.orders.filter((id) => this.stop(id));
+        vehicle.orders = kept.length > 0 ? kept : null;
+      }
+      if (vehicle.state !== 'running') continue;
+      const from = Math.max(0, Math.floor(vehicle.pos));
+      const valid = vehicle.path
+        .slice(from + 1)
+        .every((t, k) =>
+          roadMoves(rail, vehicle.path[from + k].x, vehicle.path[from + k].y).some((m) => m.x === t.x && m.y === t.y),
+        );
+      if (!valid || (vehicle.target !== -1 && !this.goal(vehicle))) this.replan(vehicle);
+    }
+  }
+
+  private chargeRunningCosts(): void {
+    const today = this.game.clock.day;
+    for (const vehicle of this.vehicles) {
+      const monthly = vehicleRunningCost(vehicle, today) / 12;
+      this.game.spend(monthly, 'running');
+      vehicle.costs += monthly;
+      if (isOldVehicle(vehicle, today) && !vehicle.agingWarned) {
+        vehicle.agingWarned = true;
+        this.game.news(
+          `${vehicle.name} dosáhl konce životnosti – provoz je dražší, zvažte nákup nového.`,
+          this.position(vehicle),
+        );
+      }
+    }
+  }
+
+  depot(vehicle: RoadVehicle): Depot | undefined {
+    return this.game.world.rail.roadDepots.find((d) => d.id === vehicle.depotId);
+  }
+
+  private stop(id: number): Station | undefined {
+    return this.game.world.rail.stations.find((s) => s.id === id && s.kind === 'road');
+  }
+
+  private changed(): void {
+    this.game.events.emit('vehiclesChanged');
+  }
+}

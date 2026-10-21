@@ -7,6 +7,7 @@ import { Freight } from './freight';
 import { companyValue, performance, performanceScore, performanceTitle } from './company';
 import { IndustryLife } from './industryLife';
 import { Passengers } from './passengers';
+import { RoadFleet } from './roadVehicles';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
@@ -57,6 +58,8 @@ type GameEvents = {
   railChanged: [];
   roadsChanged: [];
   trainsChanged: [];
+  // Silniční vozidla: nákup, prodej, stav nebo řád
+  vehiclesChanged: [];
   stationsChanged: [];
   // Závod vznikl nebo zanikl
   industriesChanged: [];
@@ -90,6 +93,7 @@ export class Game {
   readonly clock = new GameClock();
   readonly construction = new Construction(this);
   readonly fleet: Fleet;
+  readonly roadFleet: RoadFleet;
   readonly passengers: Passengers;
   readonly freight: Freight;
   readonly industryLife: IndustryLife;
@@ -113,6 +117,7 @@ export class Game {
     // Vlastní proud náhody pro průběh hry, oddělený od generování mapy
     this.rng = new Rng(world.seed ^ 0x5bd1e995);
     this.fleet = new Fleet(this);
+    this.roadFleet = new RoadFleet(this);
     this.passengers = new Passengers(this);
     this.freight = new Freight(this);
     // Až po Freight, aby měsíční změny viděly uzavřený odvoz
@@ -140,7 +145,9 @@ export class Game {
   }
 
   update(dtMs: number): void {
-    this.fleet.update(this.clock.tick(dtMs));
+    const days = this.clock.tick(dtMs);
+    this.fleet.update(days);
+    this.roadFleet.update(days);
     this.construction.update(dtMs);
   }
 

@@ -13,6 +13,7 @@ export interface ToolbarActions {
   rotateView: (direction: 1 | -1) => void;
   openMinimap: () => void;
   openTrainList: () => void;
+  openVehicleList: () => void;
   openNews: () => void;
   toggleInfo: () => void;
 }
@@ -72,9 +73,10 @@ export class Hud {
       button('⚙️', 'Nastavení a klávesové zkratky', actions.openSettings),
       button('💰', 'Finance (F)', actions.openFinance),
       button('🚆', 'Seznam vlaků (V)', actions.openTrainList),
+      button('🚌', 'Seznam aut (A)', actions.openVehicleList),
       button('📰', 'Historie zpráv (H)', actions.openNews),
       button('🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild),
-      button('🛣️', 'Stavba silnic (S)', actions.openRoadBuild),
+      button('🛣️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild),
       this.infoButton,
       rotate,
       button('🗺️', 'Minimapa (M)', actions.openMinimap),

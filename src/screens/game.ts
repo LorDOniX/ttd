@@ -1,5 +1,6 @@
 import { START_YEAR, formatDate } from '../game/clock';
 import { Game } from '../game/game';
+import type { RoadVehicle } from '../game/roadVehicles';
 import type { Train } from '../game/trains';
 import { launch, returnToTitle, writeAutosave, type LaunchIntent, type NewGameOptions } from '../game/launch';
 import { parseSave, restoreGame } from '../game/save';
@@ -16,6 +17,7 @@ import { openMinimap } from '../ui/minimap';
 import { Shortcuts } from '../ui/shortcuts';
 import { openTileInfo } from '../ui/tileInfo';
 import { openTrain, openTrainList } from '../ui/trainWindow';
+import { openRoadDepot, openRoadVehicle, openVehicleList } from '../ui/roadVehicles';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
 import { NO_OWNER } from '../world/map';
@@ -80,13 +82,22 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     setVisible: (visible: boolean) => terrain.setGridVisible(visible),
   };
   const focus = (x: number, z: number): void => isoCamera.focus(x, z);
+  const vehicleLinks = {
+    focus,
+    openRoadDepot: (depot: Depot) => openRoadDepot(windows, game, depot, vehicleLinks),
+  };
   const links = {
     focus,
     openDepot: (depot: Depot) => openDepot(windows, game, depot, focus),
+    openRoadDepot: vehicleLinks.openRoadDepot,
     openTown: (town: Town) => openTown(windows, game, town, focus),
     openIndustry: (industry: Industry) => openIndustry(windows, game, industry, focus),
     openStation: (station: Station) =>
-      openStation(windows, game, station, { focus, openTrain: (train: Train) => openTrain(windows, game, train, links) }),
+      openStation(windows, game, station, {
+        focus,
+        openTrain: (train: Train) => openTrain(windows, game, train, links),
+        openVehicle: (vehicle: RoadVehicle) => openRoadVehicle(windows, game, vehicle, vehicleLinks),
+      }),
   };
   buildTools.onInspect = (tile) => openTileInfo(windows, game, tile, links);
   const actions: ToolbarActions = {
@@ -105,6 +116,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
     openTrainList: () => openTrainList(windows, game, links),
+    openVehicleList: () => openVehicleList(windows, game, vehicleLinks),
     openNews: () => openNewsLog(windows, game, focus),
     toggleInfo: () => buildTools.toggleTool('info'),
   };
@@ -123,12 +135,15 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     { codes: ['KeyN'], key: 'N', label: 'Nástupiště', run: () => buildTools.toggleTool('station') },
     { codes: ['KeyD'], key: 'D', label: 'Depo', run: () => buildTools.toggleTool('depot') },
     { codes: ['KeyS'], key: 'S', label: 'Silnice', run: () => buildTools.toggleTool('road') },
+    { codes: ['KeyZ'], key: 'Z', label: 'Zastávka aut', run: () => buildTools.toggleTool('road-stop') },
+    { codes: ['KeyU'], key: 'U', label: 'Garáž aut', run: () => buildTools.toggleTool('road-depot') },
     { codes: ['KeyB'], key: 'B', label: 'Návěstidlo', run: () => buildTools.toggleTool('signal') },
     { codes: ['KeyX'], key: 'X', label: 'Demolice', run: () => buildTools.toggleTool('demolish') },
     { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště nebo depo', run: () => buildTools.rotate() },
     { codes: ['KeyI'], key: 'I', label: 'Informace o dlaždici („?“)', run: actions.toggleInfo },
     { codes: ['KeyF'], key: 'F', label: 'Finance', run: actions.openFinance },
     { codes: ['KeyV'], key: 'V', label: 'Seznam vlaků', run: actions.openTrainList },
+    { codes: ['KeyA'], key: 'A', label: 'Seznam aut', run: actions.openVehicleList },
     { codes: ['KeyH'], key: 'H', label: 'Historie zpráv', run: actions.openNews },
     { codes: ['KeyM'], key: 'M', label: 'Minimapa', run: actions.openMinimap },
     { codes: ['KeyG'], key: 'G', label: 'Mřížka', run: () => grid.setVisible(!grid.visible()) },
@@ -202,11 +217,22 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
       openTrain(windows, game, train, links);
       return;
     }
+    const vehicleId = view.vehicleAt(e.clientX, e.clientY);
+    const vehicle = game.roadFleet.vehicles.find((v) => v.id === vehicleId);
+    if (vehicle) {
+      openRoadVehicle(windows, game, vehicle, vehicleLinks);
+      return;
+    }
     const tile = tileAt(e.clientX, e.clientY);
     if (!tile) return;
     const depot = world.rail.depotAt(tile.x, tile.y);
     if (depot) {
       links.openDepot(depot);
+      return;
+    }
+    const roadDepot = world.rail.roadDepotAt(tile.x, tile.y);
+    if (roadDepot) {
+      links.openRoadDepot(roadDepot);
       return;
     }
     const industry = industryAt(world.industries, tile.x, tile.y);

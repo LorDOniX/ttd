@@ -5,6 +5,8 @@ import {
   DEMOLISH_TOWN_ROAD_COST,
   DEPOT_COST,
   PLATFORM_TILE_COST,
+  ROAD_DEPOT_COST,
+  ROAD_STOP_COST,
   ROAD_TILE_COST,
   SIGNAL_COST,
   TRACK_PIECE_COST,
@@ -20,7 +22,8 @@ import { buildingAt, buildingCapacity, demolishBuilding } from '../world/town';
 // Rychlost postupné výstavby kolejí a silnic
 const PIECES_PER_SECOND = 25;
 
-export function stationCost(shape: StationShape): number {
+export function stationCost(shape: StationShape & { kind?: 'road' }): number {
+  if (shape.kind === 'road') return ROAD_STOP_COST;
   return PLATFORM_TILE_COST * shape.length * shape.tracks;
 }
 
@@ -43,7 +46,12 @@ export function infrastructureValue(world: World): number {
     }
   }
   for (const station of rail.stations) value += stationCost(station);
-  return value + rail.depots.length * DEPOT_COST + rail.signals.size * SIGNAL_COST;
+  return (
+    value +
+    rail.depots.length * DEPOT_COST +
+    rail.roadDepots.length * ROAD_DEPOT_COST +
+    rail.signals.size * SIGNAL_COST
+  );
 }
 
 export type Job = { kind: 'track'; step: PathStep } | { kind: 'road'; step: RoadStep };
@@ -87,16 +95,49 @@ export class Construction {
 
   // Vrací chybovou hlášku, nebo null při úspěchu
   buildStation(shape: StationShape): string | null {
-    const { rail, towns } = this.game.world;
-    const { x, y } = shape;
+    const { rail } = this.game.world;
     const cost = stationCost(shape);
     if (!rail.canPlaceStation(shape)) return 'Sem nástupiště postavit nelze.';
     if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+    const { name, townId } = this.stationName(shape);
+    this.game.spend(cost, 'construction');
+    rail.addStation({ ...shape, name, townId });
+    this.game.news(`Postaveno nástupiště ${name}.`, shape);
+    this.game.events.emit('railChanged');
+    return null;
+  }
 
+  // Průjezdná zastávka aut na rovné silnici; silnice zůstane městu, které ji vlastní
+  buildRoadStop(x: number, y: number): string | null {
+    const { rail } = this.game.world;
+    const axis = rail.roadStopAxis(x, y);
+    if (!axis) return 'Zastávka aut jde jen na rovnou silnici bez křižovatky.';
+    if (this.game.money < ROAD_STOP_COST) return `Nedostatek peněz (${formatMoney(ROAD_STOP_COST)}).`;
+    const { name, townId } = this.stationName({ x, y, axis, length: 1, tracks: 1 });
+    this.game.spend(ROAD_STOP_COST, 'construction');
+    rail.addRoadStop(x, y, axis, name, townId);
+    this.game.news(`Postavena zastávka aut ${name}.`, { x, y });
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
+  buildRoadDepot(x: number, y: number, entrance: Edge): string | null {
+    const { map, rail } = this.game.world;
+    if (!map.isFree(x, y)) return 'Sem garáž postavit nelze.';
+    if (this.game.money < ROAD_DEPOT_COST) return `Nedostatek peněz (${formatMoney(ROAD_DEPOT_COST)}).`;
+    this.game.spend(ROAD_DEPOT_COST, 'construction');
+    rail.addRoadDepot(x, y, entrance);
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
+  // Jméno podle města s největším dílem v dosahu, jinak podle závodu v dosahu, nakonec nejbližšího města
+  private stationName(shape: StationShape): { name: string; townId: number } {
+    const { rail, towns } = this.game.world;
+    const { x, y } = shape;
     const nearest = [...towns].sort(
       (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
     )[0];
-    // Jméno podle města s největším dílem v dosahu, jinak podle závodu v dosahu, nakonec nejbližšího města
     const covered = [...this.game.passengers.coverage(shape).shares].sort((a, b) => b[1] - a[1])[0]?.[0];
     const industry = this.game.freight.industriesInReach(shape)[0];
     const town = covered ?? nearest;
@@ -104,12 +145,7 @@ export class Construction {
     const taken = new Set(rail.stations.map((s) => s.name));
     let name = base;
     for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
-
-    this.game.spend(cost, 'construction');
-    rail.addStation({ ...shape, name, townId: town.id });
-    this.game.news(`Postaveno nástupiště ${name}.`, shape);
-    this.game.events.emit('railChanged');
-    return null;
+    return { name, townId: town.id };
   }
 
   // Návěstidlo postaví, nebo existující odstraní za polovinu ceny
@@ -149,7 +185,10 @@ export class Construction {
       if (!map.inBounds(x, y)) continue;
       const type = map.get(x, y);
       const railway = [TileType.Rail, TileType.Crossing, TileType.Bridge, TileType.Station, TileType.Depot].includes(type);
-      const blocker = railway ? this.game.fleet.demolitionBlocker(x, y) : null;
+      const roadway = [TileType.Road, TileType.Crossing, TileType.RoadStop, TileType.RoadDepot].includes(type);
+      const blocker =
+        (railway ? this.game.fleet.demolitionBlocker(x, y) : null) ??
+        (roadway ? this.game.roadFleet.demolitionBlocker(x, y) : null);
       if (blocker) {
         blocked ??= blocker;
         continue;
@@ -172,6 +211,16 @@ export class Construction {
         }
         case TileType.Depot:
           cost -= DEPOT_COST * DEMOLISH_REFUND;
+          tiles.push({ x, y });
+          break;
+        case TileType.RoadStop: {
+          const stop = rail.stationAt(x, y);
+          if (stop) cost -= ROAD_STOP_COST * DEMOLISH_REFUND;
+          tiles.push({ x, y });
+          break;
+        }
+        case TileType.RoadDepot:
+          cost -= ROAD_DEPOT_COST * DEMOLISH_REFUND;
           tiles.push({ x, y });
           break;
         case TileType.Road:
@@ -226,6 +275,19 @@ export class Construction {
         case TileType.Depot: {
           const depot = rail.depotAt(x, y);
           if (depot) rail.removeDepot(depot);
+          railChanged = true;
+          break;
+        }
+        // Zbouráním zastávky zůstane silnice
+        case TileType.RoadStop: {
+          const stop = rail.stationAt(x, y);
+          if (stop) rail.removeStation(stop);
+          railChanged = true;
+          break;
+        }
+        case TileType.RoadDepot: {
+          const depot = rail.roadDepotAt(x, y);
+          if (depot) rail.removeRoadDepot(depot);
           railChanged = true;
           break;
         }

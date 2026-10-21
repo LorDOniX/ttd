@@ -1,9 +1,9 @@
-import { FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDINGS, WAGON_CAPACITY } from './balance';
-import { CARGOS, FREIGHT_TYPES, TOWN_ACCEPTS, type FreightType } from './cargo';
+import { FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDINGS } from './balance';
+import { CARGOS, FREIGHT_TYPES, TOWN_ACCEPTS, type Carrier, type FreightType, type Hold } from './cargo';
 import { formatMoney, type Game } from './game';
 import { catchmentArea, fare, type Area } from './passengers';
 import { inflowFactor, recordVisit } from './rating';
-import { trainModel, wagonsAtStation, type Train } from './trains';
+import { roadVehicleModel } from './roadVehicles';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
 import type { Station, StationShape } from '../world/rail';
 
@@ -60,7 +60,11 @@ export class Freight {
 
   // Náklad se na nástupiště sváží, jen když ho tam odváží některý vlak s vagony na tento náklad
   private servedBy(type: FreightType): Set<number> {
-    return new Set(this.game.fleet.trains.filter((t) => t.cargo === type).flatMap((t) => t.orders ?? []));
+    const trains = this.game.fleet.trains.filter((t) => t.cargo === type).flatMap((t) => t.orders ?? []);
+    const vehicles = this.game.roadFleet.vehicles
+      .filter((v) => roadVehicleModel(v).cargo === type)
+      .flatMap((v) => v.orders ?? []);
+    return new Set([...trains, ...vehicles]);
   }
 
   pickupStations(industry: Industry): Station[] {
@@ -73,10 +77,10 @@ export class Freight {
   }
 
   // Vyloží náklad, pokud ho nástupiště vykupuje, a naloží čekající; loadOnly jen doplní. Vrací přeložené tuny.
-  exchange(train: Train, station: Station, type: FreightType, loadOnly = false): number {
+  exchange(train: Carrier, hold: Hold, station: Station, type: FreightType, loadOnly = false): number {
     const { game } = this;
     const spec = CARGOS[type];
-    const atPlatform = wagonsAtStation(train, station) * WAGON_CAPACITY;
+    const { atPlatform } = hold;
     let unloaded = 0;
     const accepted = this.accepted(station).includes(type);
     if (!loadOnly && train.passengers > 0 && train.boardedStation !== station.id && accepted) {
@@ -105,7 +109,7 @@ export class Freight {
 
     const free = unloaded > 0 ? atPlatform : Math.max(0, atPlatform - train.passengers);
     const stock = station.freight[type];
-    const loading = Math.min(free, train.wagons * WAGON_CAPACITY - train.passengers, Math.floor(stock));
+    const loading = Math.min(free, hold.capacity - train.passengers, Math.floor(stock));
     const staying = train.passengers;
     if (loading > 0 || staying === 0) {
       const total = staying + loading;
@@ -115,7 +119,7 @@ export class Freight {
       station.freight[type] = stock - loading;
       train.boardedStation = station.id;
     }
-    recordVisit(station, type, game.clock.now, trainModel(train).speed);
+    recordVisit(station, type, game.clock.now, hold.speed);
     game.events.emit('stationsChanged');
     return unloaded + loading;
   }

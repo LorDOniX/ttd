@@ -27,6 +27,8 @@ function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: nu
     case TileType.Rail:
     case TileType.Crossing:
       return rail.mask(x, y) === 1 << axisPiece(dir % 2 === 0 ? 'x' : 'y');
+    case TileType.RoadStop:
+      return rail.stationAt(x, y)?.axis === (dir % 2 === 0 ? 'y' : 'x');
     default:
       return false;
   }
@@ -34,7 +36,7 @@ function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: nu
 
 function straightOnly(map: GameMap, x: number, y: number): boolean {
   const type = map.get(x, y);
-  return type === TileType.Rail || type === TileType.Crossing;
+  return type === TileType.Rail || type === TileType.Crossing || type === TileType.RoadStop;
 }
 
 // A* po dlaždicích ve 4 směrech; stav = dlaždice a směr příjezdu

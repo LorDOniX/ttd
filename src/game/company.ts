@@ -1,12 +1,14 @@
 import { CARGO_TYPES } from './cargo';
 import type { Game, YearStats } from './game';
+import { vehicleSellPrice } from './roadVehicles';
 import { sellPrice } from './trains';
 
-// Hodnota společnosti jako v OpenTTD: peníze bez úvěru a prodejní cena vlaků
+// Hodnota společnosti jako v OpenTTD: peníze bez úvěru a prodejní cena vlaků a aut
 export function companyValue(game: Game): number {
   const today = game.clock.day;
-  const vehicles = game.fleet.trains.reduce((sum, t) => sum + sellPrice(t, today), 0);
-  return game.money - game.loan + vehicles;
+  const trains = game.fleet.trains.reduce((sum, t) => sum + sellPrice(t, today), 0);
+  const vehicles = game.roadFleet.vehicles.reduce((sum, v) => sum + vehicleSellPrice(v, today), 0);
+  return game.money - game.loan + trains + vehicles;
 }
 
 export interface PerformancePart {
@@ -32,7 +34,7 @@ function delivered(stats: YearStats): number {
 export function performance(game: Game): PerformancePart[] {
   const year = game.lastYear ?? game.thisYear;
   const now = game.clock.now;
-  const trains = game.fleet.trains;
+  const trains = [...game.fleet.trains, ...game.roadFleet.vehicles];
   const profitable = trains.filter((t) => t.lastIncome > t.lastCosts).length;
   const stations = game.world.rail.stations.filter((s) =>
     CARGO_TYPES.some((c) => s.ratings[c].lastVisit >= 0 && now - s.ratings[c].lastVisit <= SERVED_WITHIN_DAYS),
@@ -42,7 +44,7 @@ export function performance(game: Game): PerformancePart[] {
   const balance = game.money - game.loan;
   return [
     {
-      label: 'Ziskové vlaky',
+      label: 'Zisková vozidla',
       value: `${profitable} z ${trains.length}`,
       points: trains.length > 0 ? share(profitable, trains.length) : 0,
     },

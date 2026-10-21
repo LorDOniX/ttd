@@ -35,7 +35,9 @@ export function openDepot(
 
   // Výchozí nástupiště jsou dvě nejbližší k depu
   const stationsByDistance = (): { id: number; name: string }[] =>
-    [...game.world.rail.stations].sort(
+    game.world.rail.stations
+      .filter((s) => s.kind !== 'road')
+      .sort(
       (a, b) => Math.hypot(a.x - depot.x, a.y - depot.y) - Math.hypot(b.x - depot.x, b.y - depot.y),
     );
 

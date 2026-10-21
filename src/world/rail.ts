@@ -91,6 +91,8 @@ export interface Station extends StationShape {
   freight: FreightStock;
   // Hodnocení zvlášť pro každý druh nákladu jako v OpenTTD
   ratings: Record<Cargo, CargoRating>;
+  // Zastávka aut na silnici; bez údaje železniční nástupiště
+  kind?: 'road';
 }
 
 export interface Depot {
@@ -126,6 +128,8 @@ export class RailNetwork {
   readonly pieces: Uint8Array;
   readonly stations: Station[] = [];
   readonly depots: Depot[] = [];
+  // Garáže aut; id sdílí s depy, aby byla jednoznačná
+  readonly roadDepots: Depot[] = [];
   // Dlaždice s návěstidlem (index y * šířka + x); dělí trať na úseky, před kterými vlak smí čekat
   readonly signals = new Set<number>();
   // Id se nerecyklují, aby odkazy (např. trasy vlaků) po demolici neukazovaly jinam
@@ -214,16 +218,60 @@ export class RailNetwork {
   }
 
   stationAt(x: number, y: number): Station | undefined {
-    if (!this.map.isType(x, y, TileType.Station)) return undefined;
+    if (!this.map.isType(x, y, TileType.Station) && !this.map.isType(x, y, TileType.RoadStop)) return undefined;
     return this.stations.find((s) => stationTiles(s).some((t) => t.x === x && t.y === y));
   }
 
   removeStation(station: Station): void {
     for (const t of stationTiles(station)) {
-      this.map.set(t.x, t.y, TileType.Grass);
+      // Ze zastávky aut zůstane silnice i s vlastníkem
+      this.map.set(t.x, t.y, station.kind === 'road' ? TileType.Road : TileType.Grass);
       this.pieces[t.y * this.map.width + t.x] = 0;
     }
     this.stations.splice(this.stations.indexOf(station), 1);
+  }
+
+  // Zastávka aut jde na rovnou silnici bez křižovatky; vrací směr silnice
+  roadStopAxis(x: number, y: number): Axis | null {
+    if (!this.map.isType(x, y, TileType.Road)) return null;
+    const axis = this.map.roadAxis(x, y);
+    return axis === 'x' || axis === 'y' ? axis : null;
+  }
+
+  addRoadStop(x: number, y: number, axis: Axis, name: string, townId: number): Station {
+    const stop: Station = {
+      x,
+      y,
+      axis,
+      length: 1,
+      tracks: 1,
+      kind: 'road',
+      name,
+      townId,
+      id: this.nextStationId++,
+      waiting: 0,
+      freight: emptyFreight(),
+      ratings: newRatings(),
+    };
+    this.map.set(x, y, TileType.RoadStop);
+    this.stations.push(stop);
+    return stop;
+  }
+
+  addRoadDepot(x: number, y: number, entrance: Edge): Depot {
+    const depot = { id: this.nextDepotId++, x, y, entrance };
+    this.map.set(x, y, TileType.RoadDepot);
+    this.roadDepots.push(depot);
+    return depot;
+  }
+
+  removeRoadDepot(depot: Depot): void {
+    this.map.set(depot.x, depot.y, TileType.Grass);
+    this.roadDepots.splice(this.roadDepots.indexOf(depot), 1);
+  }
+
+  roadDepotAt(x: number, y: number): Depot | undefined {
+    return this.roadDepots.find((d) => d.x === x && d.y === y);
   }
 
   canPlaceDepot(x: number, y: number): boolean {

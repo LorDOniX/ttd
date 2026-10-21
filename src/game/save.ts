@@ -1,8 +1,9 @@
-import { RATING_START, STATION_LENGTH } from './balance';
+import { RATING_START, ROAD_VEHICLE_MODELS, STATION_LENGTH } from './balance';
 import { CARGO_TYPES, FREIGHT_TYPES, emptyFreight, isCargo, newRatings, type Cargo, type CargoRating, type FreightStock } from './cargo';
 import { Game, emptyYear, type ViewState, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Job } from './construction';
+import type { RoadVehicle } from './roadVehicles';
 import type { Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
@@ -12,8 +13,8 @@ import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
 // 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům;
-// 11: den poslední dodávky (zánik závodů); 12: hodnocení nástupiště podle druhu nákladu
-const SAVE_VERSION = 12;
+// 11: den poslední dodávky (zánik závodů); 12: hodnocení nástupiště podle druhu nákladu; 13: auta, zastávky a garáže
+const SAVE_VERSION = 13;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -30,8 +31,10 @@ export interface SaveData {
     nextStationId: number;
     nextDepotId: number;
     signals?: number[];
+    roadDepots?: Depot[];
   };
   fleet: { trains: Train[]; nextId: number };
+  roadFleet?: { vehicles: RoadVehicle[]; nextId: number };
   game: {
     companyName: string;
     money: number;
@@ -105,8 +108,10 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       nextStationId: rail.nextStationId,
       nextDepotId: rail.nextDepotId,
       signals: [...rail.signals],
+      roadDepots: rail.roadDepots,
     },
     fleet: { trains: fleet.trains, nextId: fleet.nextId },
+    roadFleet: { vehicles: game.roadFleet.vehicles, nextId: game.roadFleet.nextId },
     game: {
       companyName: game.companyName,
       money: game.money,
@@ -191,7 +196,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -246,6 +251,7 @@ export function restoreGame(data: SaveData): Game {
     }),
   );
   rail.depots.push(...data.rail.depots);
+  rail.roadDepots.push(...(Array.isArray(data.rail.roadDepots) ? data.rail.roadDepots : []));
   rail.nextStationId = data.rail.nextStationId;
   rail.nextDepotId = data.rail.nextDepotId;
   // Starší uložení návěstidla nemá; neplatné indexy se zahodí
@@ -290,6 +296,14 @@ export function restoreGame(data: SaveData): Game {
   );
   game.fleet.nextId = data.fleet.nextId;
   game.fleet.nextGroupId = Math.max(0, ...game.fleet.trains.map((t) => t.orderGroup ?? 0)) + 1;
+  // Starší uložení auta nemá; vozidla neznámého modelu se zahodí
+  const roadFleet = isObject(data.roadFleet) ? data.roadFleet : { vehicles: [], nextId: 1 };
+  game.roadFleet.vehicles.push(
+    ...(Array.isArray(roadFleet.vehicles) ? roadFleet.vehicles : []).filter(
+      (v) => isObject(v) && ROAD_VEHICLE_MODELS.some((m) => m.id === v.modelId) && Array.isArray(v.path),
+    ),
+  );
+  game.roadFleet.nextId = Number.isInteger(roadFleet.nextId) ? roadFleet.nextId : 1;
   game.view = validView(data.view);
   // Cizí soubor může obsahovat nesmysly; místo se před stavbou kontroluje znovu
   game.construction.restore((data.construction ?? []).filter((job) => validJob(job, width, height)));

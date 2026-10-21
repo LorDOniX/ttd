@@ -2,6 +2,7 @@ import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN } from '../game/ba
 import { CARGOS, FREIGHT_TYPES } from '../game/cargo';
 import { companyValue, performance, performanceScore, performanceTitle } from '../game/company';
 import { EXPENSE_KINDS, Game, formatMoney, type ExpenseKind, type YearStats } from '../game/game';
+import { roadVehicleModel } from '../game/roadVehicles';
 import { trainModel } from '../game/trains';
 import { barChart } from './chart';
 import { h } from './dom';
@@ -12,7 +13,7 @@ type Tab = 'overview' | 'charts' | 'trains' | 'company';
 const TABS: [Tab, string][] = [
   ['overview', 'Přehled'],
   ['charts', 'Grafy'],
-  ['trains', 'Vlaky'],
+  ['trains', 'Vozidla'],
   ['company', 'Společnost'],
 ];
 
@@ -139,8 +140,11 @@ function charts(game: Game): HTMLElement {
 }
 
 function trains(game: Game): HTMLElement {
-  const list = game.fleet.trains;
-  if (list.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádné vlaky.');
+  const list = [
+    ...game.fleet.trains.map((t) => ({ ...t, label: `${t.name} (${trainModel(t).name})` })),
+    ...game.roadFleet.vehicles.map((v) => ({ ...v, label: `${v.name} (${roadVehicleModel(v).name})` })),
+  ];
+  if (list.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádná vozidla.');
   const money = (value: number, strong = false): HTMLTableCellElement =>
     moneyCell(value, formatMoney, strong ? 'num strong' : 'num');
   return h(
@@ -149,7 +153,7 @@ function trains(game: Game): HTMLElement {
     h(
       'tr',
       {},
-      h('th', {}, 'Vlak (letos)'),
+      h('th', {}, 'Vozidlo (letos)'),
       h('th', { className: 'num' }, 'Příjmy'),
       h('th', { className: 'num' }, 'Provoz'),
       h('th', { className: 'num' }, 'Zisk'),
@@ -159,7 +163,7 @@ function trains(game: Game): HTMLElement {
       h(
         'tr',
         {},
-        h('td', {}, `${t.name} (${trainModel(t).name})`),
+        h('td', {}, t.label),
         money(t.income),
         money(0 - t.costs),
         money(t.income - t.costs, true),
@@ -235,6 +239,7 @@ export function openFinance(windows: WindowManager, game: Game): void {
     game.events.on('money', refresh),
     game.events.on('railChanged', refresh),
     game.events.on('trainsChanged', refresh),
+    game.events.on('vehiclesChanged', refresh),
     game.clock.events.on('month', refresh),
   ];
   const options = { width: 460, onClose: () => unsubscribe.forEach((off) => off()) };

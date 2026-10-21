@@ -22,11 +22,14 @@ const TILE_NAMES: Record<TileType, string> = {
   [TileType.Trees]: 'Les',
   [TileType.Bridge]: 'Železniční most',
   [TileType.Industry]: 'Průmysl',
+  [TileType.RoadStop]: 'Zastávka aut',
+  [TileType.RoadDepot]: 'Garáž aut',
 };
 
 export interface TileInfoLinks {
   focus: (x: number, z: number) => void;
   openDepot: (depot: Depot) => void;
+  openRoadDepot: (depot: Depot) => void;
   openTown: (town: Town) => void;
   openIndustry: (industry: Industry) => void;
   openStation: (station: Station) => void;
@@ -54,7 +57,7 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
 
     const owner = map.getOwner(x, y);
     const town = owner === NO_OWNER ? null : towns[owner];
-    if (type === TileType.Road || type === TileType.Crossing) {
+    if (type === TileType.Road || type === TileType.Crossing || type === TileType.RoadStop) {
       rows.push(['Vlastník silnice', town ? town.name : 'vaše společnost']);
     }
     if (type === TileType.Building && town) {
@@ -88,6 +91,12 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
     if (depot) {
       rows.push(['Vlaků z depa', String(game.fleet.inDepot(depot).length)]);
       action('Otevřít depo', () => links.openDepot(depot));
+    }
+
+    const roadDepot = rail.roadDepotAt(x, y);
+    if (roadDepot) {
+      rows.push(['Aut z garáže', String(game.roadFleet.inDepot(roadDepot).length)]);
+      action('Otevřít garáž', () => links.openRoadDepot(roadDepot));
     }
 
     const covering = rail.stations.filter((s) => inArea(catchmentArea(s), x, y)).map((s) => s.name);

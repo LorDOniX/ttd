@@ -5,6 +5,8 @@ import {
   MAX_STATION_LENGTH,
   MAX_STATION_TRACKS,
   PLATFORM_TILE_COST,
+  ROAD_DEPOT_COST,
+  ROAD_STOP_COST,
   ROAD_TILE_COST,
   SIGNAL_COST,
   TRACK_PIECE_COST,
@@ -21,7 +23,8 @@ import { findRoadPath, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
-export type BuildTool = 'track' | 'station' | 'depot' | 'signal' | 'road' | 'demolish' | 'info';
+export type BuildTool =
+  'track' | 'station' | 'depot' | 'signal' | 'road' | 'road-stop' | 'road-depot' | 'demolish' | 'info';
 
 // Dlaždice pod kurzorem a poloha kurzoru uvnitř ní (0..1)
 export interface PointerTile extends TilePos {
@@ -78,6 +81,8 @@ export class BuildTools {
   openRoadWindow(): void {
     this.openToolWindow('road-build', 'Stavba silnic', [
       ['road', '🛣️', 'Silnice', 'S', `${formatMoney(ROAD_TILE_COST)} / dílek`],
+      ['road-stop', '🚏', 'Zastávka aut', 'Z', formatMoney(ROAD_STOP_COST)],
+      ['road-depot', '🏠', 'Garáž aut', 'U', formatMoney(ROAD_DEPOT_COST)],
       ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
     ]);
   }
@@ -103,6 +108,7 @@ export class BuildTools {
         'Koleje, silnice a demolice: táhněte levým tlačítkem. Kliknutím položíte jeden dílek koleje ' +
           '(podle polohy kurzoru rovný nebo v rohu dlaždice zatáčku). Nástupiště: kliknutím 1×3, tažením větší. ' +
           'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. ' +
+          'Zastávka aut jde na rovnou silnici, garáž se natočí vjezdem k silnici. ' +
           'R – otočit, Esc – zrušit nástroj.',
       ),
     );
@@ -131,7 +137,7 @@ export class BuildTools {
   toggleTool(tool: BuildTool): void {
     const windowOpen = [...this.buttons.values()].some((buttons) => buttons.has(tool));
     if (!windowOpen && tool !== 'info') {
-      if (tool === 'road') this.openRoadWindow();
+      if (tool === 'road' || tool === 'road-stop' || tool === 'road-depot') this.openRoadWindow();
       else this.openRailWindow();
     }
     this.setTool(this.tool === tool ? null : tool);
@@ -139,7 +145,7 @@ export class BuildTools {
 
   rotate(): void {
     if (this.tool === 'station') this.axis = this.axis === 'x' ? 'y' : 'x';
-    if (this.tool === 'depot') this.entrance = (this.entrance + 1) % 4;
+    if (this.tool === 'depot' || this.tool === 'road-depot') this.entrance = (this.entrance + 1) % 4;
     this.refresh();
   }
 
@@ -155,6 +161,10 @@ export class BuildTools {
     } else if (this.tool === 'track' || this.tool === 'road' || this.tool === 'demolish' || this.tool === 'station') {
       this.dragStart = tile;
       this.updatePath();
+    } else if (this.tool === 'road-stop') {
+      this.report(this.game.construction.buildRoadStop(tile.x, tile.y));
+    } else if (this.tool === 'road-depot') {
+      this.report(this.game.construction.buildRoadDepot(tile.x, tile.y, this.roadDepotEntrance(tile)));
     } else {
       this.report(this.game.construction.buildDepot(tile.x, tile.y, this.depotEntrance(tile)));
     }
@@ -261,6 +271,16 @@ export class BuildTools {
     return this.entrance;
   }
 
+  // Garáž se natočí vjezdem k sousední silnici, jinak podle R
+  private roadDepotEntrance(tile: TilePos): Edge {
+    const { map } = this.game.world;
+    for (let edge = 0; edge < 4; edge++) {
+      const [dx, dy] = EDGE_DELTA[edge];
+      if (map.isType(tile.x + dx, tile.y + dy, TileType.Road)) return edge;
+    }
+    return this.entrance;
+  }
+
   private report(error: string | null): void {
     if (error) this.game.news(error);
   }
@@ -335,6 +355,26 @@ export class BuildTools {
       const ok = rail.canPlaceDepot(tile.x, tile.y);
       this.preview.showDepot(tile.x, tile.y, this.depotEntrance(tile), ok && this.game.money >= DEPOT_COST);
       text = ok ? formatMoney(DEPOT_COST) : 'Sem depo postavit nelze';
+    } else if (this.tool === 'road-stop' && tile) {
+      const axis = rail.roadStopAxis(tile.x, tile.y);
+      if (axis) {
+        const shape = { x: tile.x, y: tile.y, axis, length: 1, tracks: 1 };
+        this.preview.showRoadStop(tile.x, tile.y, axis, this.game.money >= ROAD_STOP_COST);
+        this.showCatchment(shape);
+        text = `Zastávka aut · ${formatMoney(ROAD_STOP_COST)} · ${this.reachText(shape)}`;
+      } else {
+        this.preview.showArea([tile], 'invalid');
+        text = 'Zastávka aut jde jen na rovnou silnici bez křižovatky';
+      }
+    } else if (this.tool === 'road-depot' && tile) {
+      const ok = this.game.world.map.isFree(tile.x, tile.y);
+      this.preview.showRoadDepot(
+        tile.x,
+        tile.y,
+        this.roadDepotEntrance(tile),
+        ok && this.game.money >= ROAD_DEPOT_COST,
+      );
+      text = ok ? `Garáž aut · ${formatMoney(ROAD_DEPOT_COST)}` : 'Sem garáž postavit nelze';
     } else if (this.tool === 'road' && this.dragStart) {
       if (this.roadPath) {
         const tiles = this.roadPath.filter((s) => s.isNew).length;

@@ -580,8 +580,13 @@ export class Fleet {
 
   private exchange(train: Train, station: Station, loadOnly = false): number {
     const { cargo } = train;
-    if (isFreight(cargo)) return this.game.freight.exchange(train, station, cargo, loadOnly);
-    return this.game.passengers.exchange(train, station, loadOnly);
+    const hold = {
+      atPlatform: wagonsAtStation(train, station) * WAGON_CAPACITY,
+      capacity: train.wagons * WAGON_CAPACITY,
+      speed: trainModel(train).speed,
+    };
+    if (isFreight(cargo)) return this.game.freight.exchange(train, hold, station, cargo, loadOnly);
+    return this.game.passengers.exchange(train, hold, station, loadOnly);
   }
 
   // Naplánuje cestu k dalšímu cíli; vlak může pokračovat vpřed, nebo se otočit
@@ -751,7 +756,7 @@ export class Fleet {
   }
 
   private station(id: number): Station | undefined {
-    return this.game.world.rail.stations.find((s) => s.id === id);
+    return this.game.world.rail.stations.find((s) => s.id === id && s.kind !== 'road');
   }
 
   private changed(): void {

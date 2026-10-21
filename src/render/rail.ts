@@ -14,6 +14,12 @@ const WALL = 0x9c6b4a;
 const DOOR = 0x2a2420;
 const BRIDGE = 0x7a7066;
 const BRIDGE_RAIL = 0xa8442c;
+const GLASS = 0x9fc4d8;
+const SIGN = 0xe0c040;
+const GARAGE_WALL = 0xa8a8a0;
+const GARAGE_DOOR = 0x6a7078;
+const GARAGE_ROOF = 0x55585c;
+const ASPHALT = 0x4a4a4e;
 
 // Kvádr s barvou ve vrcholech, posunutý na (x, y, z) dle spodní hrany
 function box(w: number, h: number, d: number, color: number, x: number, y: number, z: number): THREE.BufferGeometry {
@@ -62,7 +68,32 @@ function depotGeometry(): THREE.BufferGeometry {
   ])!;
 }
 
-// Mostovka se zábradlím a pilíři podél osy X; kolej leží na její horní hraně
+// Zastávka aut podél osy X: na obou okrajích silnice prosklený přístřešek a sloupek s označením
+function roadStopGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const side of [-1, 1]) {
+    const z = side * 0.43;
+    parts.push(box(0.5, 0.2, 0.012, GLASS, 0, 0, z + side * 0.05));
+    for (const x of [-0.24, 0.24]) parts.push(box(0.03, 0.22, 0.03, POST, x, 0, z + side * 0.05));
+    parts.push(box(0.56, 0.025, 0.14, ROOF, 0, 0.22, z));
+    parts.push(box(0.02, 0.24, 0.02, POST, side * 0.36, 0, z - side * 0.02));
+    parts.push(box(0.09, 0.06, 0.015, SIGN, side * 0.36, 0.2, z - side * 0.02));
+  }
+  return mergeGeometries(parts)!;
+}
+
+// Garáž aut s vjezdem ve směru +X a kouskem vozovky k silnici
+function roadDepotGeometry(): THREE.BufferGeometry {
+  return mergeGeometries([
+    box(0.7, 0.32, 0.04, GARAGE_WALL, -0.1, 0, -0.34),
+    box(0.7, 0.32, 0.04, GARAGE_WALL, -0.1, 0, 0.34),
+    box(0.04, 0.32, 0.72, GARAGE_WALL, -0.43, 0, 0),
+    box(0.04, 0.08, 0.72, GARAGE_WALL, 0.23, 0.24, 0),
+    box(0.02, 0.24, 0.56, GARAGE_DOOR, 0.22, 0, 0),
+    box(0.78, 0.05, 0.8, GARAGE_ROOF, -0.1, 0.32, 0),
+    box(0.27, 0.006, 0.5, ASPHALT, 0.365, 0, 0),
+  ])!;
+}
 export const BRIDGE_DECK = 0.08;
 function bridgeGeometry(): THREE.BufferGeometry {
   const parts = [box(1, 0.05, 0.62, BRIDGE, 0, BRIDGE_DECK - 0.05, 0)];
@@ -84,6 +115,8 @@ const BRIDGE_MESH = bridgeGeometry();
 const STATION_TILE = stationTileGeometry(false);
 const STATION_TILE_ROOF = stationTileGeometry(true);
 const DEPOT = depotGeometry();
+const ROAD_STOP = roadStopGeometry();
+const ROAD_DEPOT = roadDepotGeometry();
 
 export function entranceRotation(entrance: Edge): number {
   return [Math.PI / 2, 0, -Math.PI / 2, Math.PI][entrance];
@@ -194,6 +227,17 @@ export function createDepotMesh(material: THREE.Material): THREE.Mesh {
   return new THREE.Mesh(DEPOT, material);
 }
 
+export function createRoadStopMesh(material: THREE.Material, x: number, y: number, axis: Axis): THREE.Mesh {
+  const mesh = new THREE.Mesh(ROAD_STOP, material);
+  mesh.position.set(x + 0.5, 0, y + 0.5);
+  mesh.rotation.y = axisRotation(axis);
+  return mesh;
+}
+
+export function createRoadDepotMesh(material: THREE.Material): THREE.Mesh {
+  return new THREE.Mesh(ROAD_DEPOT, material);
+}
+
 export function placeDepot(mesh: THREE.Object3D, x: number, y: number, entrance: Edge): void {
   mesh.position.set(x + 0.5, 0, y + 0.5);
   mesh.rotation.y = entranceRotation(entrance);
@@ -214,9 +258,18 @@ export class RailView {
   rebuild(): void {
     this.track.update(networkTrack(this.rail));
     this.structures.clear();
-    for (const s of this.rail.stations) this.structures.add(createStationObject(s, this.material));
+    for (const s of this.rail.stations) {
+      this.structures.add(
+        s.kind === 'road' ? createRoadStopMesh(this.material, s.x, s.y, s.axis) : createStationObject(s, this.material),
+      );
+    }
     for (const d of this.rail.depots) {
       const mesh = createDepotMesh(this.material);
+      placeDepot(mesh, d.x, d.y, d.entrance);
+      this.structures.add(mesh);
+    }
+    for (const d of this.rail.roadDepots) {
+      const mesh = createRoadDepotMesh(this.material);
       placeDepot(mesh, d.x, d.y, d.entrance);
       this.structures.add(mesh);
     }

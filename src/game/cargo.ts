@@ -134,3 +134,20 @@ export function isCargo(value: unknown): value is Cargo {
 export function isFreight(cargo: Cargo): cargo is FreightType {
   return cargo !== 'passengers';
 }
+
+// Vlak nebo auto při nakládce: náklad na palubě (passengers) a údaje pro výpočet jízdného
+export interface Carrier {
+  name: string;
+  passengers: number;
+  boardedStation: number;
+  boardedAt: number;
+  tiles: number;
+  income: number;
+}
+
+// Místo u nástupiště (vagony mimo něj nenakládají), celková kapacita a rychlost pro hodnocení stanice
+export interface Hold {
+  atPlatform: number;
+  capacity: number;
+  speed: number;
+}

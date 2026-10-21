@@ -4,12 +4,10 @@ import {
   PASSENGERS_MAX_WAITING_MONTHS,
   PASSENGERS_MONTHLY_SHARE,
   STATION_CATCHMENT_RADIUS,
-  WAGON_CAPACITY,
 } from './balance';
-import { CARGO_TYPES } from './cargo';
+import { CARGO_TYPES, type Carrier, type Hold } from './cargo';
 import { formatMoney, type Game } from './game';
 import { inflowFactor, leaveShare, recordVisit, updateRating } from './rating';
-import { trainModel, wagonsAtStation, type Train } from './trains';
 import { TileType } from '../world/map';
 import { stationTiles, type Station, type StationShape } from '../world/rail';
 import { buildingCapacity, townCapacity, type Town } from '../world/town';
@@ -151,9 +149,9 @@ export class Passengers {
   // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající.
   // Vystupuje a nastupuje se jen ve vagonech, které stojí na nástupišti; loadOnly jen doplní (čekání na plné naložení).
   // Vrací počet vyložených a naložených cestujících.
-  exchange(train: Train, station: Station, loadOnly = false): number {
+  exchange(train: Carrier, hold: Hold, station: Station, loadOnly = false): number {
     const { game } = this;
-    const atPlatform = wagonsAtStation(train, station) * WAGON_CAPACITY;
+    const { atPlatform } = hold;
     let unloaded = 0;
     if (!loadOnly && train.passengers > 0 && train.boardedStation !== station.id) {
       unloaded = Math.min(train.passengers, atPlatform);
@@ -178,7 +176,7 @@ export class Passengers {
 
     // Vagony u nástupiště se vyprázdnily, pokud se vystupovalo; jinak jsou obsazené nejdřív ony
     const free = unloaded > 0 ? atPlatform : Math.max(0, atPlatform - train.passengers);
-    const capacity = train.wagons * WAGON_CAPACITY;
+    const capacity = hold.capacity;
     const boarding = Math.min(free, capacity - train.passengers, Math.floor(station.waiting));
     const staying = train.passengers;
     if (boarding > 0 || staying === 0) {
@@ -191,7 +189,7 @@ export class Passengers {
       train.boardedStation = station.id;
     }
     for (const town of this.townsInReach(station)) town.served = true;
-    recordVisit(station, 'passengers', game.clock.now, trainModel(train).speed);
+    recordVisit(station, 'passengers', game.clock.now, hold.speed);
     game.events.emit('stationsChanged');
     return unloaded + boarding;
   }

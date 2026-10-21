@@ -115,7 +115,9 @@ function ordersEditor(game: Game, train: Train, choice: { station: number | null
     ),
   );
 
-  const stations = [...game.world.rail.stations].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+  const stations = game.world.rail.stations
+    .filter((s) => s.kind !== 'road')
+    .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
   const select = h('select', {});
   for (const s of stations) {
     select.append(h('option', { value: String(s.id), selected: s.id === choice.station }, s.name));

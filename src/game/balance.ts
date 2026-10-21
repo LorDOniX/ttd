@@ -1,5 +1,7 @@
 // Vyvážení hry: ceny, výdělky, cestující a růst měst na jednom místě
 
+import type { Cargo } from './cargo';
+
 export const START_MONEY = 1_000_000;
 
 // Úvěr v bance: úrok se platí měsíčně
@@ -49,6 +51,54 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
   { id: 'electric-city', name: 'Městská jednotka', model: 'train-electric-city-a', wagonModel: 'train-electric-city-b', year: 2012, price: 746_000, speed: 9.0, runningCost: 114_000 },
   { id: 'bullet', name: 'Rychlovlak', model: 'train-electric-bullet-a', wagonModel: 'train-electric-bullet-b', year: 2022, price: 896_000, speed: 10.8, runningCost: 143_000 },
 ];
+
+// Silniční vozidla podle OpenTTD: cena ×30,5 a provoz ×36,6 (poměr Kirby Paul Tank ↔ parní lokomotiva),
+// rychlost 0,0469 dlaždice/den na km/h; první generace je k dispozici od začátku hry. Model z car kitu.
+export interface RoadVehicleModel {
+  id: string;
+  name: string;
+  model: string;
+  cargo: Cargo;
+  year: number;
+  price: number;
+  speed: number;
+  runningCost: number;
+  capacity: number;
+}
+
+export const ROAD_VEHICLE_MODELS: readonly RoadVehicleModel[] = [
+  { id: 'bus-regal', name: 'Autobus MPS Regal', model: 'van', cargo: 'passengers', year: 1950, price: 150_000, speed: 2.6, runningCost: 15_600, capacity: 31 },
+  { id: 'bus-leopard', name: 'Autobus Hereford Leopard', model: 'van', cargo: 'passengers', year: 1964, price: 175_000, speed: 4.1, runningCost: 22_000, capacity: 35 },
+  { id: 'bus-foster', name: 'Autobus Foster', model: 'van', cargo: 'passengers', year: 1986, price: 188_000, speed: 5.3, runningCost: 30_600, capacity: 37 },
+  { id: 'bus-foster-2', name: 'Autobus Foster MkII', model: 'van', cargo: 'passengers', year: 2008, price: 201_000, speed: 6.0, runningCost: 41_400, capacity: 40 },
+  { id: 'mail-mps', name: 'Poštovní vůz MPS', model: 'delivery', cargo: 'mail', year: 1950, price: 144_000, speed: 2.3, runningCost: 15_400, capacity: 22 },
+  { id: 'mail-reynard', name: 'Poštovní vůz Reynard', model: 'delivery', cargo: 'mail', year: 1980, price: 169_000, speed: 4.1, runningCost: 28_800, capacity: 28 },
+  { id: 'mail-perry', name: 'Poštovní vůz Perry', model: 'delivery', cargo: 'mail', year: 2018, price: 181_000, speed: 5.3, runningCost: 41_200, capacity: 30 },
+  { id: 'coal-balogh', name: 'Nákladní auto na uhlí Balogh', model: 'truck-flat', cargo: 'coal', year: 1950, price: 135_000, speed: 2.3, runningCost: 15_400, capacity: 20 },
+  { id: 'coal-uhl', name: 'Nákladní auto na uhlí Uhl', model: 'truck-flat', cargo: 'coal', year: 1975, price: 160_000, speed: 4.1, runningCost: 28_800, capacity: 25 },
+  { id: 'coal-dw', name: 'Nákladní auto na uhlí DW', model: 'truck-flat', cargo: 'coal', year: 2014, price: 173_000, speed: 5.3, runningCost: 41_200, capacity: 28 },
+  { id: 'oil-witcombe', name: 'Cisterna Witcombe', model: 'garbage-truck', cargo: 'oil', year: 1950, price: 138_000, speed: 2.3, runningCost: 15_400, capacity: 21 },
+  { id: 'oil-foster', name: 'Cisterna Foster', model: 'garbage-truck', cargo: 'oil', year: 1973, price: 175_000, speed: 4.1, runningCost: 28_800, capacity: 25 },
+  { id: 'oil-perry', name: 'Cisterna Perry', model: 'garbage-truck', cargo: 'oil', year: 2005, price: 188_000, speed: 5.3, runningCost: 41_200, capacity: 27 },
+  { id: 'goods-balogh', name: 'Skříňové auto Balogh', model: 'truck', cargo: 'goods', year: 1950, price: 134_000, speed: 2.3, runningCost: 15_400, capacity: 14 },
+  { id: 'goods-craighead', name: 'Skříňové auto Craighead', model: 'truck', cargo: 'goods', year: 1974, price: 163_000, speed: 4.1, runningCost: 28_800, capacity: 16 },
+  { id: 'goods-goss', name: 'Skříňové auto Goss', model: 'truck', cargo: 'goods', year: 2005, price: 175_000, speed: 5.3, runningCost: 41_200, capacity: 18 },
+  // Dřevo, ruda a ocel podle nákladních aut na uhlí
+  { id: 'wood-1', name: 'Nákladní auto na dřevo', model: 'truck-flat', cargo: 'wood', year: 1950, price: 135_000, speed: 2.3, runningCost: 15_400, capacity: 20 },
+  { id: 'wood-2', name: 'Nákladní auto na dřevo II', model: 'truck-flat', cargo: 'wood', year: 1975, price: 160_000, speed: 4.1, runningCost: 28_800, capacity: 24 },
+  { id: 'wood-3', name: 'Nákladní auto na dřevo III', model: 'truck-flat', cargo: 'wood', year: 2014, price: 173_000, speed: 5.3, runningCost: 41_200, capacity: 27 },
+  { id: 'ore-1', name: 'Nákladní auto na rudu', model: 'truck-flat', cargo: 'iron-ore', year: 1950, price: 135_000, speed: 2.3, runningCost: 15_400, capacity: 22 },
+  { id: 'ore-2', name: 'Nákladní auto na rudu II', model: 'truck-flat', cargo: 'iron-ore', year: 1975, price: 160_000, speed: 4.1, runningCost: 28_800, capacity: 25 },
+  { id: 'ore-3', name: 'Nákladní auto na rudu III', model: 'truck-flat', cargo: 'iron-ore', year: 2014, price: 173_000, speed: 5.3, runningCost: 41_200, capacity: 28 },
+  { id: 'steel-1', name: 'Nákladní auto na ocel', model: 'truck-flat', cargo: 'steel', year: 1950, price: 135_000, speed: 2.3, runningCost: 15_400, capacity: 15 },
+  { id: 'steel-2', name: 'Nákladní auto na ocel II', model: 'truck-flat', cargo: 'steel', year: 1975, price: 160_000, speed: 4.1, runningCost: 28_800, capacity: 18 },
+  { id: 'steel-3', name: 'Nákladní auto na ocel III', model: 'truck-flat', cargo: 'steel', year: 2014, price: 173_000, speed: 5.3, runningCost: 41_200, capacity: 20 },
+];
+
+export const ROAD_STOP_COST = 20_000;
+export const ROAD_DEPOT_COST = 40_000;
+// Životnost silničních vozidel v OpenTTD je kratší než u vlaků
+export const ROAD_VEHICLE_LIFETIME_YEARS = 15;
 
 export const WAGON_PRICE = 50_000;
 export const WAGON_CAPACITY = 30;
