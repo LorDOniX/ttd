@@ -59,6 +59,44 @@ function createRoadAtlas(): THREE.CanvasTexture {
   return texture;
 }
 
+let atlas: THREE.CanvasTexture | null = null;
+
+export function roadAtlas(): THREE.CanvasTexture {
+  atlas ??= createRoadAtlas();
+  return atlas;
+}
+
+// Silnice na dlaždicích tiles, napojená na sousedy, pro které connects vrátí true
+export function roadGeometry(
+  tiles: Iterable<{ x: number; y: number }>,
+  connects: (x: number, y: number) => boolean,
+  lift: number,
+): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  const inset = 0.5 / (CELL * VARIANTS);
+  for (const { x, y } of tiles) {
+    const mask =
+      (connects(x, y - 1) ? N : 0) |
+      (connects(x + 1, y) ? E : 0) |
+      (connects(x, y + 1) ? S : 0) |
+      (connects(x - 1, y) ? W : 0);
+    const u0 = mask / VARIANTS + inset;
+    const u1 = (mask + 1) / VARIANTS - inset;
+    const v = positions.length / 3;
+    positions.push(x, lift, y, x + 1, lift, y, x + 1, lift, y + 1, x, lift, y + 1);
+    uvs.push(u0, 1, u1, 1, u1, 0, u0, 0);
+    indices.push(v, v + 2, v + 1, v, v + 3, v + 2);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export class RoadView {
   readonly object: THREE.Mesh;
   // Které dlaždice byly silnicí při poslední přestavbě
@@ -68,7 +106,7 @@ export class RoadView {
   constructor(private readonly map: GameMap) {
     this.object = new THREE.Mesh(
       new THREE.BufferGeometry(),
-      new THREE.MeshLambertMaterial({ map: createRoadAtlas(), alphaTest: 0.5 }),
+      new THREE.MeshLambertMaterial({ map: roadAtlas(), alphaTest: 0.5 }),
     );
     this.roadTiles = new Uint8Array(map.width * map.height);
     this.changes = new MapChanges(map);
@@ -89,36 +127,15 @@ export class RoadView {
   rebuild(): void {
     const { map } = this;
     this.roadTiles.fill(0);
-    const positions: number[] = [];
-    const uvs: number[] = [];
-    const indices: number[] = [];
-    const lift = 0.005;
-    const inset = 0.5 / (CELL * VARIANTS);
-
+    const tiles: { x: number; y: number }[] = [];
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         if (!map.isRoad(x, y)) continue;
         this.roadTiles[y * map.width + x] = 1;
-        const mask =
-          (map.isRoad(x, y - 1) ? N : 0) |
-          (map.isRoad(x + 1, y) ? E : 0) |
-          (map.isRoad(x, y + 1) ? S : 0) |
-          (map.isRoad(x - 1, y) ? W : 0);
-        const u0 = mask / VARIANTS + inset;
-        const u1 = (mask + 1) / VARIANTS - inset;
-        const v = positions.length / 3;
-        positions.push(x, lift, y, x + 1, lift, y, x + 1, lift, y + 1, x, lift, y + 1);
-        uvs.push(u0, 1, u1, 1, u1, 0, u0, 0);
-        indices.push(v, v + 2, v + 1, v, v + 3, v + 2);
+        tiles.push({ x, y });
       }
     }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
     this.object.geometry.dispose();
-    this.object.geometry = geometry;
+    this.object.geometry = roadGeometry(tiles, (x, y) => map.isRoad(x, y), 0.005);
   }
 }

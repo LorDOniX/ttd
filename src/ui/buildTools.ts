@@ -19,7 +19,7 @@ import type { BuildPreview } from '../render/preview';
 import { TileType, type TilePos } from '../world/map';
 import { EDGE_DELTA, Edge, PIECES, defaultStationShape, opposite, type Axis, type StationShape } from '../world/rail';
 import { findTrackPath, pieceAtCursor, singlePieceStep, type PathStep } from '../world/railPath';
-import { findRoadPath, type RoadStep } from '../world/roadPath';
+import { findRoadPath, roadEdgeAtCursor, singleRoadSteps, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
@@ -198,12 +198,14 @@ export class BuildTools {
     const previous = this.hover;
     this.hover = tile;
     const sameTile = tile?.x === previous?.x && tile?.y === previous?.y;
-    // Na jedné dlaždici se u kolejí může změnit jen vybraný kus podle polohy kurzoru
+    // Na jedné dlaždici se u kolejí může změnit jen vybraný kus a u silnice hrana podle polohy kurzoru
+    const cursorPart = (t: PointerTile): number | null =>
+      this.tool === 'track' ? pieceAtCursor(t.fx, t.fy) : roadEdgeAtCursor(t.fx, t.fy);
     const samePiece =
-      this.tool !== 'track' ||
+      (this.tool !== 'track' && this.tool !== 'road') ||
       !tile ||
       !previous ||
-      pieceAtCursor(tile.fx, tile.fy) === pieceAtCursor(previous.fx, previous.fy);
+      cursorPart(tile) === cursorPart(previous);
     if (sameTile && samePiece) return;
     if (this.dragStart) this.updatePath();
     this.refresh();
@@ -228,9 +230,25 @@ export class BuildTools {
   private updatePath(): void {
     const target = this.hover ?? this.dragStart;
     if (!this.dragStart || !target) return;
-    const { rail } = this.game.world;
     if (this.tool === 'track') this.path = this.trackPath(this.dragStart, target);
-    if (this.tool === 'road') this.roadPath = findRoadPath(rail, this.dragStart, target);
+    if (this.tool === 'road') this.roadPath = this.roadSteps(this.dragStart, target);
+  }
+
+  // Kliknutí (tažení na stejné dlaždici) staví podle polohy kurzoru, tažení trasu
+  private roadSteps(start: TilePos, target: TilePos): RoadStep[] | null {
+    const { rail } = this.game.world;
+    if (start.x !== target.x || start.y !== target.y) return findRoadPath(rail, start, target);
+    return this.hover && singleRoadSteps(rail, start, this.hover.fx, this.hover.fy);
+  }
+
+  // Náhled silnice, vrací text s počtem nových dílků a cenou
+  private showRoad(steps: RoadStep[]): string {
+    const { map } = this.game.world;
+    const n = steps.filter((s) => s.isNew).length;
+    const cost = n * ROAD_TILE_COST;
+    this.preview.showRoad(steps, (x, y) => map.isRoad(x, y), cost <= this.game.money);
+    if (n === 0) return 'Silnice už je postavená';
+    return `${n} ${n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků'} · ${formatMoneyShort(cost)}`;
   }
 
   // Tažení na stejné dlaždici (nebo klik) staví jediný kus podle polohy kurzoru
@@ -397,14 +415,15 @@ export class BuildTools {
       );
       text = ok ? `Garáž aut · ${formatMoneyShort(ROAD_DEPOT_COST)}` : 'Sem garáž postavit nelze';
     } else if (this.tool === 'road' && this.dragStart) {
-      if (this.roadPath) {
-        const tiles = this.roadPath.filter((s) => s.isNew).length;
-        const cost = tiles * ROAD_TILE_COST;
-        this.preview.showArea(this.roadPath, cost <= this.game.money ? 'road' : 'invalid');
-        text = `${tiles} dílků · ${formatMoneyShort(cost)}`;
-      } else {
-        text = 'Silnici nelze vést';
-      }
+      if (this.roadPath) text = this.showRoad(this.roadPath);
+      else if (tile && (tile.x !== this.dragStart.x || tile.y !== this.dragStart.y)) text = 'Silnici nelze vést';
+      else text = 'Sem silnici postavit nelze';
+    } else if (this.tool === 'road' && tile) {
+      // Bez tažení náhled toho, co postaví kliknutí
+      const steps = singleRoadSteps(rail, tile, tile.fx, tile.fy);
+      if (steps) text = this.showRoad(steps);
+      else if (this.game.world.map.isRoad(tile.x, tile.y)) text = 'Silnice – klikněte u okraje pro prodloužení';
+      else text = 'Sem silnici postavit nelze';
     } else if (this.tool === 'info' && tile) {
       const station = rail.stationAt(tile.x, tile.y);
       if (station) {

@@ -1,6 +1,6 @@
 import { MinHeap } from './heap';
 import { GameMap, TileType, type TilePos } from './map';
-import { EDGE_DELTA, RailNetwork, axisPiece, opposite } from './rail';
+import { EDGE_DELTA, Edge, RailNetwork, axisPiece, opposite } from './rail';
 
 export interface RoadStep {
   x: number;
@@ -37,6 +37,36 @@ function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: nu
 function straightOnly(map: GameMap, x: number, y: number): boolean {
   const type = map.get(x, y);
   return type === TileType.Rail || type === TileType.Crossing || type === TileType.RoadStop;
+}
+
+// Kurzor blíž než EDGE_ZONE od středu dlaždice nemíří k žádné hraně
+const EDGE_ZONE = 0.25;
+
+export function roadEdgeAtCursor(fx: number, fy: number): Edge | null {
+  const dx = fx - 0.5;
+  const dy = fy - 0.5;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < EDGE_ZONE) return null;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? Edge.W : Edge.E;
+  return dy < 0 ? Edge.N : Edge.S;
+}
+
+// Kliknutí: silnice na dlaždici pod kurzorem; už postavenou prodlouží přes hranu, ke které kurzor míří
+export function singleRoadSteps(rail: RailNetwork, tile: TilePos, fx: number, fy: number): RoadStep[] | null {
+  const { map } = rail;
+  const { x, y } = tile;
+  if (!isRoadTile(map, x, y)) {
+    const buildable = [Edge.N, Edge.E, Edge.S, Edge.W].some((dir) => passable(map, rail, x, y, dir));
+    return buildable ? [{ x, y, isNew: true }] : null;
+  }
+  const edge = roadEdgeAtCursor(fx, fy);
+  if (edge === null) return null;
+  const nx = x + EDGE_DELTA[edge][0];
+  const ny = y + EDGE_DELTA[edge][1];
+  if (isRoadTile(map, nx, ny) || !passable(map, rail, x, y, edge) || !passable(map, rail, nx, ny, edge)) return null;
+  return [
+    { x, y, isNew: false },
+    { x: nx, y: ny, isNew: true },
+  ];
 }
 
 // A* po dlaždicích ve 4 směrech; stav = dlaždice a směr příjezdu
