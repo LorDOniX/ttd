@@ -3,12 +3,13 @@ import { Game, emptyYear, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Train } from './trains';
 import type { World } from '../world/generator';
+import { INDUSTRY_NAMES, INDUSTRY_SIZE, type Industry } from '../world/industry';
 import { GameMap } from '../world/map';
 import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
-// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla
-const SAVE_VERSION = 5;
+// 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl
+const SAVE_VERSION = 6;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -17,6 +18,7 @@ export interface SaveData {
   seedText: string;
   map: { width: number; height: number; tiles: string; owner: string };
   towns: Town[];
+  industries?: Industry[];
   rail: {
     pieces: string;
     stations: Station[];
@@ -87,6 +89,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       owner: encode(new Uint8Array(map.owner.buffer)),
     },
     towns: world.towns,
+    industries: world.industries,
     rail: {
       pieces: encode(rail.pieces),
       stations: rail.stations,
@@ -112,6 +115,21 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function validIndustry(value: unknown, width: number, height: number): boolean {
+  if (!isObject(value)) return false;
+  const { kind, name, x, y, rotation } = value;
+  const inside = (v: unknown, size: number): boolean =>
+    Number.isInteger(v) && (v as number) >= 0 && (v as number) + INDUSTRY_SIZE <= size;
+  return (
+    typeof kind === 'string' &&
+    kind in INDUSTRY_NAMES &&
+    typeof name === 'string' &&
+    inside(x, width) &&
+    inside(y, height) &&
+    Number.isInteger(rotation)
+  );
+}
+
 // Kontrola struktury souboru; data pochází od uživatele, proto se neověřené nepoužijí
 export function parseSave(text: string): SaveData {
   let data: unknown;
@@ -120,7 +138,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -131,7 +149,7 @@ export function parseSave(text: string): SaveData {
   if (!size(map.width) || !size(map.height)) throw new Error('Neplatná velikost mapy.');
   const strings = [map.tiles, map.owner, rail.pieces, game.companyName, data.seedText];
   const numbers = [data.seed, rail.nextStationId, rail.nextDepotId, fleet.nextId, game.money, game.rngState, clock.day, clock.dayProgress];
-  const arrays = [data.towns, rail.stations, rail.depots, fleet.trains, rail.signals ?? []];
+  const arrays = [data.towns, rail.stations, rail.depots, fleet.trains, rail.signals ?? [], data.industries ?? []];
   if (
     strings.some((s) => typeof s !== 'string') ||
     numbers.some((n) => typeof n !== 'number' || !Number.isFinite(n)) ||
@@ -178,7 +196,14 @@ export function restoreGame(data: SaveData): Game {
     if (Number.isInteger(tile) && tile >= 0 && tile < width * height) rail.signals.add(tile);
   }
 
-  const world: World = { seed: data.seed, map, towns: data.towns, rail };
+  const world: World = {
+    seed: data.seed,
+    map,
+    towns: data.towns,
+    rail,
+    // Starší uložení průmysl nemá; cizí soubor může obsahovat nesmysly
+    industries: (data.industries ?? []).filter((i) => validIndustry(i, width, height)),
+  };
   const game = new Game(world);
   game.companyName = data.game.companyName;
   game.money = data.game.money;

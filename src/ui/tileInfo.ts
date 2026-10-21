@@ -4,6 +4,7 @@ import { Game, formatMoney } from '../game/game';
 import { catchmentArea, inArea } from '../game/passengers';
 import { ratingParts, targetRating } from '../game/rating';
 import { NO_OWNER, TileType, type TilePos } from '../world/map';
+import { industryAt } from '../world/industry';
 import type { Depot } from '../world/rail';
 import { buildingAt, buildingCapacity, type Town } from '../world/town';
 import { h } from './dom';
@@ -20,6 +21,7 @@ const TILE_NAMES: Record<TileType, string> = {
   [TileType.Crossing]: 'Železniční přejezd',
   [TileType.Trees]: 'Les',
   [TileType.Bridge]: 'Železniční most',
+  [TileType.Industry]: 'Průmysl',
 };
 
 export interface TileInfoLinks {
@@ -60,6 +62,8 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
       if (building) rows.push(['Obyvatel budovy', String(buildingCapacity(building.model))]);
     }
     if (town) action(`Město ${town.name}`, () => links.openTown(town));
+    const industry = type === TileType.Industry ? industryAt(game.world.industries, x, y) : undefined;
+    if (industry) rows.push(['Název', industry.name]);
 
     if (type === TileType.Rail || type === TileType.Crossing || type === TileType.Bridge) {
       const value = rail.pieceCount(x, y) * trackPieceCost(map, x, y);

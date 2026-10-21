@@ -444,6 +444,14 @@ kbd {
   white-space: nowrap;
 }
 
+.industry-label {
+  padding: 0 5px;
+  color: #fff;
+  background: rgba(70, 40, 70, 0.8);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .income-label,
 .expense-label {
   color: #4cff6a;

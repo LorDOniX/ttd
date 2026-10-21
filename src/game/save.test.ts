@@ -43,6 +43,15 @@ describe('uložení a načtení', () => {
     );
   });
 
+  it('průmysl se uloží a neplatný z cizího souboru zahodí', () => {
+    const { game } = buildLine();
+    game.world.industries.push({ id: 0, kind: 'coal-mine', name: 'Důl', x: 50, y: 50, rotation: 1 });
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.industries.push({ kind: 'castle', name: 'X', x: 1, y: 1, rotation: 0 }, { kind: 'coal-mine', x: 63 });
+    const copy = restoreGame(parseSave(JSON.stringify(data)));
+    expect(copy.world.industries).toEqual(game.world.industries);
+  });
+
   it('návěstidla se uloží a neplatná se při načtení zahodí', () => {
     const { game } = buildLine();
     game.world.rail.addSignal(20, 12);

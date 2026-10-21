@@ -12,6 +12,8 @@ export enum TileType {
   Trees = 8,
   // Železniční most nad vodou
   Bridge = 9,
+  // Areál dolu, elektrárny apod.
+  Industry = 10,
 }
 
 export interface TilePos {

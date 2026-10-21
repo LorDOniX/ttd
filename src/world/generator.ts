@@ -1,4 +1,5 @@
 import { TOWN_POPULATION } from '../game/balance';
+import { placeIndustries, type Industry } from './industry';
 import { GameMap, TileType } from './map';
 import { CITY_NAMES, VILLAGE_NAMES } from './names';
 import { fbm } from './noise';
@@ -11,6 +12,7 @@ export interface World {
   map: GameMap;
   towns: Town[];
   rail: RailNetwork;
+  industries: Industry[];
 }
 
 export interface GenerateOptions {
@@ -127,6 +129,8 @@ export function generateWorld(
   placeTowns(map, rng, 'city', rng.shuffle([...CITY_NAMES]), towns, year, options.townDensity);
   placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year, options.townDensity);
   generateTrees(map, seed);
+  // Vlastní proud náhody, aby přidání průmyslu nezměnilo města na existujících seedech
+  const industries = placeIndustries(map, towns, new Rng(seed ^ 0x1d872b41));
 
-  return { seed, map, towns, rail: new RailNetwork(map) };
+  return { seed, map, towns, rail: new RailNetwork(map), industries };
 }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-export type Kit = 'city kit commercial' | 'city kit suburban' | 'train kit';
+export type Kit = 'city kit commercial' | 'city kit suburban' | 'city kit industrial' | 'train kit';
 
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<THREE.Group>>();

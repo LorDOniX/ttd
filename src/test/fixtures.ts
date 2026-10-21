@@ -33,7 +33,7 @@ export function makeTown(id: number, x: number, y: number, population = 3000): T
 
 export function emptyGame(size = 64, towns: Town[] = []): Game {
   const map = new GameMap(size, size);
-  return new Game({ seed: 1, map, towns, rail: new RailNetwork(map) });
+  return new Game({ seed: 1, map, towns, rail: new RailNetwork(map), industries: [] });
 }
 
 // Budova města na dlaždici (x, y), aby bylo nástupiště v dosahu

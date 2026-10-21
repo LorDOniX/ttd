@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { generateWorld } from './generator';
-import { townCapacity } from './town';
+import { industryTiles } from './industry';
+import { TileType } from './map';
+import { KIND_RULES, townCapacity } from './town';
 
 describe('generátor světa', () => {
   it('stejný seed dá stejný svět', () => {
@@ -28,5 +30,18 @@ describe('generátor světa', () => {
     for (const town of generateWorld(42, 256, 1950).towns) {
       expect(townCapacity(town)).toBeGreaterThanOrEqual(town.population);
     }
+  });
+
+  it('rozmístí doly a elektrárny na vlastní dlaždice mimo města', () => {
+    const world = generateWorld(42, 256, 1950);
+    const kinds = new Set(world.industries.map((i) => i.kind));
+    expect(kinds).toEqual(new Set(['coal-mine', 'power-station']));
+    for (const industry of world.industries) {
+      for (const t of industryTiles(industry)) expect(world.map.get(t.x, t.y)).toBe(TileType.Industry);
+      for (const town of world.towns) {
+        expect(Math.hypot(town.x - industry.x, town.y - industry.y)).toBeGreaterThan(KIND_RULES[town.kind].maxRadius);
+      }
+    }
+    expect(new Set(world.industries.map((i) => i.name)).size).toBe(world.industries.length);
   });
 });

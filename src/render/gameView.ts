@@ -3,6 +3,7 @@ import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { BuildingsView } from './buildings';
 import { IsoCamera } from './camera';
+import { IndustriesView } from './industries';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
 import { RailView } from './rail';
 import { RoadView } from './roads';
@@ -48,6 +49,8 @@ export class GameView {
     void buildings.rebuild(towns);
     const trees = new TreesView(map);
     void trees.refresh();
+    const industries = new IndustriesView();
+    void industries.build(world.industries);
     const railView = new RailView(world.rail);
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
@@ -60,6 +63,7 @@ export class GameView {
       this.terrain.object,
       roads.object,
       buildings.object,
+      industries.object,
       trees.object,
       railView.object,
       this.signals.object,
