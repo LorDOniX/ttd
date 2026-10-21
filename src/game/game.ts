@@ -1,4 +1,5 @@
 import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN, START_MONEY } from './balance';
+import { CARGOS, FREIGHT_TYPES, emptyFreight, type FreightStock } from './cargo';
 import { Construction, infrastructureValue } from './construction';
 import { Emitter } from './emitter';
 import { GameClock, formatDate, type GameDate } from './clock';
@@ -25,8 +26,8 @@ export interface YearStats {
   income: number;
   expenses: number;
   passengers: number;
-  // Přepravené uhlí v tunách
-  coal: number;
+  // Přepravený náklad v tunách podle druhu
+  freight: FreightStock;
   costs: Record<ExpenseKind, number>;
 }
 
@@ -39,7 +40,7 @@ export function emptyYear(): YearStats {
     income: 0,
     expenses: 0,
     passengers: 0,
-    coal: 0,
+    freight: emptyFreight(),
     costs: { construction: 0, vehicles: 0, running: 0, maintenance: 0, interest: 0 },
   };
 }
@@ -180,10 +181,12 @@ export class Game {
   }
 
   private onYearEnd(year: number): void {
-    const { income, expenses, passengers, coal } = this.thisYear;
-    const coalText = coal > 0 ? ` a ${Math.round(coal).toLocaleString('cs-CZ')} t uhlí` : '';
+    const { income, expenses, passengers, freight } = this.thisYear;
+    const freightText = FREIGHT_TYPES.filter((type) => freight[type] > 0)
+      .map((type) => ` a ${Math.round(freight[type]).toLocaleString('cs-CZ')} ${CARGOS[type].unit}`)
+      .join('');
     this.news(
-      `Rok ${year} skončil – přepraveno ${passengers.toLocaleString('cs-CZ')} cestujících${coalText}, ` +
+      `Rok ${year} skončil – přepraveno ${passengers.toLocaleString('cs-CZ')} cestujících${freightText}, ` +
         `příjmy ${formatMoney(income)}, výdaje ${formatMoney(expenses)}, zisk ${formatMoney(income - expenses)}.`,
     );
     this.history.push({ year, ...this.thisYear });

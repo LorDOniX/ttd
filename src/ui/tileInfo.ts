@@ -1,4 +1,5 @@
 import { MAINTENANCE_RATE } from '../game/balance';
+import { CARGOS } from '../game/cargo';
 import { stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
 import { catchmentArea, inArea } from '../game/passengers';
@@ -85,16 +86,16 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
       const now = game.clock.now;
       const parts = ratingParts(station, now);
       const visit = station.lastVisit < 0 ? 'nikdy' : `před ${Math.floor(now - station.lastVisit)} dny`;
-      const industries = [
-        ...game.freight.industriesInReach(station, 'coal-mine'),
-        ...game.freight.industriesInReach(station, 'power-station'),
-      ].map((i) => i.name);
+      const industries = game.freight.industriesInReach(station).map((i) => i.name);
+      const accepted = game.freight.accepted(station).map((t) => CARGOS[t].noun);
       rows.push(
         ['Název', station.name],
         ['Rozměr', `${station.tracks}×${station.length}`],
         ['Čeká cestujících', String(Math.floor(station.waiting))],
-        ['Uhlí k odvozu', `${Math.floor(station.coal)} t`],
-        ['Výkup uhlí', game.freight.acceptsCoal(station) ? 'ano' : 'ne'],
+        ...game.freight
+          .produced(station)
+          .map((t): [string, string] => [`K odvozu (${CARGOS[t].noun})`, `${Math.floor(station.freight[t])} t`]),
+        ['Výkup', accepted.length > 0 ? accepted.join(', ') : 'nic'],
         ['Hodnocení', `${percent(station.rating)} (směřuje k ${percent(targetRating(station, now))})`],
         [
           'Složení hodnocení',

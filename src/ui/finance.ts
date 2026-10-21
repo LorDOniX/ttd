@@ -1,4 +1,5 @@
 import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN } from '../game/balance';
+import { CARGOS, FREIGHT_TYPES } from '../game/cargo';
 import { EXPENSE_KINDS, Game, formatMoney, type ExpenseKind, type YearStats } from '../game/game';
 import { trainModel } from '../game/trains';
 import { barChart } from './chart';
@@ -82,11 +83,13 @@ function overview(game: Game): HTMLElement {
       'num',
       (n) => n.toLocaleString('cs-CZ'),
     ),
-    row(
-      'Přepraveno uhlí',
-      (s) => s.coal,
-      'num',
-      (n) => `${Math.round(n).toLocaleString('cs-CZ')} t`,
+    ...FREIGHT_TYPES.map((type) =>
+      row(
+        `Přepraveno ${CARGOS[type].noun}`,
+        (s) => s.freight[type],
+        'num',
+        (n) => `${Math.round(n).toLocaleString('cs-CZ')} t`,
+      ),
     ),
     row('Příjmy', (s) => s.income),
     ...EXPENSE_KINDS.map((kind) => row(EXPENSE_LABELS[kind], (s) => 0 - s.costs[kind])),
@@ -115,10 +118,14 @@ function charts(game: Game): HTMLElement {
     barChart(labels, [{ label: 'Cestující', color: '#5a8fd9', values: records.map((r) => r.passengers) }], (v) =>
       v.toLocaleString('cs-CZ'),
     ),
-    h('h4', {}, 'Přepravené uhlí'),
+    h('h4', {}, 'Přepravený náklad'),
     barChart(
       labels,
-      [{ label: 'Uhlí', color: '#6b6b64', values: records.map((r) => r.coal) }],
+      FREIGHT_TYPES.map((type) => ({
+        label: CARGOS[type].name,
+        color: CARGOS[type].color,
+        values: records.map((r) => r.freight[type]),
+      })),
       (v) => `${Math.round(v).toLocaleString('cs-CZ')} t`,
     ),
     h('div', { className: 'form__hint' }, `Rok ${year} zatím neskončil.`),

@@ -1,4 +1,5 @@
 import { RATING_START, STATION_LENGTH } from '../game/balance';
+import { emptyFreight, type FreightStock } from '../game/cargo';
 import { GameMap, TileType, type TilePos } from './map';
 
 export enum Edge {
@@ -86,8 +87,8 @@ export interface Station extends StationShape {
   townId: number;
   // Čekající cestující (necelé číslo kvůli průběžnému přírůstku)
   waiting: number;
-  // Uhlí připravené k odvozu v tunách
-  coal: number;
+  // Náklad připravený k odvozu v tunách podle druhu
+  freight: FreightStock;
   // Hodnocení 0–1, herní den poslední návštěvy vlaku (−1 = nikdy) a jeho rychlost
   rating: number;
   lastVisit: number;
@@ -198,12 +199,12 @@ export class RailNetwork {
     );
   }
 
-  addStation(station: Omit<Station, 'id' | 'waiting' | 'coal' | 'rating' | 'lastVisit' | 'lastSpeed'>): Station {
+  addStation(station: Omit<Station, 'id' | 'waiting' | 'freight' | 'rating' | 'lastVisit' | 'lastSpeed'>): Station {
     const created = {
       ...station,
       id: this.nextStationId++,
       waiting: 0,
-      coal: 0,
+      freight: emptyFreight(),
       rating: RATING_START,
       lastVisit: -1,
       lastSpeed: 0,

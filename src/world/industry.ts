@@ -1,4 +1,5 @@
 import { COAL_PRODUCTION } from '../game/balance';
+import type { FreightType } from '../game/cargo';
 import { GameMap, TileType } from './map';
 import type { Rng } from './rng';
 import { KIND_RULES, type Town } from './town';
@@ -14,7 +15,7 @@ export interface Industry {
   y: number;
   // Natočení areálu po 90°
   rotation: number;
-  // Těžba v tunách za měsíc (elektrárna nic nevyrábí) a odvoz letos a minulý měsíc
+  // Těžba v tunách za měsíc (jen závody, které něco vyrábějí) a odvoz tento a minulý měsíc
   production: number;
   transported: number;
   lastTransported: number;
@@ -22,13 +23,43 @@ export interface Industry {
 
 export const INDUSTRY_SIZE = 3;
 
-export const INDUSTRY_NAMES: Record<IndustryKind, string> = {
-  'coal-mine': 'Uhelný důl',
-  'power-station': 'Elektrárna',
+export interface IndustryType {
+  name: string;
+  produces: FreightType | null;
+  // Rozsah těžby v tunách za měsíc pro závod, který vyrábí
+  production: { min: number; max: number };
+  accepts: readonly FreightType[];
+  // Kolik dlaždic mapy připadá na jeden závod
+  tilesPerIndustry: number;
+}
+
+export const INDUSTRY_TYPES: Record<IndustryKind, IndustryType> = {
+  'coal-mine': {
+    name: 'Uhelný důl',
+    produces: 'coal',
+    production: COAL_PRODUCTION,
+    accepts: [],
+    tilesPerIndustry: 11_000,
+  },
+  'power-station': {
+    name: 'Elektrárna',
+    produces: null,
+    production: { min: 0, max: 0 },
+    accepts: ['coal'],
+    tilesPerIndustry: 16_000,
+  },
 };
 
-// Kolik dlaždic mapy připadá na jeden průmysl daného druhu
-const TILES_PER_INDUSTRY: Record<IndustryKind, number> = { 'coal-mine': 11_000, 'power-station': 16_000 };
+export function isIndustryKind(value: unknown): value is IndustryKind {
+  return typeof value === 'string' && value in INDUSTRY_TYPES;
+}
+
+// Střední těžba druhu závodu, např. pro starší uložení bez údaje
+export function averageProduction(kind: IndustryKind): number {
+  const { min, max } = INDUSTRY_TYPES[kind].production;
+  return Math.round((min + max) / 2);
+}
+
 const MIN_INDUSTRY_DISTANCE = 12;
 // Odstup od středu města, aby areál nebránil jeho růstu
 const TOWN_CLEARANCE = 4;
@@ -50,8 +81,9 @@ export function industryAt(industries: readonly Industry[], x: number, y: number
 export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng): Industry[] {
   const industries: Industry[] = [];
   const area = map.width * map.height;
-  for (const kind of Object.keys(TILES_PER_INDUSTRY) as IndustryKind[]) {
-    const count = Math.max(1, Math.round(area / TILES_PER_INDUSTRY[kind]));
+  for (const kind of Object.keys(INDUSTRY_TYPES) as IndustryKind[]) {
+    const type = INDUSTRY_TYPES[kind];
+    const count = Math.max(1, Math.round(area / type.tilesPerIndustry));
     let placed = 0;
     for (let attempt = 0; attempt < count * 80 && placed < count; attempt++) {
       const x = rng.int(EDGE_MARGIN, map.width - EDGE_MARGIN - INDUSTRY_SIZE);
@@ -78,7 +110,7 @@ export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng):
       if (nearTown || nearIndustry) continue;
 
       candidate.name = industryName(kind, towns, industries, cx, cy);
-      if (kind === 'coal-mine') candidate.production = rng.int(COAL_PRODUCTION.min, COAL_PRODUCTION.max);
+      if (type.produces) candidate.production = rng.int(type.production.min, type.production.max);
       for (const t of tiles) map.set(t.x, t.y, TileType.Industry);
       industries.push(candidate);
       placed++;
@@ -96,7 +128,8 @@ function industryName(
   y: number,
 ): string {
   const town = [...towns].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
-  const base = town ? `${INDUSTRY_NAMES[kind]} ${town.name}` : INDUSTRY_NAMES[kind];
+  const name = INDUSTRY_TYPES[kind].name;
+  const base = town ? `${name} ${town.name}` : name;
   const same = industries.filter((i) => i.name === base || i.name.startsWith(`${base} `)).length;
   return same === 0 ? base : `${base} ${same + 1}`;
 }

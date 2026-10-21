@@ -1,18 +1,17 @@
-import { COAL_PRODUCTION, RATING_START, STATION_LENGTH } from './balance';
+import { RATING_START, STATION_LENGTH } from './balance';
+import { FREIGHT_TYPES, emptyFreight, isCargo, type FreightStock } from './cargo';
 import { Game, emptyYear, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Train } from './trains';
 import type { World } from '../world/generator';
-import { INDUSTRY_NAMES, INDUSTRY_SIZE, type Industry } from '../world/industry';
+import { INDUSTRY_SIZE, averageProduction, isIndustryKind, INDUSTRY_TYPES, type Industry } from '../world/industry';
 import { GameMap } from '../world/map';
 import { RailNetwork, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
-// 7: nákladní doprava uhlí; 8: čekání na plné naložení
-const SAVE_VERSION = 8;
-// Důl ze staršího uložení nemá těžbu, dostane střední hodnotu
-const DEFAULT_MINE_PRODUCTION = Math.round((COAL_PRODUCTION.min + COAL_PRODUCTION.max) / 2);
+// 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí)
+const SAVE_VERSION = 9;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -125,7 +124,7 @@ function validIndustry(value: unknown, width: number, height: number): value is 
     Number.isInteger(v) && (v as number) >= 0 && (v as number) + INDUSTRY_SIZE <= size;
   return (
     typeof kind === 'string' &&
-    kind in INDUSTRY_NAMES &&
+    isIndustryKind(kind) &&
     typeof name === 'string' &&
     inside(x, width) &&
     inside(y, height) &&
@@ -137,7 +136,8 @@ const finiteOr = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
 function restoreIndustry(industry: Industry): Industry {
-  const production = industry.kind === 'coal-mine' ? DEFAULT_MINE_PRODUCTION : 0;
+  // Závod ze staršího uložení nemá těžbu, dostane střední hodnotu
+  const production = INDUSTRY_TYPES[industry.kind].produces ? averageProduction(industry.kind) : 0;
   return {
     ...industry,
     production: finiteOr(industry.production, production),
@@ -145,6 +145,16 @@ function restoreIndustry(industry: Industry): Industry {
     lastTransported: finiteOr(industry.lastTransported, 0),
   };
 }
+
+// Zásoba nákladu podle druhu; verze 7–8 měly jen číslo `coal`
+function restoreFreight(value: unknown, legacyCoal: unknown): FreightStock {
+  const stock = emptyFreight();
+  const saved = isObject(value) ? value : { coal: legacyCoal };
+  for (const type of FREIGHT_TYPES) stock[type] = finiteOr(saved[type], 0);
+  return stock;
+}
+
+const legacyCoal = (value: object): unknown => (value as { coal?: unknown }).coal;
 
 // Kontrola struktury souboru; data pochází od uživatele, proto se neověřené nepoužijí
 export function parseSave(text: string): SaveData {
@@ -154,7 +164,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -202,7 +212,7 @@ export function restoreGame(data: SaveData): Game {
       rating: s.rating ?? RATING_START,
       lastVisit: s.lastVisit ?? -1,
       lastSpeed: s.lastSpeed ?? 0,
-      coal: finiteOr(s.coal, 0),
+      freight: restoreFreight(s.freight, legacyCoal(s)),
     })),
   );
   rail.depots.push(...data.rail.depots);
@@ -227,9 +237,10 @@ export function restoreGame(data: SaveData): Game {
   game.companyName = data.game.companyName;
   game.money = data.game.money;
   game.loan = data.game.loan;
-  // Přepravené uhlí starší uložení nezná
-  game.thisYear = { ...data.game.thisYear, coal: finiteOr(data.game.thisYear.coal, 0) };
-  game.history = data.game.history.map((y) => ({ ...y, coal: finiteOr(y.coal, 0) }));
+  // Přepravený náklad starší uložení nezná nebo zná jen uhlí
+  const year = <T extends YearStats>(y: T): T => ({ ...y, freight: restoreFreight(y.freight, legacyCoal(y)) });
+  game.thisYear = year(data.game.thisYear);
+  game.history = data.game.history.map(year);
   game.rng.state = data.game.rngState;
   game.clock.date = data.clock.date;
   game.clock.day = data.clock.day;
@@ -241,7 +252,7 @@ export function restoreGame(data: SaveData): Game {
       builtDay: t.builtDay ?? 0,
       agingWarned: t.agingWarned ?? false,
       renewing: t.renewing ?? false,
-      cargo: t.cargo === 'coal' ? ('coal' as const) : ('passengers' as const),
+      cargo: isCargo(t.cargo) ? t.cargo : ('passengers' as const),
       fullLoad: Array.isArray(t.fullLoad) ? t.fullLoad.filter((id) => Number.isInteger(id)) : [],
     })),
   );

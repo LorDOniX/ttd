@@ -63,19 +63,40 @@ describe('uložení a načtení', () => {
       delete train.cargo;
       delete train.fullLoad;
     }
-    for (const station of data.rail.stations) delete station.coal;
+    for (const station of data.rail.stations) delete station.freight;
     for (const industry of data.industries) {
       delete industry.production;
       delete industry.transported;
       delete industry.lastTransported;
     }
-    delete data.game.thisYear.coal;
+    delete data.game.thisYear.freight;
     const copy = restoreGame(parseSave(JSON.stringify(data)));
     expect(copy.fleet.trains[0].cargo).toBe('passengers');
     expect(copy.fleet.trains[0].fullLoad).toEqual([]);
-    expect(copy.world.rail.stations.map((s) => s.coal)).toEqual([0, 0]);
+    expect(copy.world.rail.stations.map((s) => s.freight.coal)).toEqual([0, 0]);
     expect(copy.world.industries[0].production).toBe(105);
-    expect(copy.thisYear.coal).toBe(0);
+    expect(copy.thisYear.freight.coal).toBe(0);
+  });
+
+  it('uložení verze 8 převede uhlí na nástupištích a ve statistice na obecný náklad', () => {
+    const { game, depot } = buildLine();
+    game.fleet.setCargo(buyTrain(game, depot), 'coal');
+    game.history.push({ ...game.thisYear, year: 1950 });
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.version = 8;
+    data.rail.stations.forEach((station: Record<string, unknown>, i: number) => {
+      delete station.freight;
+      station.coal = 10 * (i + 1);
+    });
+    for (const year of [data.game.thisYear, ...data.game.history]) {
+      delete year.freight;
+      year.coal = 70;
+    }
+    const copy = restoreGame(parseSave(JSON.stringify(data)));
+    expect(copy.fleet.trains[0].cargo).toBe('coal');
+    expect(copy.world.rail.stations.map((s) => s.freight)).toEqual([{ coal: 10 }, { coal: 20 }]);
+    expect(copy.thisYear.freight).toEqual({ coal: 70 });
+    expect(copy.history[0].freight).toEqual({ coal: 70 });
   });
 
   it('průmysl se uloží a neplatný z cizího souboru zahodí', () => {

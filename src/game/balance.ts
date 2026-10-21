@@ -78,10 +78,10 @@ export const PASSENGERS_MONTHLY_SHARE = 0.03;
 export const PASSENGERS_MAX_WAITING_MONTHS = 3;
 export const STATION_CATCHMENT_RADIUS = 4;
 
-// Uhlí: těžba dolu za měsíc, nosnost vagonu v tunách a sazba za tunu a dlaždici – pomalejší pokles než u cestujících
+// Nákladní doprava: na nástupišti se drží nejvýš těžba za tolik měsíců
+export const FREIGHT_MAX_WAITING_MONTHS = 3;
+// Uhlí: těžba dolu za měsíc a sazba za tunu a dlaždici – pomalejší pokles než u cestujících
 export const COAL_PRODUCTION = { min: 60, max: 150 } as const;
-export const COAL_MAX_WAITING_MONTHS = 3;
-export const COAL_WAGON_MODEL = 'train-carriage-coal';
 export const COAL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
   { maxDays: 45, rate: 8 },
   { maxDays: 90, rate: 5 },

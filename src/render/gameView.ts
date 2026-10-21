@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CARGOS } from '../game/cargo';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { BuildingsView } from './buildings';
@@ -89,13 +90,14 @@ export class GameView {
     const rebuildStationLabels = (): void =>
       stationLabels.rebuild(world.rail.stations, (s) => {
         const towns = game.passengers.townsInReach(s).length > 0;
-        const mine = game.freight.industriesInReach(s, 'coal-mine').length > 0;
-        const plant = game.freight.acceptsCoal(s);
+        const produced = game.freight.produced(s);
+        const accepted = game.freight.accepted(s);
         const parts = [s.name];
         if (towns) parts.push(`čeká ${Math.floor(s.waiting)}`);
-        if (mine) parts.push(`uhlí ${Math.floor(s.coal)} t`);
-        if (plant) parts.push('výkup uhlí');
-        parts.push(towns || mine || plant ? `${Math.round(s.rating * 100)} %` : 'mimo dosah města a průmyslu');
+        for (const type of produced) parts.push(`${CARGOS[type].noun} ${Math.floor(s.freight[type])} t`);
+        if (accepted.length > 0) parts.push(`výkup ${accepted.map((t) => CARGOS[t].noun).join(', ')}`);
+        const served = towns || produced.length > 0 || accepted.length > 0;
+        parts.push(served ? `${Math.round(s.rating * 100)} %` : 'mimo dosah města a průmyslu');
         return parts.join(' · ');
       });
     rebuildStationLabels();

@@ -1,9 +1,10 @@
-import { COAL_FARE_TIERS, COAL_MAX_WAITING_MONTHS, WAGON_CAPACITY } from './balance';
+import { FREIGHT_MAX_WAITING_MONTHS, WAGON_CAPACITY } from './balance';
+import { CARGOS, FREIGHT_TYPES, type FreightType } from './cargo';
 import { formatMoney, type Game } from './game';
 import { catchmentArea, fare, type Area } from './passengers';
 import { inflowFactor } from './rating';
 import { trainModel, wagonsAtStation, type Train } from './trains';
-import { INDUSTRY_SIZE, type Industry, type IndustryKind } from '../world/industry';
+import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
 import type { Station } from '../world/rail';
 
 const DAYS_PER_MONTH = 30;
@@ -17,7 +18,7 @@ function overlaps(area: Area, industry: Industry): boolean {
   );
 }
 
-// Nákladní doprava uhlí: doly ho těží na obsluhovaná nástupiště, elektrárny ho vykupují
+// Nákladní doprava: závody vyrábějí na obsluhovaná nástupiště, jiné závody náklad vykupují
 export class Freight {
   constructor(private readonly game: Game) {
     game.clock.events.on('day', () => this.produce());
@@ -29,53 +30,67 @@ export class Freight {
     });
   }
 
-  industriesInReach(station: Station, kind: IndustryKind): Industry[] {
+  industriesInReach(station: Station): Industry[] {
     const area = catchmentArea(station);
-    return this.game.world.industries.filter((i) => i.kind === kind && overlaps(area, i));
+    return this.game.world.industries.filter((i) => overlaps(area, i));
   }
 
-  acceptsCoal(station: Station): boolean {
-    return this.industriesInReach(station, 'power-station').length > 0;
+  // Druhy nákladu, které závody v dosahu nástupiště vyrábějí
+  produced(station: Station): FreightType[] {
+    const types = this.industriesInReach(station).map((i) => INDUSTRY_TYPES[i.kind].produces);
+    return FREIGHT_TYPES.filter((type) => types.includes(type));
   }
 
-  // Uhlí se na nástupiště sváží, jen když ho obsluhuje některý vlak na uhlí
-  pickupStations(mine: Industry): Station[] {
-    const { rail } = this.game.world;
-    const served = new Set(this.game.fleet.trains.filter((t) => t.cargo === 'coal').flatMap((t) => t.orders ?? []));
-    return rail.stations.filter((s) => served.has(s.id) && this.industriesInReach(s, 'coal-mine').includes(mine));
+  // Druhy nákladu, které nástupiště vykupuje díky závodům v dosahu
+  accepted(station: Station): FreightType[] {
+    const types = this.industriesInReach(station).flatMap((i) => INDUSTRY_TYPES[i.kind].accepts);
+    return FREIGHT_TYPES.filter((type) => types.includes(type));
   }
 
-  // Vyloží uhlí, pokud nástupiště zásobuje elektrárnu, a naloží čekající; loadOnly jen doplní
-  exchange(train: Train, station: Station, loadOnly = false): void {
+  // Náklad se na nástupiště sváží, jen když ho tam odváží některý vlak s vagony na tento náklad
+  pickupStations(industry: Industry): Station[] {
+    const type = INDUSTRY_TYPES[industry.kind].produces;
+    if (!type) return [];
+    const served = new Set(this.game.fleet.trains.filter((t) => t.cargo === type).flatMap((t) => t.orders ?? []));
+    return this.game.world.rail.stations.filter(
+      (s) => served.has(s.id) && this.industriesInReach(s).includes(industry),
+    );
+  }
+
+  // Vyloží náklad, pokud ho nástupiště vykupuje, a naloží čekající; loadOnly jen doplní
+  exchange(train: Train, station: Station, type: FreightType, loadOnly = false): void {
     const { game } = this;
+    const spec = CARGOS[type];
     const atPlatform = wagonsAtStation(train, station) * WAGON_CAPACITY;
     let unloaded = 0;
-    if (!loadOnly && train.passengers > 0 && train.boardedStation !== station.id && this.acceptsCoal(station)) {
+    const accepted = this.accepted(station).includes(type);
+    if (!loadOnly && train.passengers > 0 && train.boardedStation !== station.id && accepted) {
       unloaded = Math.min(train.passengers, atPlatform);
       train.passengers -= unloaded;
       if (unloaded > 0) {
         const days = game.clock.now - train.boardedAt;
-        const income = fare(unloaded, train.tiles, days, COAL_FARE_TIERS);
+        const income = fare(unloaded, train.tiles, days, spec.fareTiers);
         game.earn(income);
         game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
-        game.thisYear.coal += unloaded;
+        game.thisYear.freight[type] += unloaded;
         train.income += income;
         game.news(
-          `${train.name} přivezl ${unloaded} t uhlí do stanice ${station.name}: ` +
+          `${train.name} přivezl ${unloaded} ${spec.unit} do stanice ${station.name}: ` +
             `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}.`,
         );
       }
     }
 
     const free = unloaded > 0 ? atPlatform : Math.max(0, atPlatform - train.passengers);
-    const loading = Math.min(free, train.wagons * WAGON_CAPACITY - train.passengers, Math.floor(station.coal));
+    const stock = station.freight[type];
+    const loading = Math.min(free, train.wagons * WAGON_CAPACITY - train.passengers, Math.floor(stock));
     const staying = train.passengers;
     if (loading > 0 || staying === 0) {
       const total = staying + loading;
       train.boardedAt = total > 0 ? (staying * train.boardedAt + loading * game.clock.now) / total : game.clock.now;
       train.tiles = total > 0 ? Math.round((staying * train.tiles) / total) : 0;
       train.passengers = total;
-      station.coal -= loading;
+      station.freight[type] = stock - loading;
       train.boardedStation = station.id;
     }
     station.lastVisit = game.clock.now;
@@ -84,17 +99,18 @@ export class Freight {
   }
 
   private produce(): void {
-    for (const mine of this.game.world.industries) {
-      if (mine.kind !== 'coal-mine') continue;
-      const stations = this.pickupStations(mine);
+    for (const industry of this.game.world.industries) {
+      const type = INDUSTRY_TYPES[industry.kind].produces;
+      if (!type) continue;
+      const stations = this.pickupStations(industry);
       if (stations.length === 0) continue;
-      const daily = mine.production / DAYS_PER_MONTH / stations.length;
+      const daily = industry.production / DAYS_PER_MONTH / stations.length;
+      const max = industry.production * FREIGHT_MAX_WAITING_MONTHS;
       for (const station of stations) {
         const amount = daily * inflowFactor(station.rating);
-        const max = mine.production * COAL_MAX_WAITING_MONTHS;
-        const added = Math.max(0, Math.min(amount, max - station.coal));
-        station.coal += added;
-        mine.transported += added;
+        const added = Math.max(0, Math.min(amount, max - station.freight[type]));
+        station.freight[type] += added;
+        industry.transported += added;
       }
     }
   }

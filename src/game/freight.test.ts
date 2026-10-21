@@ -33,7 +33,7 @@ describe('nákladní doprava uhlí', () => {
   it('důl sváží uhlí jen na nástupiště, kam jezdí vlak na uhlí', () => {
     const { game, a, b, depot, mine } = coalLine();
     runDays(game, 10);
-    expect(a.coal).toBe(0);
+    expect(a.freight.coal).toBe(0);
     expect(game.freight.pickupStations(mine)).toEqual([]);
 
     const train = buyTrain(game, depot, 2);
@@ -52,12 +52,12 @@ describe('nákladní doprava uhlí', () => {
     const train = buyTrain(game, depot, 2);
     game.fleet.setCargo(train, 'coal');
     game.fleet.start(train, [a.id, b.id]);
-    a.coal = 60;
+    a.freight.coal = 60;
     let paid = 0;
     game.events.on('income', (amount) => (paid += amount));
     runDays(game, 120);
-    expect(game.freight.acceptsCoal(b)).toBe(true);
-    expect(game.thisYear.coal).toBeGreaterThan(0);
+    expect(game.freight.accepted(b)).toEqual(['coal']);
+    expect(game.thisYear.freight.coal).toBeGreaterThan(0);
     expect(paid).toBeGreaterThan(0);
     expect(train.income).toBe(paid);
     expect(game.thisYear.passengers).toBe(0);
@@ -105,9 +105,9 @@ describe('nákladní doprava uhlí', () => {
     const train = buyTrain(game, depot, 2);
     game.fleet.setCargo(train, 'coal');
     game.fleet.start(train, [a.id, b.id]);
-    a.coal = 60;
+    a.freight.coal = 60;
     runDays(game, 120);
-    expect(game.thisYear.coal).toBe(0);
+    expect(game.thisYear.freight.coal).toBe(0);
     expect(train.passengers).toBe(60);
   });
 });

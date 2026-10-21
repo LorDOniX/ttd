@@ -1,7 +1,7 @@
 import { MAX_WAGONS, WAGON_PRICE } from '../game/balance';
+import { CARGOS, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
 import {
-  CARGO_NAMES,
   formatLoad,
   isOld,
   ordersError,
@@ -9,7 +9,6 @@ import {
   trainAge,
   trainLength,
   trainModel,
-  type Cargo,
   type Train,
 } from '../game/trains';
 import type { Depot } from '../world/rail';
@@ -84,8 +83,8 @@ export function openDepot(
           'div',
           { className: 'train__actions' },
           'Náklad:',
-          ...(Object.keys(CARGO_NAMES) as Cargo[]).map((cargo) => {
-            const b = button(CARGO_NAMES[cargo], () => report(fleet.setCargo(train, cargo)));
+          ...(Object.keys(CARGOS) as Cargo[]).map((cargo) => {
+            const b = button(CARGOS[cargo].name, () => report(fleet.setCargo(train, cargo)));
             b.classList.toggle('small-button--active', train.cargo === cargo);
             return b;
           }),

@@ -13,6 +13,7 @@ import {
   type TrainModel,
 } from './balance';
 import { formatMoney, type Game } from './game';
+import { CARGOS, isFreight, type Cargo } from './cargo';
 import { Reservations } from './reservations';
 import { axisPiece, opposite, stationTiles, type Depot, type Station, type StationShape } from '../world/rail';
 import {
@@ -41,7 +42,6 @@ const BLOCKED_WARN_DAYS = 30;
 const FULL_LOAD_CHECK_DAYS = 1;
 
 export type TrainState = 'depot' | 'running' | 'loading' | 'lost';
-export type Cargo = 'passengers' | 'coal';
 
 export interface Train {
   id: number;
@@ -65,7 +65,7 @@ export interface Train {
   waitDays: number;
   // Lokomotiva je na konci soupravy (po otočení směru jízdy)
   flipped: boolean;
-  // Náklad na palubě (cestující nebo tuny uhlí): odkud a kdy naložen, kolik dlaždic ujel
+  // Náklad na palubě (cestující nebo tuny nákladu): odkud a kdy naložen, kolik dlaždic ujel
   passengers: number;
   boardedStation: number;
   boardedAt: number;
@@ -93,14 +93,9 @@ export function trainLength(train: Train): number {
   return (train.wagons + 1) * VEHICLE_LENGTH;
 }
 
-export const CARGO_NAMES: Record<Cargo, string> = { passengers: 'Cestující', coal: 'Uhlí' };
-
 // Náklad na palubě a kapacita, např. „12 / 60 cestujících“ nebo „60 / 60 t uhlí“
 export function formatLoad(train: Train): string {
-  const capacity = train.wagons * WAGON_CAPACITY;
-  return train.cargo === 'coal'
-    ? `${train.passengers} / ${capacity} t uhlí`
-    : `${train.passengers} / ${capacity} cestujících`;
+  return `${train.passengers} / ${train.wagons * WAGON_CAPACITY} ${CARGOS[train.cargo].unit}`;
 }
 
 // Vagony stojící na nástupišti; jen ty nakládají a vykládají
@@ -380,8 +375,7 @@ export class Fleet {
   private fillingUp(train: Train): boolean {
     const station = this.loadingStation(train);
     if (!station || !train.fullLoad.includes(station.id)) return false;
-    if (train.cargo === 'coal') this.game.freight.exchange(train, station, true);
-    else this.game.passengers.exchange(train, station, true);
+    this.exchange(train, station, true);
     this.changed();
     return !this.isFull(train, station);
   }
@@ -503,12 +497,15 @@ export class Fleet {
       train.waitDays = TRAIN_LOADING_DAYS;
       this.reservations.reset(train, this.tail(train));
       const station = this.goal(train);
-      if (station && !('entrance' in station)) {
-        if (train.cargo === 'coal') this.game.freight.exchange(train, station);
-        else this.game.passengers.exchange(train, station);
-      }
+      if (station && !('entrance' in station)) this.exchange(train, station);
     }
     this.changed();
+  }
+
+  private exchange(train: Train, station: Station, loadOnly = false): void {
+    const { cargo } = train;
+    if (isFreight(cargo)) this.game.freight.exchange(train, station, cargo, loadOnly);
+    else this.game.passengers.exchange(train, station, loadOnly);
   }
 
   // Naplánuje cestu k dalšímu cíli; vlak může pokračovat vpřed, nebo se otočit
