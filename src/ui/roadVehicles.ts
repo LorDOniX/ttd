@@ -11,8 +11,10 @@ import {
   vehicleSellPrice,
   type RoadVehicle,
 } from '../game/roadVehicles';
+import { modelThumb } from '../render/icons';
 import type { Depot, Station } from '../world/rail';
 import { h } from './dom';
+import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
 import type { WindowManager } from './windows';
 
@@ -185,7 +187,8 @@ export function openRoadDepot(windows: WindowManager, game: Game, depot: Depot, 
   const report = (error: string | null): void => {
     if (error) game.news(error);
   };
-  let selectedModel: string | null = null;
+  // Výběr modelu musí přežít obnovení okna při událostech aut
+  const picker = new ModelPicker();
   const pendingOrders = new Map<number, [number, number]>();
 
   // Výchozí zastávky jsou dvě nejbližší ke garáži
@@ -204,6 +207,7 @@ export function openRoadDepot(windows: WindowManager, game: Game, depot: Depot, 
     const info = h(
       'div',
       { className: 'train__info' },
+      modelThumb('car kit', model.model),
       h('strong', {}, vehicle.name),
       ` · ${model.name} · ${formatVehicleLoad(vehicle)}`,
       h(
@@ -280,30 +284,29 @@ export function openRoadDepot(windows: WindowManager, game: Game, depot: Depot, 
 
   const render = (): HTMLElement => {
     const models = roadFleet.available();
+    // Seřazené podle nákladu, aby skupiny v nabídce šly za sebou
+    const cargos = Object.keys(CARGOS) as Cargo[];
+    const sorted = [...models].sort((a, b) => cargos.indexOf(a.cargo) - cargos.indexOf(b.cargo));
     // Výchozí volba: nejnovější autobus
-    const chosen =
-      models.find((m) => m.id === selectedModel) ?? models.filter((m) => m.cargo === 'passengers').at(-1) ?? models[0];
-    const select = h('select', {});
-    for (const cargo of Object.keys(CARGOS) as Cargo[]) {
-      const group = h('optgroup', { label: CARGOS[cargo].name });
-      for (const m of models.filter((m) => m.cargo === cargo)) {
-        group.append(
-          h(
-            'option',
-            { value: m.id, selected: m === chosen },
-            `${m.name} – ${formatMoney(m.price)}, ${m.capacity} ${CARGOS[cargo].unit}, ` +
-              `${speedText(m.speed)} dlaždic/den, provoz ${formatMoney(m.runningCost)}/rok`,
-          ),
-        );
-      }
-      if (group.childElementCount > 0) select.append(group);
-    }
-    select.addEventListener('change', () => (selectedModel = select.value));
+    const fallback = models.filter((m) => m.cargo === 'passengers').at(-1) ?? models[0];
+    picker.setOptions(
+      sorted.map((m) => ({
+        value: m.id,
+        kit: 'car kit',
+        model: m.model,
+        name: m.name,
+        details:
+          `${formatMoney(m.price)} · ${m.capacity} ${CARGOS[m.cargo].unit} · ` +
+          `${speedText(m.speed)} dlaždic/den · provoz ${formatMoney(m.runningCost)}/rok`,
+        group: CARGOS[m.cargo].name,
+      })),
+      fallback.id,
+    );
     const buy = smallButton('Koupit', () =>
       report(
         roadFleet.buy(
           depot,
-          models.find((m) => m.id === select.value)!,
+          models.find((m) => m.id === picker.value)!,
         ),
       ),
     );
@@ -311,7 +314,7 @@ export function openRoadDepot(windows: WindowManager, game: Game, depot: Depot, 
     return h(
       'div',
       { className: 'form' },
-      h('div', { className: 'train__actions' }, select, buy),
+      h('div', { className: 'train__actions' }, picker.element, buy),
       h('h4', {}, 'Auta'),
       ...(vehicles.length > 0
         ? vehicles.map(vehicleRow)
@@ -357,7 +360,7 @@ export function openVehicleList(windows: WindowManager, game: Game, links: Vehic
         const tr = h(
           'tr',
           { title: `Otevřít okno auta (${CARGOS[vehicleCargo(v)].name})` },
-          h('td', {}, v.name),
+          h('td', { className: 'table__name' }, modelThumb('car kit', roadVehicleModel(v).model), v.name),
           h('td', {}, vehicleStateText(game, v)),
           h('td', { className: isOldVehicle(v, today) ? 'num warning' : 'num' }, formatYears(vehicleAge(v, today))),
           h('td', { className: 'num' }, formatVehicleLoad(v)),

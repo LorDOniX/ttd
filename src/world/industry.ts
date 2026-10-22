@@ -138,11 +138,26 @@ export function industryTiles(industry: Industry): { x: number; y: number }[] {
   return tiles;
 }
 
+// Šířka pásu trávy kolem nového závodu; les zůstává obklopený stromy
+const CLEARING = 3;
+
+// Dlaždice pásu kolem areálu závodu
+export function clearingTiles(industry: Industry): { x: number; y: number }[] {
+  const tiles: { x: number; y: number }[] = [];
+  for (let dy = -CLEARING; dy < INDUSTRY_SIZE + CLEARING; dy++) {
+    for (let dx = -CLEARING; dx < INDUSTRY_SIZE + CLEARING; dx++) {
+      const inside = dx >= 0 && dx < INDUSTRY_SIZE && dy >= 0 && dy < INDUSTRY_SIZE;
+      if (!inside) tiles.push({ x: industry.x + dx, y: industry.y + dy });
+    }
+  }
+  return tiles;
+}
+
 export function industryAt(industries: readonly Industry[], x: number, y: number): Industry | undefined {
   return industries.find((i) => x >= i.x && x < i.x + INDUSTRY_SIZE && y >= i.y && y < i.y + INDUSTRY_SIZE);
 }
 
-// Rozmístí závody na volnou zem mimo města; les na místě areálu se vykácí
+// Rozmístí závody na volnou zem mimo města; les na místě areálu a v pásu kolem něj se vykácí
 export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng): Industry[] {
   const industries: Industry[] = [];
   const area = map.width * map.height;
@@ -186,7 +201,9 @@ export function tryPlaceIndustry(
     lastDelivery: day,
   };
   const tiles = industryTiles(candidate);
-  if (!tiles.every((t) => map.isFree(t.x, t.y))) return null;
+  // Okolí musí jít vykácet na trávu, takže v něm nesmí být voda ani stavby
+  const clearing = kind === 'forest' ? [] : clearingTiles(candidate);
+  if (![...tiles, ...clearing].every((t) => map.inBounds(t.x, t.y) && map.isFree(t.x, t.y))) return null;
   const cx = x + INDUSTRY_SIZE / 2;
   const cy = y + INDUSTRY_SIZE / 2;
   const nearTown = towns.some((t) => Math.hypot(t.x - cx, t.y - cy) < KIND_RULES[t.kind].maxRadius + TOWN_CLEARANCE);
@@ -196,6 +213,7 @@ export function tryPlaceIndustry(
   candidate.name = industryName(kind, towns, industries, cx, cy);
   if (type.production) candidate.production = rng.int(type.production.min, type.production.max);
   for (const t of tiles) map.set(t.x, t.y, TileType.Industry);
+  for (const t of clearing) map.set(t.x, t.y, TileType.Grass);
   return candidate;
 }
 

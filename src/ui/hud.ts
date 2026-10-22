@@ -1,5 +1,6 @@
 import { GAME_SPEEDS, formatDate, type GameSpeed } from '../game/clock';
 import { Game, formatMoney } from '../game/game';
+import { iconElement, modelIcon, sceneIcon } from '../render/icons';
 import { h } from './dom';
 
 const NEWS_VISIBLE_MS = 30_000;
@@ -58,8 +59,16 @@ export class Hud {
       return b;
     };
 
-    const windowButton = (id: string, icon: string, title: string, onClick: () => void): HTMLButtonElement => {
+    // Ikona může být obrázek ze 3D; znak se ukáže, dokud se nevykreslí
+    const windowButton = (
+      id: string,
+      icon: string,
+      title: string,
+      onClick: () => void,
+      image?: Promise<string>,
+    ): HTMLButtonElement => {
       const b = button(icon, title, onClick);
+      if (image) b.replaceChildren(iconElement(image, icon, 'toolbar__icon'));
       this.windowButtons.set(id, b);
       return b;
     };
@@ -82,13 +91,25 @@ export class Hud {
       [windowButton('minimap', '🗺️', 'Minimapa (M)', actions.openMinimap)],
       [windowButton('finance', '💰', 'Finance (F)', actions.openFinance)],
       [
-        windowButton('vehicle-list', '🚌', 'Seznam aut (A)', actions.openVehicleList),
-        windowButton('train-list', '🚆', 'Seznam vlaků (V)', actions.openTrainList),
+        windowButton('vehicle-list', '🚌', 'Seznam aut (A)', actions.openVehicleList, modelIcon('car kit', 'van')),
+        windowButton(
+          'train-list',
+          '🚆',
+          'Seznam vlaků (V)',
+          actions.openTrainList,
+          modelIcon('train kit', 'train-locomotive-a'),
+        ),
       ],
       [rotate],
       [
-        windowButton('road-build', '🛣️', 'Stavba silnic, zastávek a garáží (S, Z, U)', actions.openRoadBuild),
-        windowButton('rail-build', '🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild),
+        windowButton(
+          'road-build',
+          '🛣️',
+          'Stavba silnic, zastávek a garáží (S, Z, U)',
+          actions.openRoadBuild,
+          sceneIcon('road'),
+        ),
+        windowButton('rail-build', '🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild, sceneIcon('track')),
       ],
       [windowButton('news', '📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
     ];

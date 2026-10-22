@@ -3,8 +3,9 @@ import { CARGOS, CARGO_TYPES, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
 import { MAINTENANCE_RATE, TOWN_ACCEPTS_MIN_BUILDINGS } from '../game/balance';
 import { ratingParts, targetRating, waitingAmount } from '../game/rating';
-import type { RoadVehicle } from '../game/roadVehicles';
-import type { Train } from '../game/trains';
+import { roadVehicleModel, type RoadVehicle } from '../game/roadVehicles';
+import { trainModel, type Train } from '../game/trains';
+import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { h } from './dom';
 import type { WindowManager } from './windows';
@@ -85,12 +86,22 @@ export function openStation(
     const vehicles = game.roadFleet.vehicles.filter((v) => v.orders?.includes(station.id));
     const buttons = [
       ...trains.map((t) => {
-        const b = h('button', { className: 'small-button', textContent: t.name });
+        const b = h(
+          'button',
+          { className: 'small-button small-button--thumb' },
+          modelThumb('train kit', trainModel(t).model),
+          t.name,
+        );
         b.addEventListener('click', () => links.openTrain(t));
         return b;
       }),
       ...vehicles.map((v) => {
-        const b = h('button', { className: 'small-button', textContent: v.name });
+        const b = h(
+          'button',
+          { className: 'small-button small-button--thumb' },
+          modelThumb('car kit', roadVehicleModel(v).model),
+          v.name,
+        );
         b.addEventListener('click', () => links.openVehicle(v));
         return b;
       }),

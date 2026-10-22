@@ -15,6 +15,7 @@ import { CARGOS } from '../game/cargo';
 import { stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoneyShort } from '../game/game';
 import { catchmentArea } from '../game/passengers';
+import { iconElement, sceneIcon, type SceneIcon } from '../render/icons';
 import type { BuildPreview } from '../render/preview';
 import { roadConnects } from '../render/roads';
 import { TileType, type TilePos } from '../world/map';
@@ -105,7 +106,7 @@ export class BuildTools {
   private openToolWindow(
     id: 'rail-build' | 'road-build',
     title: string,
-    tools: [BuildTool, string, string, string, string][],
+    tools: [SceneIcon, string, string, string, string][],
     hint: string,
   ): void {
     const buttons = new Map<BuildTool, HTMLButtonElement>();
@@ -114,7 +115,7 @@ export class BuildTools {
       const b = h(
         'button',
         { className: 'build-tool', title: `${label} (${key}) – ${price}` },
-        h('span', { className: 'build-tool__icon' }, icon),
+        iconElement(sceneIcon(tool), icon, 'build-tool__icon'),
         h('span', {}, label),
       );
       b.addEventListener('click', () => this.setTool(this.tool === tool ? null : tool));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateWorld } from './generator';
-import { INDUSTRY_TYPES, industryTiles } from './industry';
+import { INDUSTRY_TYPES, clearingTiles, industryTiles } from './industry';
 import { TileType } from './map';
 import { KIND_RULES, townCapacity } from './town';
 
@@ -38,6 +38,10 @@ describe('generátor světa', () => {
     expect(kinds).toEqual(new Set(Object.keys(INDUSTRY_TYPES)));
     for (const industry of world.industries) {
       for (const t of industryTiles(industry)) expect(world.map.get(t.x, t.y)).toBe(TileType.Industry);
+      // Kromě lesa je kolem závodu jen tráva
+      if (industry.kind !== 'forest') {
+        for (const t of clearingTiles(industry)) expect(world.map.get(t.x, t.y)).toBe(TileType.Grass);
+      }
       for (const town of world.towns) {
         expect(Math.hypot(town.x - industry.x, town.y - industry.y)).toBeGreaterThan(KIND_RULES[town.kind].maxRadius);
       }

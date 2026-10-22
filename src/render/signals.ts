@@ -6,21 +6,20 @@ const POLE_HEIGHT = 0.45;
 // Vzdálenost sloupku od osy koleje
 const SIDE_OFFSET = 0.3;
 const RED = new THREE.Color(0xff3020);
-const GREEN = new THREE.Color(0x30e050);
+export const SIGNAL_GREEN = new THREE.Color(0x30e050);
+export const SIGNAL_POLE = new THREE.BoxGeometry(0.04, POLE_HEIGHT, 0.04).translate(0, POLE_HEIGHT / 2, 0);
+export const SIGNAL_POLE_COLOR = 0x3a3a3a;
+export const SIGNAL_LAMP = new THREE.BoxGeometry(0.09, 0.12, 0.09).translate(0, POLE_HEIGHT, 0);
 
 // Návěstidla: sloupek vedle středu kusu koleje, světlo červené, když je úsek obsazený
 export class SignalsView {
   readonly object = new THREE.Group();
   private readonly poles = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.04, POLE_HEIGHT, 0.04).translate(0, POLE_HEIGHT / 2, 0),
-    new THREE.MeshLambertMaterial({ color: 0x3a3a3a }),
+    SIGNAL_POLE,
+    new THREE.MeshLambertMaterial({ color: SIGNAL_POLE_COLOR }),
     MAX_SIGNALS,
   );
-  private readonly lamps = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.09, 0.12, 0.09).translate(0, POLE_HEIGHT, 0),
-    new THREE.MeshBasicMaterial(),
-    MAX_SIGNALS,
-  );
+  private readonly lamps = new THREE.InstancedMesh(SIGNAL_LAMP, new THREE.MeshBasicMaterial(), MAX_SIGNALS);
   private tiles: { x: number; y: number }[] = [];
 
   constructor(private readonly rail: RailNetwork) {
@@ -38,7 +37,7 @@ export class SignalsView {
       m.makeTranslation(x + cx, 0, y + cz);
       this.poles.setMatrixAt(i, m);
       this.lamps.setMatrixAt(i, m);
-      this.lamps.setColorAt(i, GREEN);
+      this.lamps.setColorAt(i, SIGNAL_GREEN);
     });
     for (const mesh of [this.poles, this.lamps]) {
       mesh.count = this.tiles.length;
@@ -51,7 +50,7 @@ export class SignalsView {
   // Barvy podle toho, zda dlaždici návěstidla drží nějaký vlak
   update(isReserved: (x: number, y: number) => boolean): void {
     if (!this.lamps.instanceColor) return;
-    this.tiles.forEach(({ x, y }, i) => this.lamps.setColorAt(i, isReserved(x, y) ? RED : GREEN));
+    this.tiles.forEach(({ x, y }, i) => this.lamps.setColorAt(i, isReserved(x, y) ? RED : SIGNAL_GREEN));
     this.lamps.instanceColor.needsUpdate = true;
   }
 

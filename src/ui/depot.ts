@@ -11,9 +11,11 @@ import {
   trainModel,
   type Train,
 } from '../game/trains';
+import { modelThumb } from '../render/icons';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { h } from './dom';
+import { ModelPicker } from './modelPicker';
 import { formatTiles, formatYears, openTrain, shortStationsWarning, stateText } from './trainWindow';
 import type { WindowManager } from './windows';
 
@@ -29,8 +31,8 @@ export function openDepot(
   const report = (error: string | null): void => {
     if (error) game.news(error);
   };
-  // Výběr v rozbalovacích se musí přežít obnovení okna při událostech vlaků
-  let selectedModel: string | null = null;
+  // Výběr modelu musí přežít obnovení okna při událostech vlaků
+  const picker = new ModelPicker();
   const pendingOrders = new Map<number, [number, number]>();
 
   // Výchozí nástupiště jsou dvě nejbližší k depu
@@ -58,6 +60,7 @@ export function openDepot(
     const info = h(
       'div',
       { className: 'train__info' },
+      modelThumb('train kit', model.model),
       h('strong', {}, train.name),
       ` · ${model.name} · ${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'}`,
       ` (${formatTiles(trainLength(train))})`,
@@ -142,26 +145,24 @@ export function openDepot(
 
   const render = (): HTMLElement => {
     const models = fleet.available();
-    const chosen = models.find((m) => m.id === selectedModel) ?? models[models.length - 1];
-    const select = h('select', {});
-    for (const m of models) {
-      select.append(
-        h(
-          'option',
-          { value: m.id, selected: m === chosen },
-          `${m.name} – ${formatMoney(m.price)}, ${m.speed} dlaždic/den, provoz ${formatMoney(m.runningCost)}/rok`,
-        ),
-      );
-    }
-    select.addEventListener('change', () => (selectedModel = select.value));
+    picker.setOptions(
+      models.map((m) => ({
+        value: m.id,
+        kit: 'train kit',
+        model: m.model,
+        name: m.name,
+        details: `${formatMoney(m.price)} · ${m.speed} dlaždic/den · provoz ${formatMoney(m.runningCost)}/rok`,
+      })),
+      models[models.length - 1].id,
+    );
     const buy = h('button', { className: 'small-button' }, 'Koupit');
-    buy.addEventListener('click', () => report(fleet.buy(depot, models.find((m) => m.id === select.value)!)));
+    buy.addEventListener('click', () => report(fleet.buy(depot, models.find((m) => m.id === picker.value)!)));
 
     const trains = fleet.inDepot(depot);
     return h(
       'div',
       { className: 'form' },
-      h('div', { className: 'train__actions' }, select, buy),
+      h('div', { className: 'train__actions' }, picker.element, buy),
       h('h4', {}, 'Vlaky'),
       ...(trains.length > 0 ? trains.map(trainRow) : [h('div', { className: 'form__hint' }, 'Depo zatím nemá žádné vlaky.')]),
     );

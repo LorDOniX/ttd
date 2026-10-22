@@ -13,6 +13,7 @@ import {
   yearlyRunningCost,
   type Train,
 } from '../game/trains';
+import { modelThumb } from '../render/icons';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { h } from './dom';
@@ -337,7 +338,12 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
         const tr = h(
           'tr',
           { title: 'Otevřít okno vlaku' },
-          h('td', {}, t.orderGroup === null ? t.name : `${t.name} · linka ${t.orderGroup}`),
+          h(
+            'td',
+            { className: 'table__name' },
+            modelThumb('train kit', trainModel(t).model),
+            t.orderGroup === null ? t.name : `${t.name} · linka ${t.orderGroup}`,
+          ),
           h('td', {}, stateText(game, t)),
           h('td', { className: isOld(t, today) ? 'num warning' : 'num' }, formatYears(trainAge(t, today))),
           h('td', { className: 'num' }, formatLoad(t)),

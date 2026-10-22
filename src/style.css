@@ -96,6 +96,13 @@ body {
   background: #8a5a2a;
 }
 
+.toolbar__icon img {
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin: auto;
+}
+
 .toolbar__button--text {
   font-size: 14px;
   font-weight: 600;
@@ -430,6 +437,12 @@ body {
   line-height: 1;
 }
 
+.build-tool__icon img {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
 .build-tool--active,
 .build-tool--active:hover {
   color: var(--accent-text);
@@ -508,6 +521,129 @@ kbd {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+}
+
+/* Miniatura vozidla vedle názvu v přehledech */
+.thumb {
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.thumb:not([src]),
+.picker__image:not([src]) {
+  visibility: hidden;
+}
+
+.table__name {
+  white-space: nowrap;
+}
+
+.small-button--thumb {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 2px;
+}
+
+.small-button--thumb .thumb {
+  width: 22px;
+  height: 22px;
+}
+
+/* Vlastní výběr modelu: obrázek vlevo, popisky vpravo */
+.picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.picker__current,
+.picker__option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 2px 6px 2px 2px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker__current {
+  background: var(--surface);
+  border: 1px solid;
+  border-color: var(--bevel-dark) var(--bevel-light) var(--bevel-light) var(--bevel-dark);
+}
+
+.picker__current:hover,
+.picker__current--open {
+  background: var(--hover);
+}
+
+.picker__arrow {
+  margin-left: 4px;
+}
+
+.picker__list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 1;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--window);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.picker__option {
+  background: none;
+  border: 0;
+}
+
+.picker__option:hover {
+  background: var(--hover);
+}
+
+.picker__option--active,
+.picker__option--active:hover {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.picker__group {
+  padding: 4px 6px 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.picker__row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.picker__image {
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+
+.picker__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker__text small {
+  color: inherit;
+  opacity: 0.8;
 }
 
 .tooltip {
