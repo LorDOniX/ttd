@@ -66,8 +66,6 @@ export interface Train {
   pos: number;
   speed: number;
   waitDays: number;
-  // Lokomotiva je na konci soupravy (po otočení směru jízdy)
-  flipped: boolean;
   // Náklad na palubě (cestující nebo tuny nákladu): odkud a kdy naložen, kolik dlaždic ujel
   passengers: number;
   boardedStation: number;
@@ -104,12 +102,9 @@ export function formatLoad(train: Train): string {
 // Vagony stojící na nástupišti; jen ty nakládají a vykládají
 export function wagonsAtStation(train: Train, station: StationShape): number {
   const tiles = new Set(stationTiles(station).map((t) => `${t.x},${t.y}`));
-  const vehicles = train.wagons + 1;
-  // Po otočení směru jízdy je lokomotiva na konci soupravy
-  const locomotive = train.flipped ? vehicles - 1 : 0;
   let count = 0;
-  for (let i = 0; i < vehicles; i++) {
-    if (i === locomotive) continue;
+  // Lokomotiva jede v čele, vagony za ní
+  for (let i = 1; i <= train.wagons; i++) {
     const [x, y] = pointAt(train.path, train.pos - (i + 0.5) * VEHICLE_LENGTH);
     if (tiles.has(`${Math.floor(x)},${Math.floor(y)}`)) count++;
   }
@@ -208,7 +203,6 @@ export class Fleet {
       pos: 0,
       speed: 0,
       waitDays: 0,
-      flipped: false,
       passengers: 0,
       boardedStation: -1,
       boardedAt: 0,
@@ -309,7 +303,6 @@ export class Fleet {
     // Hlava ve středu depa, zbytek soupravy je ještě uvnitř
     train.pos = 0.5;
     train.speed = 0;
-    train.flipped = false;
     train.state = 'running';
     this.reservations.reset(train, this.tail(train));
     this.changed();
@@ -609,8 +602,8 @@ export class Fleet {
     const useBackward = backward && (!forward || pathLength(backward) < pathLength(forward));
     if (useBackward) {
       train.path = [...reversed, ...backward];
+      // Lokomotiva přejede na druhý konec soupravy a vlak vyjede jí napřed
       train.pos = pathLength(body) - Math.max(0, offset);
-      train.flipped = !train.flipped;
       train.speed = 0;
     } else if (forward) {
       const keep = pathLength(train.path.slice(0, train.path.indexOf(body[0])));

@@ -10,7 +10,8 @@ import {
   WAGON_RUNNING_COST,
 } from './balance';
 import type { Game } from './game';
-import { ordersError, sellFactor, sellPrice, trainAge, wagonsAtStation, type Train } from './trains';
+import { ordersError, sellFactor, sellPrice, trainAge, trainLength, wagonsAtStation, type Train } from './trains';
+import { pointAt } from '../world/route';
 import { addBuilding, buildLine, buyTrain, layTrack, makeTown, runDays } from '../test/fixtures';
 import { TileType } from '../world/map';
 import { defaultStationShape } from '../world/rail';
@@ -23,13 +24,15 @@ describe('vlaky', () => {
     const arrivals: number[] = [];
     let flips = 0;
     let state = train.state;
-    let flipped = train.flipped;
+    let head = pointAt(train.path, train.pos);
     for (let i = 0; i < 20_000 && arrivals.length < 4; i++) {
       game.update(200);
       if (train.state !== state && train.state === 'loading') arrivals.push(train.orders![train.target]);
-      if (train.flipped !== flipped) flips++;
+      // Po otočení jede lokomotiva v čele: čelo vlaku přeskočí na druhý konec soupravy
+      const next = pointAt(train.path, train.pos);
+      if (Math.hypot(next[0] - head[0], next[1] - head[1]) > trainLength(train) * 0.8) flips++;
       state = train.state;
-      flipped = train.flipped;
+      head = next;
     }
     expect(arrivals).toEqual([a.id, b.id, a.id, b.id]);
     expect(flips).toBeGreaterThan(0);

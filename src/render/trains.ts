@@ -116,15 +116,15 @@ export class TrainsView {
     });
     const count = view.vehicles.length;
     for (let i = 0; i < count; i++) {
-      // Po otočení směru jízdy je lokomotiva na konci soupravy
-      const vehicle = view.vehicles[train.flipped ? count - 1 - i : i];
+      // Lokomotiva jede vždy v čele, i po otočení ve stanici
+      const vehicle = view.vehicles[i];
       const center = train.pos - (i + 0.5) * VEHICLE_LENGTH;
       const [fx, fz] = pointAt(train.path, center + BOGIE);
       const [bx, bz] = pointAt(train.path, center - BOGIE);
       const x = (fx + bx) / 2;
       const z = (fz + bz) / 2;
       vehicle.position.set(x, RAIL_TOP + (this.map.isType(Math.floor(x), Math.floor(z), TileType.Bridge) ? BRIDGE_DECK : 0), z);
-      vehicle.rotation.y = Math.atan2(fx - bx, fz - bz) + (train.flipped ? Math.PI : 0);
+      vehicle.rotation.y = Math.atan2(fx - bx, fz - bz);
       // Vozy ještě (nebo už) v depu nejsou vidět
       vehicle.visible = center > 0 && this.map.get(Math.floor(x), Math.floor(z)) !== TileType.Depot;
     }
