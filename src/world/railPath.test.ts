@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { assertContinuous, emptyGame, layTrack } from '../test/fixtures';
 import { TileType } from './map';
 import { Edge, PIECES, defaultStationShape, isCorner } from './rail';
-import { findTrackPath, pieceAtCursor, singlePieceStep } from './railPath';
+import { diagonalPath, findTrackPath, pieceAtCursor, singlePieceStep, type PathStep } from './railPath';
 
 const WE = 1;
 
@@ -87,5 +87,36 @@ describe('hledání trasy kolejí', () => {
     expect(singlePieceStep(world.rail, { x: 22, y: 20 }, 0.8, 0.5)).toMatchObject({ piece: WE, isNew: false });
     world.map.set(30, 30, TileType.Building);
     expect(singlePieceStep(world.rail, { x: 30, y: 30 }, 0.5, 0.5)).toBeNull();
+  });
+
+  it('tažení z rohu dlaždice staví diagonálu jen z rohových kusů ve směru tažení', () => {
+    const { world } = emptyGame();
+    const corner = (path: PathStep[]): boolean => path.every((s) => isCorner(s.piece));
+    // Z rohu S–V po jeho vlastní ose (1, −1): první kus je zatáčka pod kurzorem
+    const own = diagonalPath(world.rail, { x: 20, y: 20, fx: 0.9, fy: 0.9 }, { x: 25, y: 15, fx: 0.9, fy: 0.9 })!;
+    expect(own).toHaveLength(11);
+    expect(own[0]).toMatchObject({ x: 20, y: 20, piece: pieceAtCursor(0.9, 0.9) });
+    expect(own.at(-1)).toMatchObject({ x: 25, y: 15 });
+    expect(corner(own)).toBe(true);
+    assertContinuous(own);
+    // Z téhož rohu po druhé ose (1, 1) i opačným směrem
+    for (const end of [
+      { x: 25, y: 25, fx: 0.9, fy: 0.9 },
+      { x: 16, y: 16, fx: 0.5, fy: 0.5 },
+    ]) {
+      const path = diagonalPath(world.rail, { x: 20, y: 20, fx: 0.9, fy: 0.9 }, end)!;
+      expect(path.length).toBeGreaterThan(5);
+      expect(corner(path)).toBe(true);
+      assertContinuous(path);
+    }
+    // Tažení ze středu dlaždice diagonálu nestaví
+    expect(diagonalPath(world.rail, { x: 20, y: 20, fx: 0.5, fy: 0.5 }, { x: 25, y: 25, fx: 0.5, fy: 0.5 })).toBeNull();
+  });
+
+  it('diagonála přes vodu nevede', () => {
+    const { world } = emptyGame();
+    world.map.set(22, 18, TileType.Water);
+    world.map.set(22, 17, TileType.Water);
+    expect(diagonalPath(world.rail, { x: 20, y: 20, fx: 0.9, fy: 0.9 }, { x: 25, y: 15, fx: 0.9, fy: 0.9 })).toBeNull();
   });
 });

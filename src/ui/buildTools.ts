@@ -19,8 +19,17 @@ import { iconElement, sceneIcon, type SceneIcon } from '../render/icons';
 import type { BuildPreview } from '../render/preview';
 import { roadConnects } from '../render/roads';
 import { TileType, type TilePos } from '../world/map';
-import { EDGE_DELTA, Edge, PIECES, defaultStationShape, opposite, type Axis, type StationShape } from '../world/rail';
-import { findTrackPath, pieceAtCursor, singlePieceStep, type PathStep } from '../world/railPath';
+import {
+  EDGE_DELTA,
+  Edge,
+  PIECES,
+  defaultStationShape,
+  isCorner,
+  opposite,
+  type Axis,
+  type StationShape,
+} from '../world/rail';
+import { diagonalPath, findTrackPath, pieceAtCursor, singlePieceStep, type PathStep } from '../world/railPath';
 import { findRoadPath, roadEdgeAtCursor, singleRoadSteps, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
 import type { WindowManager } from './windows';
@@ -44,7 +53,7 @@ export class BuildTools {
   onToolChange: (tool: BuildTool | null) => void = () => {};
   private axis: Axis = 'x';
   private entrance: Edge = Edge.E;
-  private dragStart: TilePos | null = null;
+  private dragStart: PointerTile | null = null;
   private path: PathStep[] | null = null;
   private roadPath: RoadStep[] | null = null;
   private hover: PointerTile | null = null;
@@ -82,7 +91,8 @@ export class BuildTools {
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Koleje a demolice: táhněte levým tlačítkem, kliknutím položíte jeden dílek koleje ' +
-        '(podle polohy kurzoru rovný nebo v rohu dlaždice zatáčku). Nástupiště: kliknutím 1×3, tažením větší. ' +
+        '(podle polohy kurzoru rovný nebo v rohu dlaždice zatáčku). Tažení z rohu dlaždice staví diagonálu. ' +
+        'Nástupiště: kliknutím 1×3, tažením větší. ' +
         'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. R – otočit, Esc – zrušit nástroj.',
     );
   }
@@ -208,7 +218,8 @@ export class BuildTools {
       !tile ||
       !previous ||
       cursorPart(tile) === cursorPart(previous);
-    if (sameTile && samePiece) return;
+    // Délka diagonály se mění i uvnitř dlaždice, podle průmětu kurzoru na ni
+    if (sameTile && samePiece && !this.draggingDiagonal()) return;
     if (this.dragStart) this.updatePath();
     this.refresh();
   }
@@ -253,9 +264,20 @@ export class BuildTools {
     return `${n} ${n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků'} · ${formatMoneyShort(cost)}`;
   }
 
-  // Tažení na stejné dlaždici (nebo klik) staví jediný kus podle polohy kurzoru
-  private trackPath(start: TilePos, target: TilePos): PathStep[] | null {
+  private draggingDiagonal(): boolean {
+    return (
+      this.tool === 'track' && this.dragStart !== null && isCorner(pieceAtCursor(this.dragStart.fx, this.dragStart.fy))
+    );
+  }
+
+  // Tažení z rohu dlaždice staví diagonálu, jinak trasu mezi dlaždicemi;
+  // tažení na stejné dlaždici (nebo klik) staví jediný kus podle polohy kurzoru
+  private trackPath(start: PointerTile, target: PointerTile): PathStep[] | null {
     const { rail } = this.game.world;
+    if (this.draggingDiagonal()) {
+      const diagonal = diagonalPath(rail, start, target);
+      if (!diagonal || diagonal.length > 1) return diagonal;
+    }
     if (start.x !== target.x || start.y !== target.y) return findTrackPath(rail, start, target);
     const step = this.hover && singlePieceStep(rail, start, this.hover.fx, this.hover.fy);
     return step ? [step] : null;

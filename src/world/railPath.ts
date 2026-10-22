@@ -40,17 +40,73 @@ interface Parent {
 // Hranice od středu dlaždice, za kterou kurzor v rohu vybere zatáčku
 const CORNER_ZONE = 0.25;
 
+// Rohový kus (zatáčka) v té čtvrtině dlaždice, kam ukazuje bod (fx, fy v 0..1)
+function cornerPiece(fx: number, fy: number): number {
+  const vertical = fy < 0.5 ? Edge.N : Edge.S;
+  const horizontal = fx < 0.5 ? Edge.W : Edge.E;
+  return PIECES.findIndex(([a, b]) => (a === vertical || b === vertical) && (a === horizontal || b === horizontal));
+}
+
 // Kus koleje podle polohy kurzoru v dlaždici (fx, fy v 0..1): v rohu zatáčka k bližším hranám,
 // jinak rovný kus ve směru, kterým je kurzor od středu dál
 export function pieceAtCursor(fx: number, fy: number): number {
   const dx = fx - 0.5;
   const dy = fy - 0.5;
-  if (Math.abs(dx) > CORNER_ZONE && Math.abs(dy) > CORNER_ZONE) {
-    const vertical = dy < 0 ? Edge.N : Edge.S;
-    const horizontal = dx < 0 ? Edge.W : Edge.E;
-    return PIECES.findIndex(([a, b]) => (a === vertical || b === vertical) && (a === horizontal || b === horizontal));
-  }
+  if (Math.abs(dx) > CORNER_ZONE && Math.abs(dy) > CORNER_ZONE) return cornerPiece(fx, fy);
   return Math.abs(dx) >= Math.abs(dy) ? axisPiece('x') : axisPiece('y');
+}
+
+// Nejdelší diagonála položená jedním tažením (v kusech)
+const MAX_DIAGONAL = 256;
+
+// Diagonála z rohových kusů jako v OpenTTD: tažení začaté v rohu dlaždice vede po přímce rohových kusů
+// ve směru tažení k místu nejbližšímu kurzoru. Roh začátku vybere jednu ze dvou rovnoběžných přímek
+// přes dlaždici. Vrací null, když tažení nezačalo v rohu nebo některý kus nejde položit.
+export function diagonalPath(
+  rail: RailNetwork,
+  start: TilePos & { fx: number; fy: number },
+  end: TilePos & { fx: number; fy: number },
+): PathStep[] | null {
+  if (!isCorner(pieceAtCursor(start.fx, start.fy))) return null;
+  const [sx, sy] = [start.x + start.fx, start.y + start.fy];
+  const [ex, ey] = [end.x + end.fx, end.y + end.fy];
+  // Krok mezi středy sousedních kusů: půl dlaždice v obou osách, osa podle směru tažení
+  const [vx, vy] = Math.abs(ex - sx + (ey - sy)) >= Math.abs(ex - sx - (ey - sy)) ? [0.5, 0.5] : [0.5, -0.5];
+  // Středy dvou rohových kusů dlaždice, které leží na této ose
+  const centers = (
+    vy > 0
+      ? [
+          [0.75, 0.25],
+          [0.25, 0.75],
+        ]
+      : [
+          [0.25, 0.25],
+          [0.75, 0.75],
+        ]
+  ).map(([cx, cy]) => [start.x + cx, start.y + cy] as const);
+  // Vzdálenost bodu od přímky kusu se středem c (kolmo k ose)
+  const offset = (c: readonly [number, number], px: number, py: number): number =>
+    Math.abs((px - c[0]) * vy - (py - c[1]) * vx);
+  const [px, py] = centers.reduce((best, c) => {
+    const d = offset(c, sx, sy) - offset(best, sx, sy);
+    // Kurzor v rohu je od obou přímek stejně daleko, rozhodne cíl tažení
+    return d < -1e-9 || (Math.abs(d) <= 1e-9 && offset(c, ex, ey) < offset(best, ex, ey)) ? c : best;
+  });
+  const along = ((ex - px) * vx + (ey - py) * vy) / (vx * vx + vy * vy);
+  const count = Math.min(Math.round(Math.abs(along)), MAX_DIAGONAL);
+  const sign = along < 0 ? -1 : 1;
+
+  const steps: PathStep[] = [];
+  for (let i = 0; i <= count; i++) {
+    const cx = px + sign * i * vx;
+    const cy = py + sign * i * vy;
+    const x = Math.floor(cx);
+    const y = Math.floor(cy);
+    const piece = cornerPiece(cx - x, cy - y);
+    if (!rail.canPlace(x, y, piece)) return null;
+    steps.push({ x, y, piece, isNew: !rail.has(x, y, piece) });
+  }
+  return steps;
 }
 
 // Jediný kus koleje na dlaždici; když vybraný nejde položit (např. na silnici), zkusí rovný kus
