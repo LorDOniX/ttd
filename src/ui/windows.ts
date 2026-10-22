@@ -39,6 +39,8 @@ export class WindowManager {
   private readonly positions: Record<string, { left: number; top: number }> = loadPositions();
   // Ikony horní lišty podle id okna
   private readonly anchors = new Map<string, HTMLElement>();
+  // Místo na obrazovce, nad které se umístí právě otevírané okno
+  private placement: DOMRect | null = null;
 
   constructor(private readonly root: HTMLElement) {
     window.addEventListener('pointerup', () => {
@@ -75,6 +77,16 @@ export class WindowManager {
     win.pending = null;
   }
 
+  // Okna otevřená uvnitř open() se umístí nad daný obdélník, např. kliknutý popisek ve scéně
+  openAbove(rect: DOMRect, open: () => void): void {
+    this.placement = rect;
+    try {
+      open();
+    } finally {
+      this.placement = null;
+    }
+  }
+
   // Otevře okno, případně nahradí obsah už otevřeného okna se stejným id
   open(id: string, title: string, content: HTMLElement, options: WindowOptions = {}): void {
     const existing = this.windows.get(id);
@@ -85,6 +97,7 @@ export class WindowManager {
       existing.locate = options.locate;
       existing.pending = null;
       existing.body.replaceChildren(content);
+      if (this.placement) this.placeAbove(existing.el, this.placement);
       this.bringToFront(existing.el);
       return;
     }
@@ -133,6 +146,7 @@ export class WindowManager {
     // Okna z horní lišty vždy pod svou ikonou
     const anchor = this.anchors.get(id);
     if (anchor) this.placeBelow(el, anchor);
+    if (this.placement) this.placeAbove(el, this.placement);
 
     const win: OpenWindow = { el, body, onClose: options.onClose, locate: options.locate, pending: null };
     el.addEventListener('pointerdown', () => {
@@ -184,6 +198,16 @@ export class WindowManager {
     const left = target.left + target.width / 2 - el.offsetWidth / 2;
     el.style.left = `${Math.max(0, Math.min(left, window.innerWidth - el.offsetWidth))}px`;
     el.style.top = `${(this.root.querySelector('.toolbar')?.getBoundingClientRect().bottom ?? target.bottom) + 4}px`;
+  }
+
+  // Nad cílem, a když se tam pod horní lištu nevejde, pod ním
+  private placeAbove(el: HTMLElement, target: DOMRect): void {
+    const minTop = this.root.querySelector('.toolbar')?.getBoundingClientRect().bottom ?? 0;
+    const left = target.left + target.width / 2 - el.offsetWidth / 2;
+    const above = target.top - el.offsetHeight - 6;
+    const top = above >= minTop ? above : target.bottom + 6;
+    el.style.left = `${Math.max(0, Math.min(left, window.innerWidth - el.offsetWidth))}px`;
+    el.style.top = `${Math.max(minTop, Math.min(top, window.innerHeight - el.offsetHeight))}px`;
   }
 
   private remember(id: string, el: HTMLElement): void {

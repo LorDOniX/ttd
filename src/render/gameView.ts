@@ -19,6 +19,8 @@ import { TreesView } from './trees';
 export interface LabelTarget {
   kind: 'town' | 'station' | 'industry';
   id: number;
+  // Poloha popisku na obrazovce, nad ní se otevře okno
+  rect: DOMRect;
 }
 
 // 3D scéna rozehrané hry: terén, města, koleje, vlaky a popisky, napojené na události hry
@@ -170,7 +172,12 @@ export class GameView {
     const canvas = this.renderer.domElement;
     layer.addEventListener('click', (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-kind]');
-      if (el) this.onLabelClick({ kind: el.dataset.kind as LabelTarget['kind'], id: Number(el.dataset.id) });
+      if (el)
+        this.onLabelClick({
+          kind: el.dataset.kind as LabelTarget['kind'],
+          id: Number(el.dataset.id),
+          rect: el.getBoundingClientRect(),
+        });
     });
     // Kolečko a posun pravým tlačítkem nad popiskem patří kameře
     layer.addEventListener(

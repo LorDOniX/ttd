@@ -134,13 +134,14 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     hud.setInfoActive(tool === 'info');
     view.setLabelsInteractive(tool === null);
   };
-  view.onLabelClick = ({ kind, id }) => {
-    if (kind === 'town') links.openTown(towns[id]);
-    const station = kind === 'station' ? world.rail.stations.find((s) => s.id === id) : undefined;
-    if (station) links.openStation(station);
-    const industry = kind === 'industry' ? world.industries.find((i) => i.id === id) : undefined;
-    if (industry) links.openIndustry(industry);
-  };
+  view.onLabelClick = ({ kind, id, rect }) =>
+    windows.openAbove(rect, () => {
+      if (kind === 'town') links.openTown(towns[id]);
+      const station = kind === 'station' ? world.rail.stations.find((s) => s.id === id) : undefined;
+      if (station) links.openStation(station);
+      const industry = kind === 'industry' ? world.industries.find((i) => i.id === id) : undefined;
+      if (industry) links.openIndustry(industry);
+    });
 
   const { clock } = game;
   const shortcuts = new Shortcuts([
