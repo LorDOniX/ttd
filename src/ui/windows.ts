@@ -138,8 +138,8 @@ export class WindowManager {
     const saved = this.positions[key];
     // Další okno stejného druhu se posune, aby nezakrylo předchozí
     const shift = [...this.windows.keys()].filter((k) => positionKey(k) === key).length * 24;
-    // Bez uložené polohy u levého okraje, aby okno nezakrývalo střed mapy
-    const left = saved ? saved.left + shift : 8 + offset;
+    // Bez uložené polohy nahoře uprostřed pod lištou
+    const left = saved ? saved.left + shift : (window.innerWidth - el.offsetWidth) / 2 + offset;
     const top = saved ? saved.top + shift : 44 + offset;
     el.style.left = `${Math.max(0, Math.min(left, window.innerWidth - 80))}px`;
     el.style.top = `${Math.max(0, Math.min(top, window.innerHeight - 60))}px`;
