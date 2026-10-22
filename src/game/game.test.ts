@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addBuilding, emptyGame, layTrack, makeTown } from '../test/fixtures';
+import { TileType } from '../world/map';
+import { DEMOLISH_TREES_COST } from './balance';
 
 describe('historie zpráv', () => {
   it('pamatuje si datum a nejvýš 200 posledních zpráv', () => {
@@ -30,5 +32,21 @@ describe('demolice', () => {
     expect(events[0]).toEqual([4 * 5_000 * 0.5, 12, 10.5]);
     expect(events[1][0]).toBeLessThan(0);
     expect(events[1].slice(1)).toEqual([40.5, 40.5]);
+  });
+
+  it('vykácení stromů se platí', () => {
+    const game = emptyGame();
+    game.world.map.set(20, 20, TileType.Trees);
+    game.world.map.set(21, 20, TileType.Trees);
+    const money = game.money;
+
+    expect(
+      game.construction.demolish([
+        { x: 20, y: 20 },
+        { x: 21, y: 20 },
+      ]),
+    ).toBeNull();
+    expect(game.money).toBe(money - 2 * DEMOLISH_TREES_COST);
+    expect(game.world.map.get(20, 20)).toBe(TileType.Grass);
   });
 });

@@ -3,6 +3,7 @@ import {
   DEMOLISH_COST_PER_RESIDENT,
   DEMOLISH_REFUND,
   DEMOLISH_TOWN_ROAD_COST,
+  DEMOLISH_TREES_COST,
   DEPOT_COST,
   PLATFORM_TILE_COST,
   ROAD_DEPOT_COST,
@@ -235,6 +236,7 @@ export class Construction {
           break;
         }
         case TileType.Trees:
+          cost += DEMOLISH_TREES_COST;
           tiles.push({ x, y });
           break;
       }

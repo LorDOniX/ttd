@@ -28,6 +28,8 @@ export const ROAD_TILE_COST = 3_000;
 export const DEMOLISH_REFUND = 0.5;
 export const DEMOLISH_COST_PER_RESIDENT = 500;
 export const DEMOLISH_TOWN_ROAD_COST = 2_500;
+// Vykácení lesa na jedné dlaždici
+export const DEMOLISH_TREES_COST = 2_000;
 
 // Vlaky: rychlost v dlaždicích za herní den, provoz za rok; model a vagon z train kitu
 export interface TrainModel {
