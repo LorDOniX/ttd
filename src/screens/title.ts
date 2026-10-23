@@ -1,7 +1,14 @@
 import { TRAIN_MODELS, type TrainModel } from '../game/balance';
 import { START_YEAR } from '../game/clock';
 import { Game } from '../game/game';
-import { describeSave, launch, readAutosave, type NewGameOptions, type TownAmount, type WaterAmount } from '../game/launch';
+import {
+  describeSave,
+  launch,
+  readAutosave,
+  type NewGameOptions,
+  type TownAmount,
+  type WaterAmount,
+} from '../game/launch';
 import { parseSave } from '../game/save';
 import { GameView } from '../render/gameView';
 import { createLoadButton } from '../ui/dialogs';
@@ -125,7 +132,8 @@ function newGamePanel(back: () => void): HTMLElement {
     launch({ mode: 'new', options });
   });
   const cancel = menuButton('Zpět', '', back);
-  const field = (label: string, input: HTMLElement): HTMLElement => h('label', { className: 'form__field' }, label, input);
+  const field = (label: string, input: HTMLElement): HTMLElement =>
+    h('label', { className: 'form__field' }, label, input);
   return h(
     'div',
     { className: 'form' },
@@ -167,8 +175,15 @@ export function runTitle(container: HTMLElement): void {
   view.camera.camera.zoom = 1.6;
   view.camera.camera.updateProjectionMatrix();
   const { map, rail, towns } = game.world;
-  const station = [...rail.stations].sort((a, b) => towns[b.townId].population - towns[a.townId].population)[0];
-  if (station) {
+  const brno = towns.find((town) => town.name === 'Brno');
+  const station = brno
+    ? rail.stations.find((candidate) => candidate.townId === brno.id)
+    : [...rail.stations].sort((a, b) => towns[b.townId].population - towns[a.townId].population)[0];
+  if (station && brno) {
+    view.camera.focus((brno.x + station.x) / 2, (brno.y + station.y) / 2);
+  } else if (brno) {
+    view.camera.focus(brno.x + 0.5, brno.y + 0.5);
+  } else if (station) {
     const town = towns[station.townId];
     view.camera.focus((town.x + station.x) / 2, (town.y + station.y) / 2);
   } else {

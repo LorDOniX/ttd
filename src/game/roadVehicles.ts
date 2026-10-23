@@ -109,6 +109,7 @@ export function vehiclePoint(path: TilePos[], pos: number): { x: number; y: numb
 export class RoadFleet {
   readonly vehicles: RoadVehicle[] = [];
   nextId = 1;
+  private pedestrianCrossings: ReadonlySet<number> = new Set();
 
   constructor(private readonly game: Game) {
     game.clock.events.on('month', () => this.chargeRunningCosts());
@@ -125,6 +126,10 @@ export class RoadFleet {
     });
     game.events.on('railChanged', () => this.revalidate());
     game.events.on('roadsChanged', () => this.revalidate());
+  }
+
+  setPedestrianCrossings(tiles: ReadonlySet<number>): void {
+    this.pedestrianCrossings = tiles;
   }
 
   // Od každého nákladu nejnovější model, který už se vyrábí
@@ -312,6 +317,11 @@ export class RoadFleet {
     for (let k = Math.floor(vehicle.pos + 0.5) + 1; k <= end && k - 0.5 - CROSSING_GAP <= pos; k++) {
       const from = vehicle.path[k - 1];
       const to = vehicle.path[k];
+      const crossingTile = to.y * map.width + to.x;
+      if (this.pedestrianCrossings.has(crossingTile) && vehicle.pos < k - 0.5) {
+        pos = Math.max(vehicle.pos, k - 0.5 - CROSSING_GAP);
+        break;
+      }
       // Před zavřenou závorou auto stojí; kdo už k ní dojel před zavřením, projede
       const closed = map.get(to.x, to.y) === TileType.Crossing && reservations.ownerAt(to.x, to.y) !== undefined;
       if (closed && vehicle.pos <= k - 0.5 - CROSSING_GAP) {

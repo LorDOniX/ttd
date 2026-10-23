@@ -179,4 +179,24 @@ describe('silniční vozidla', () => {
     runDays(game, 3);
     expect(game.roadFleet.tileOf(bus)!.x).toBeGreaterThan(20);
   });
+
+  it('před obsazeným přechodem auto počká a po přejití pokračuje', () => {
+    const { game, a, b, depot } = buildRoadLine();
+    game.world.map.set(10, 9, TileType.Road);
+    game.world.map.set(10, 11, TileType.Road);
+    game.roadFleet.buy(depot, model('bus-regal'));
+    const bus = game.roadFleet.vehicles[0];
+    game.roadFleet.start(bus, [a.id, b.id]);
+    const crossingIndex = bus.path.findIndex((tile) => tile.x === 10 && tile.y === 10);
+    expect(crossingIndex).toBeGreaterThan(0);
+
+    game.roadFleet.setPedestrianCrossings(new Set([10 * game.world.map.width + 10]));
+    runDays(game, 18);
+    expect(bus.pos).toBeCloseTo(crossingIndex - 0.5 - 0.2);
+    expect(game.roadFleet.tileOf(bus)).toEqual({ x: 9, y: 10 });
+
+    game.roadFleet.setPedestrianCrossings(new Set());
+    runDays(game, 1);
+    expect(bus.pos).toBeGreaterThan(crossingIndex - 0.5 - 0.2);
+  });
 });

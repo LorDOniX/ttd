@@ -125,6 +125,17 @@ export class PedestriansView {
     this.render(frustum);
   }
 
+  get crossingTiles(): ReadonlySet<number> {
+    const tiles = new Set<number>();
+    const curb = SIDEWALK_WIDTH - WALK_INSET;
+    for (const p of this.pedestrians) {
+      const length = this.stepLength(p);
+      if (!p.crossing || p.walked <= curb || length - p.walked <= curb) continue;
+      tiles.add(p.from >> 2);
+    }
+    return tiles;
+  }
+
   // Přesadí chodce, jejichž chodník zmizel nebo kteří uvízli
   private relocate(): void {
     for (const p of this.pedestrians) {

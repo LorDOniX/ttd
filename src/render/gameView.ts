@@ -8,6 +8,7 @@ import { IsoCamera } from './camera';
 import { CrossingsView } from './crossings';
 import { IndustriesView } from './industries';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
+import { ParkedCarsView } from './parkedCars';
 import { PedestriansView } from './pedestrians';
 import { RailView } from './rail';
 import { RoadVehiclesView } from './roadVehicles';
@@ -36,6 +37,7 @@ export class GameView {
   private readonly trains: TrainsView;
   private readonly vehicles: RoadVehiclesView;
   private readonly pedestrians: PedestriansView;
+  private readonly parkedCars: ParkedCarsView;
   private readonly trees: TreesView;
   private readonly industries: IndustriesView;
   private readonly ambientProps: AmbientPropsView;
@@ -66,6 +68,7 @@ export class GameView {
     this.terrain = new TerrainView(map, towns);
     const roads = new RoadView(map, world.rail);
     this.ambientProps = new AmbientPropsView(map, world.rail, roads);
+    this.parkedCars = new ParkedCarsView();
     const buildings = new BuildingsView();
     void buildings.rebuild(towns);
     this.trees = new TreesView(map);
@@ -88,6 +91,7 @@ export class GameView {
       this.terrain.object,
       roads.object,
       this.ambientProps.object,
+      this.parkedCars.object,
       buildings.object,
       this.industries.object,
       this.trees.object,
@@ -138,6 +142,7 @@ export class GameView {
       this.terrain.sync();
       roads.sync();
       this.ambientProps.sync();
+      this.parkedCars.sync(this.ambientProps.parkedCarPlacements);
       this.trees.sync();
       if (this.railDirty) {
         this.railDirty = false;
@@ -207,16 +212,18 @@ export class GameView {
 
   // Jeden snímek: posun hry o reálný čas dtMs a vykreslení
   frame(now: number, dtMs: number): void {
+    this.syncMap();
+    const frustum = this.camera.frustum();
+    // Chodci chodí v reálném čase nezávisle na rychlosti hry, při pauze stojí
+    this.pedestrians.update(this.game.clock.paused ? 0 : Math.min(dtMs, 100) / 1000, frustum);
+    this.game.roadFleet.setPedestrianCrossings(this.pedestrians.crossingTiles);
     this.game.update(dtMs);
     this.syncMap();
     const seconds = now / 1000;
     this.trees.update(seconds);
     this.industries.update(seconds);
-    const frustum = this.camera.frustum();
     this.trains.update(frustum);
     this.vehicles.update(frustum);
-    // Chodci chodí v reálném čase nezávisle na rychlosti hry, při pauze stojí
-    this.pedestrians.update(this.game.clock.paused ? 0 : Math.min(dtMs, 100) / 1000, frustum);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
     this.crossings.update(now, (x, y) => reservations.ownerAt(x, y) !== undefined);

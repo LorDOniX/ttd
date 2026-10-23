@@ -86,12 +86,17 @@ function placeTowns(
   towns: Town[],
   year: number,
   density: number,
+  requiredFirstName?: string,
 ): void {
   const population = TOWN_POPULATION[kind];
   const count = Math.max(1, Math.round(((map.width * map.height) / TILES_PER_TOWN[kind]) * density));
   let placed = 0;
 
-  for (let attempt = 0; attempt < 600 * density && placed < count && names.length > 0; attempt++) {
+  for (
+    let attempt = 0;
+    attempt < 600 * density && placed < count && (names.length > 0 || (placed === 0 && requiredFirstName));
+    attempt++
+  ) {
     const x = rng.int(EDGE_MARGIN, map.width - 1 - EDGE_MARGIN);
     const y = rng.int(EDGE_MARGIN, map.height - 1 - EDGE_MARGIN);
     if (!map.isFree(x, y) || landRatio(map, x, y, 6) < 0.75) continue;
@@ -99,7 +104,7 @@ function placeTowns(
 
     const town: Town = {
       id: towns.length,
-      name: names.pop()!,
+      name: placed === 0 && requiredFirstName ? requiredFirstName : names.pop()!,
       kind,
       x,
       y,
@@ -112,6 +117,35 @@ function placeTowns(
     expandTown(map, town, year, rng);
     towns.push(town);
     placed++;
+  }
+
+  if (placed === 0 && requiredFirstName) {
+    let location: { x: number; y: number } | undefined;
+    for (let y = EDGE_MARGIN; y < map.height - EDGE_MARGIN && !location; y++) {
+      for (let x = EDGE_MARGIN; x < map.width - EDGE_MARGIN; x++) {
+        if (map.isFree(x, y)) {
+          location = { x, y };
+          break;
+        }
+      }
+    }
+    if (!location) {
+      location = { x: Math.floor(map.width / 2), y: Math.floor(map.height / 2) };
+      map.set(location.x, location.y, TileType.Grass);
+    }
+    const town: Town = {
+      id: towns.length,
+      name: requiredFirstName,
+      kind,
+      ...location,
+      population: rng.int(population.min, population.max),
+      radius: 2,
+      shape: createTownShape(rng),
+      buildings: [],
+      served: false,
+    };
+    expandTown(map, town, year, rng);
+    towns.push(town);
   }
 }
 
@@ -127,8 +161,8 @@ export function generateWorld(
 
   const towns: Town[] = [];
   // Města a městečka berou jména ze společného seznamu, aby se neopakovala
-  const townNames = rng.shuffle([...CITY_NAMES]);
-  placeTowns(map, rng, 'city', townNames, towns, year, options.townDensity);
+  const townNames = rng.shuffle(CITY_NAMES.filter((name) => name !== 'Brno'));
+  placeTowns(map, rng, 'city', townNames, towns, year, options.townDensity, 'Brno');
   placeTowns(map, rng, 'town', townNames, towns, year, options.townDensity);
   placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year, options.townDensity);
   generateTrees(map, seed);

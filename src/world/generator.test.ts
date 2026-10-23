@@ -12,6 +12,18 @@ describe('generátor světa', () => {
     expect(a.towns.map((t) => [t.name, t.population])).toEqual(b.towns.map((t) => [t.name, t.population]));
   });
 
+  it('každá mapa obsahuje právě jedno město Brno', () => {
+    for (const [seed, size, waterLevel, townDensity] of [
+      [0, 128, 0.34, 1],
+      [7, 256, 0.28, 0.6],
+      [42, 512, 0.42, 1.5],
+      [9, 128, 2, 1],
+    ] as const) {
+      const world = generateWorld(seed, size, 1950, { waterLevel, townDensity });
+      expect(world.towns.filter((town) => town.name === 'Brno')).toHaveLength(1);
+    }
+  });
+
   it('výchozí parametry zachovávají dosavadní mapy', () => {
     const implicit = generateWorld(7, 128, 1950);
     const explicit = generateWorld(7, 128, 1950, { waterLevel: 0.34, townDensity: 1 });
