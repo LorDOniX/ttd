@@ -195,6 +195,7 @@ export class GameView {
       this.trafficLights.refresh();
       this.trafficLightView.sync(this.trafficLights.all);
       this.cityTraffic.reconcile(this.roads.version, game.roadFleet.vehicles);
+      this.nightLights.invalidate();
     });
     game.events.on('railChanged', () => (this.railDirty = true));
     game.events.on('stationsChanged', rebuildStationLabels);
@@ -310,7 +311,14 @@ export class GameView {
       this.roads.version,
     );
     if (this.trafficOverlay.visible) this.trafficOverlay.update(this.trafficHotspots());
-    this.nightLights.update(this.nightMode, frustum, this.camera.camera.position, this.roads.streetLamps);
+    this.nightLights.update(
+      this.nightMode,
+      frustum,
+      this.camera.camera.position,
+      this.roads.streetLamps,
+      this.game.world.towns,
+      now,
+    );
     this.game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
     this.syncMap();
     this.applySeason();
