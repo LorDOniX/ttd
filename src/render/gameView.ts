@@ -12,6 +12,7 @@ import { IsoCamera } from './camera';
 import { CrossingsView } from './crossings';
 import { IndustriesView } from './industries';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
+import { FallingLeavesView } from './fallingLeaves';
 import { PedestriansView } from './pedestrians';
 import { RailView } from './rail';
 import { RoadVehiclesView } from './roadVehicles';
@@ -43,6 +44,7 @@ export class GameView {
   private readonly cityTraffic: CityTraffic;
   private readonly pedestrians: PedestriansView;
   private readonly trees: TreesView;
+  private readonly fallingLeaves: FallingLeavesView;
   private readonly animals: AnimalsView;
   private readonly buildings: BuildingsView;
   private readonly industries: IndustriesView;
@@ -88,6 +90,7 @@ export class GameView {
     void this.buildings.rebuild(towns);
     this.trees = new TreesView(map);
     void this.trees.refresh();
+    this.fallingLeaves = new FallingLeavesView(map);
     this.animals = new AnimalsView(map);
     void this.animals.refresh();
     this.industries = new IndustriesView();
@@ -113,6 +116,7 @@ export class GameView {
       this.buildings.object,
       this.industries.object,
       this.trees.object,
+      this.fallingLeaves.object,
       this.animals.object,
       railView.object,
       this.signals.object,
@@ -165,6 +169,7 @@ export class GameView {
       this.ambientProps.sync();
       game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
       this.trees.sync();
+      this.fallingLeaves.sync();
       this.animals.sync();
       if (this.railDirty) {
         this.railDirty = false;
@@ -208,6 +213,7 @@ export class GameView {
     this.currentSeason = season;
     this.terrain.setSeason(season);
     this.trees.setSeason(season);
+    this.fallingLeaves.setSeason(season);
     this.buildings.setSeason(season);
     this.industries.setSeason(season);
   }
@@ -276,6 +282,7 @@ export class GameView {
     this.applySeason();
     const seconds = now / 1000;
     this.trees.update(seconds);
+    this.fallingLeaves.update(seconds, frustum);
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
     this.trains.update(frustum);
