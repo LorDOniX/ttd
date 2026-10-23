@@ -13,6 +13,7 @@ import { formatMoney, type Game } from './game';
 import { TileType, type TilePos } from '../world/map';
 import type { Depot, Station } from '../world/rail';
 import { findRoadRoute, roadMoves } from '../world/roadRoute';
+import type { RoadTrafficObstacle } from './cityTraffic';
 
 const DAYS_PER_YEAR = 365.25;
 const LOST_RETRY_DAYS = 5;
@@ -97,6 +98,40 @@ export function vehicleRunningCost(vehicle: RoadVehicle, today: number): number 
 export function vehiclePoint(path: TilePos[], pos: number): { x: number; y: number; dx: number; dy: number } {
   if (path.length === 0) return { x: 0, y: 0, dx: 1, dy: 0 };
   if (path.length === 1) return { x: path[0].x + 0.5, y: path[0].y + 0.5, dx: 1, dy: 0 };
+  const turn = Math.round(pos);
+  if (turn > 0 && turn < path.length - 1 && Math.abs(pos - turn) <= 0.5) {
+    const previous = path[turn - 1];
+    const corner = path[turn];
+    const next = path[turn + 1];
+    const incoming = { x: corner.x - previous.x, y: corner.y - previous.y };
+    const outgoing = { x: next.x - corner.x, y: next.y - corner.y };
+    const cross = incoming.x * outgoing.y - incoming.y * outgoing.x;
+    if (cross !== 0) {
+      const radius = 0.5;
+      const centerX = corner.x + 0.5 - incoming.x * radius + outgoing.x * radius;
+      const centerY = corner.y + 0.5 - incoming.y * radius + outgoing.y * radius;
+      const startX = -outgoing.x * radius;
+      const startY = -outgoing.y * radius;
+      const endX = incoming.x * radius;
+      const endY = incoming.y * radius;
+      const startAngle = Math.atan2(startY, startX);
+      let angleDelta = Math.atan2(endY, endX) - startAngle;
+      if (cross > 0) {
+        while (angleDelta <= 0) angleDelta += Math.PI * 2;
+      } else {
+        while (angleDelta >= 0) angleDelta -= Math.PI * 2;
+      }
+      const t = pos - (turn - 0.5);
+      const angle = startAngle + angleDelta * t;
+      const direction = Math.sign(angleDelta);
+      return {
+        x: centerX + Math.cos(angle) * radius,
+        y: centerY + Math.sin(angle) * radius,
+        dx: -Math.sin(angle) * direction,
+        dy: Math.cos(angle) * direction,
+      };
+    }
+  }
   const i = Math.max(0, Math.min(path.length - 2, Math.floor(pos)));
   const t = Math.max(0, Math.min(1, pos - i));
   const a = path[i];
@@ -110,6 +145,7 @@ export class RoadFleet {
   readonly vehicles: RoadVehicle[] = [];
   nextId = 1;
   private pedestrianCrossings: ReadonlySet<number> = new Set();
+  private trafficObstacles: readonly RoadTrafficObstacle[] = [];
 
   constructor(private readonly game: Game) {
     game.clock.events.on('month', () => this.chargeRunningCosts());
@@ -130,6 +166,10 @@ export class RoadFleet {
 
   setPedestrianCrossings(tiles: ReadonlySet<number>): void {
     this.pedestrianCrossings = tiles;
+  }
+
+  setTrafficObstacles(vehicles: readonly RoadTrafficObstacle[]): void {
+    this.trafficObstacles = vehicles;
   }
 
   // Od každého nákladu nejnovější model, který už se vyrábí
@@ -318,7 +358,19 @@ export class RoadFleet {
       const from = vehicle.path[k - 1];
       const to = vehicle.path[k];
       const crossingTile = to.y * map.width + to.x;
-      if (this.pedestrianCrossings.has(crossingTile) && vehicle.pos < k - 0.5) {
+      const junction = roadMoves(this.game.world.rail, to.x, to.y).length >= 3;
+      const junctionOccupied =
+        junction &&
+        (this.vehicles.some((other) => {
+          if (other === vehicle || other.state === 'depot' || other.path.length === 0) return false;
+          const occupied = other.path[Math.round(other.pos)];
+          return occupied?.x === to.x && occupied.y === to.y;
+        }) ||
+          this.trafficObstacles.some((other) => {
+            const occupied = other.path[Math.round(other.pos)];
+            return occupied?.x === to.x && occupied.y === to.y;
+          }));
+      if ((this.pedestrianCrossings.has(crossingTile) || junctionOccupied) && vehicle.pos < k - 0.5) {
         pos = Math.max(vehicle.pos, k - 0.5 - CROSSING_GAP);
         break;
       }
@@ -345,17 +397,25 @@ export class RoadFleet {
     let room = Infinity;
     for (const other of this.vehicles) {
       if (other === vehicle || other.state === 'depot' || other.path.length === 0) continue;
-      const it = vehiclePoint(other.path, other.pos);
-      if (me.dx * it.dx + me.dy * it.dy <= 0.5) continue;
-      const ox = it.x - me.x;
-      const oy = it.y - me.y;
-      const along = ox * me.dx + oy * me.dy;
-      const lateral = Math.abs(ox * me.dy - oy * me.dx);
-      // Na stejném místě (např. oba vyjíždejí z garáže) pouští dřív koupené auto
-      const ahead = along > 0 || (along === 0 && other.id < vehicle.id);
-      if (ahead && lateral < LANE_WIDTH) room = Math.min(room, Math.max(0, along - VEHICLE_GAP));
+      room = Math.min(room, this.roomTo(me, vehicle, other));
+    }
+    for (const other of this.trafficObstacles) {
+      if (other.path.length === 0) continue;
+      room = Math.min(room, this.roomTo(me, vehicle, other));
     }
     return room;
+  }
+
+  private roomTo(me: ReturnType<typeof vehiclePoint>, vehicle: RoadVehicle, other: RoadTrafficObstacle): number {
+    const it = vehiclePoint(other.path, other.pos);
+    if (me.dx * it.dx + me.dy * it.dy <= 0.5) return Infinity;
+    const ox = it.x - me.x;
+    const oy = it.y - me.y;
+    const along = ox * me.dx + oy * me.dy;
+    const lateral = Math.abs(ox * me.dy - oy * me.dx);
+    // Na stejném místě (např. oba vyjíždejí z garáže) pouští dřív koupené auto
+    const ahead = along > 0 || (along === 0 && (other.id === undefined || other.id < vehicle.id));
+    return ahead && lateral < LANE_WIDTH ? Math.max(0, along - VEHICLE_GAP) : Infinity;
   }
 
   private arrive(vehicle: RoadVehicle): void {

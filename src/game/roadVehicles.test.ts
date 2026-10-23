@@ -64,6 +64,30 @@ describe('zastávky a garáže aut', () => {
 });
 
 describe('silniční vozidla', () => {
+  it('zatáčí v křižovatce plynulým obloukem mezi rovnými úseky', () => {
+    const path = [
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+      { x: 1, y: 0 },
+    ];
+    const start = vehiclePoint(path, 0.5);
+    const middle = vehiclePoint(path, 1);
+    const end = vehiclePoint(path, 1.5);
+
+    expect(start.x).toBeCloseTo(1);
+    expect(start.y).toBeCloseTo(1.5);
+    expect(start.dx).toBeCloseTo(1);
+    expect(start.dy).toBeCloseTo(0);
+    expect(middle.x).toBeGreaterThan(start.x);
+    expect(middle.y).toBeLessThan(start.y);
+    expect(middle.dx).toBeCloseTo(Math.SQRT1_2);
+    expect(middle.dy).toBeCloseTo(-Math.SQRT1_2);
+    expect(end.x).toBeCloseTo(1.5);
+    expect(end.y).toBeCloseTo(1);
+    expect(end.dx).toBeCloseTo(0);
+    expect(end.dy).toBeCloseTo(-1);
+  });
+
   it('autobus vozí cestující mezi zastávkami a vydělává', () => {
     const { game, a, b, depot } = buildRoadLine();
     expect(game.roadFleet.buy(depot, model('bus-regal'))).toBeNull();
@@ -178,6 +202,50 @@ describe('silniční vozidla', () => {
     closed = false;
     runDays(game, 3);
     expect(game.roadFleet.tileOf(bus)!.x).toBeGreaterThan(20);
+  });
+
+  it('hráčovo auto zůstane za provozem města a pokračuje po jeho odjetí', () => {
+    const { game, a, b, depot } = buildRoadLine();
+    game.roadFleet.buy(depot, model('bus-regal'));
+    const bus = game.roadFleet.vehicles[0];
+    game.roadFleet.start(bus, [a.id, b.id]);
+    game.roadFleet.setTrafficObstacles([{ id: -1, path: bus.path, pos: 4 }]);
+
+    runDays(game, 10);
+    expect(bus.pos).toBeCloseTo(3.5);
+
+    game.roadFleet.setTrafficObstacles([]);
+    runDays(game, 1);
+    expect(bus.pos).toBeGreaterThan(3.5);
+  });
+
+  it('hráčovo auto nečeká uprostřed křižovatky obsazené městským autem', () => {
+    const { game, a, b, depot } = buildRoadLine();
+    game.world.map.set(20, 9, TileType.Road);
+    game.world.map.set(20, 11, TileType.Road);
+    game.roadFleet.buy(depot, model('bus-regal'));
+    const bus = game.roadFleet.vehicles[0];
+    game.roadFleet.start(bus, [a.id, b.id]);
+    bus.path = Array.from({ length: 33 }, (_, i) => ({ x: 8 + i, y: 10 }));
+    bus.pos = 0;
+    const junctionIndex = bus.path.findIndex((tile) => tile.x === 20 && tile.y === 10);
+    expect(junctionIndex).toBeGreaterThan(1);
+    game.roadFleet.setTrafficObstacles([
+      {
+        id: -1,
+        path: [
+          { x: 19, y: 10 },
+          { x: 20, y: 10 },
+          { x: 21, y: 10 },
+        ],
+        pos: 1,
+      },
+    ]);
+
+    runDays(game, 15);
+
+    expect(bus.pos).toBeCloseTo(junctionIndex - 0.5 - 0.2);
+    expect(game.roadFleet.tileOf(bus)).toEqual({ x: 19, y: 10 });
   });
 
   it('před obsazeným přechodem auto počká a po přejití pokračuje', () => {

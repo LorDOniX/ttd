@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CARGOS, type Cargo } from '../game/cargo';
+import { CityTraffic } from '../game/cityTraffic';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { AmbientPropsView } from './ambientProps';
@@ -8,7 +9,6 @@ import { IsoCamera } from './camera';
 import { CrossingsView } from './crossings';
 import { IndustriesView } from './industries';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
-import { ParkedCarsView } from './parkedCars';
 import { PedestriansView } from './pedestrians';
 import { RailView } from './rail';
 import { RoadVehiclesView } from './roadVehicles';
@@ -36,13 +36,14 @@ export class GameView {
   private readonly labels: TownLabels;
   private readonly trains: TrainsView;
   private readonly vehicles: RoadVehiclesView;
+  private readonly cityTraffic: CityTraffic;
   private readonly pedestrians: PedestriansView;
-  private readonly parkedCars: ParkedCarsView;
   private readonly trees: TreesView;
   private readonly industries: IndustriesView;
   private readonly ambientProps: AmbientPropsView;
   private readonly crossings: CrossingsView;
   private readonly signals: SignalsView;
+  private readonly roads: RoadView;
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
   private railDirty = false;
@@ -66,9 +67,9 @@ export class GameView {
     scene.add(sun);
 
     this.terrain = new TerrainView(map, towns);
-    const roads = new RoadView(map, world.rail);
+    const roads = (this.roads = new RoadView(map, world.rail));
     this.ambientProps = new AmbientPropsView(map, world.rail, roads);
-    this.parkedCars = new ParkedCarsView();
+    this.cityTraffic = new CityTraffic(map, world.rail, towns, world.seed, roads.version, game.roadFleet.vehicles);
     const buildings = new BuildingsView();
     void buildings.rebuild(towns);
     this.trees = new TreesView(map);
@@ -91,7 +92,6 @@ export class GameView {
       this.terrain.object,
       roads.object,
       this.ambientProps.object,
-      this.parkedCars.object,
       buildings.object,
       this.industries.object,
       this.trees.object,
@@ -140,9 +140,9 @@ export class GameView {
     // Terén, silnice a stromy čtou změny mapy samy jednou za snímek; koleje se přestaví nejvýš jednou za snímek
     this.syncMap = () => {
       this.terrain.sync();
-      roads.sync();
+      this.roads.sync();
       this.ambientProps.sync();
-      this.parkedCars.sync(this.ambientProps.parkedCarPlacements);
+      game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
       this.trees.sync();
       if (this.railDirty) {
         this.railDirty = false;
@@ -154,6 +154,7 @@ export class GameView {
     game.events.on('townsChanged', () => {
       void buildings.rebuild(towns);
       towns.forEach((town) => this.labels.update(town));
+      this.cityTraffic.reconcile(this.roads.version, game.roadFleet.vehicles);
     });
     game.events.on('railChanged', () => (this.railDirty = true));
     game.events.on('stationsChanged', rebuildStationLabels);
@@ -211,19 +212,28 @@ export class GameView {
   }
 
   // Jeden snímek: posun hry o reálný čas dtMs a vykreslení
-  frame(now: number, dtMs: number): void {
+  frame(now: number, dtMs: number, trafficDtMs = dtMs): void {
     this.syncMap();
     const frustum = this.camera.frustum();
     // Chodci chodí v reálném čase nezávisle na rychlosti hry, při pauze stojí
     this.pedestrians.update(this.game.clock.paused ? 0 : Math.min(dtMs, 100) / 1000, frustum);
     this.game.roadFleet.setPedestrianCrossings(this.pedestrians.crossingTiles);
+    this.game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
     this.game.update(dtMs);
+    const trafficSeconds = this.game.clock.paused ? 0 : Math.min(trafficDtMs, 100) / 1000;
+    this.cityTraffic.update(
+      trafficSeconds,
+      this.pedestrians.crossingTiles,
+      this.game.roadFleet.vehicles,
+      this.roads.version,
+    );
+    this.game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
     this.syncMap();
     const seconds = now / 1000;
     this.trees.update(seconds);
     this.industries.update(seconds);
     this.trains.update(frustum);
-    this.vehicles.update(frustum);
+    this.vehicles.update(frustum, this.cityTraffic.cars);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
     this.crossings.update(now, (x, y) => reservations.ownerAt(x, y) !== undefined);

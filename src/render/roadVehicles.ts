@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loadModel } from '../assets';
 import { CARGOS } from '../game/cargo';
+import type { CityCar } from '../game/cityTraffic';
 import { roadVehicleModel, vehiclePoint, type RoadFleet, type RoadVehicle } from '../game/roadVehicles';
 import type { GameMap } from '../world/map';
 import { inView } from './camera';
@@ -14,6 +15,7 @@ const LANE = 0.16;
 
 interface VehicleView {
   modelId: string;
+  playerId: number | null;
   group: THREE.Group;
   // Náklad na korbě, viditelný jen naložený
   load: THREE.Object3D | null;
@@ -58,7 +60,7 @@ const FLATBED_LOADS: Partial<Record<string, 'pile' | 'logs' | 'plates'>> = {
 // Autobusy a nákladní auta na silnicích; v garáži nejsou vidět
 export class RoadVehiclesView {
   readonly object = new THREE.Group();
-  private readonly views = new Map<number, VehicleView>();
+  private readonly views = new Map<string, VehicleView>();
 
   constructor(
     private readonly fleet: RoadFleet,
@@ -66,25 +68,44 @@ export class RoadVehiclesView {
   ) {}
 
   // Auta mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
-  update(frustum: THREE.Frustum): void {
-    const alive = new Set(this.fleet.vehicles.map((v) => v.id));
-    for (const [id, view] of this.views) {
-      if (!alive.has(id)) {
+  update(frustum: THREE.Frustum, cityCars: readonly CityCar[] = []): void {
+    const alive = new Set([
+      ...this.fleet.vehicles.map((vehicle) => `player:${vehicle.id}`),
+      ...cityCars.map((car) => `city:${car.id}`),
+    ]);
+    for (const [key, view] of this.views) {
+      if (!alive.has(key)) {
         this.object.remove(view.group);
-        this.views.delete(id);
+        this.views.delete(key);
       }
     }
     for (const vehicle of this.fleet.vehicles) {
-      let view = this.views.get(vehicle.id);
-      if (!view || view.modelId !== vehicle.modelId) {
+      const key = `player:${vehicle.id}`;
+      const modelId = roadVehicleModel(vehicle).model;
+      let view = this.views.get(key);
+      if (!view || view.modelId !== modelId) {
         if (view) this.object.remove(view.group);
-        view = this.createView(vehicle);
-        this.views.set(vehicle.id, view);
+        view = this.createView(key, modelId, vehicle.id, vehicle);
+        this.views.set(key, view);
         this.object.add(view.group);
       }
       view.group.visible = vehicle.state !== 'depot' && vehicle.path.length > 0;
       if (!view.group.visible) continue;
-      this.place(vehicle, view);
+      this.place(vehicle.path, vehicle.pos, view);
+      const { x, y, z } = view.group.position;
+      view.group.visible = inView(frustum, x, y, z, 0.3);
+    }
+    for (const car of cityCars) {
+      const key = `city:${car.id}`;
+      let view = this.views.get(key);
+      if (!view || view.modelId !== car.model) {
+        if (view) this.object.remove(view.group);
+        view = this.createView(key, car.model, null);
+        this.views.set(key, view);
+        this.object.add(view.group);
+      }
+      view.group.visible = true;
+      this.place(car.path, car.pos, view);
       const { x, y, z } = view.group.position;
       view.group.visible = inView(frustum, x, y, z, 0.3);
     }
@@ -93,7 +114,9 @@ export class RoadVehiclesView {
   // Id auta, které paprsek zasáhne jako první
   pick(raycaster: THREE.Raycaster): number | null {
     for (const hit of raycaster.intersectObject(this.object, true)) {
-      for (const [id, view] of this.views) {
+      for (const view of this.views.values()) {
+        const id = view.playerId;
+        if (id === null) continue;
         if (!view.group.visible) continue;
         let o: THREE.Object3D | null = hit.object;
         while (o && o !== view.group) o = o.parent;
@@ -103,17 +126,18 @@ export class RoadVehiclesView {
     return null;
   }
 
-  private createView(vehicle: RoadVehicle): VehicleView {
-    const model = roadVehicleModel(vehicle);
-    const view: VehicleView = { modelId: model.id, group: new THREE.Group(), load: null };
+  private createView(key: string, modelId: string, playerId: number | null, vehicle?: RoadVehicle): VehicleView {
+    const model = vehicle ? roadVehicleModel(vehicle) : null;
+    const view: VehicleView = { modelId, playerId, group: new THREE.Group(), load: null };
     view.group.scale.setScalar(SCALE);
-    void loadModel('car kit', model.model).then((object) => {
+    void loadModel('car kit', modelId).then((object) => {
+      if (this.views.get(key) !== view) return;
       // Popelářský vůz slouží jako cisterna, odpadky na střeše nepatří k ropě
       const trash = object.getObjectByName('trash');
       if (trash) trash.visible = false;
       view.group.add(object);
-      const kind = FLATBED_LOADS[model.cargo];
-      if (kind) {
+      const kind = model && FLATBED_LOADS[model.cargo];
+      if (model && kind) {
         view.load = flatbedLoad(CARGOS[model.cargo].color, kind);
         view.group.add(view.load);
       }
@@ -121,14 +145,17 @@ export class RoadVehiclesView {
     return view;
   }
 
-  private place(vehicle: RoadVehicle, view: VehicleView): void {
-    const { x, y, dx, dy } = vehiclePoint(vehicle.path, vehicle.pos);
+  private place(path: RoadVehicle['path'], pos: number, view: VehicleView): void {
+    const { x, y, dx, dy } = vehiclePoint(path, pos);
     const length = Math.hypot(dx, dy) || 1;
     const [ux, uy] = [dx / length, dy / length];
     // Vpravo od směru jízdy (osa Y mapy je osa Z scény); na mostě po mostovce
     const lift = this.map.roadBridgeAxis(Math.floor(x), Math.floor(y)) ? BRIDGE_DECK : 0;
     view.group.position.set(x - uy * LANE, ROAD_TOP + lift, y + ux * LANE);
     view.group.rotation.y = Math.atan2(ux, uy);
-    if (view.load) view.load.visible = vehicle.passengers > 0;
+    if (view.load && view.playerId !== null) {
+      const vehicle = this.fleet.vehicles.find((candidate) => candidate.id === view.playerId);
+      view.load.visible = (vehicle?.passengers ?? 0) > 0;
+    }
   }
 }

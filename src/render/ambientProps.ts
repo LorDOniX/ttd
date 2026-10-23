@@ -29,13 +29,6 @@ const COLORS = {
 
 const POWER_LINE_HEIGHT = 0.68;
 
-export interface ParkedCarPlacement {
-  x: number;
-  z: number;
-  yaw: number;
-  model: string;
-}
-
 function hash(x: number, y: number, salt: number): number {
   let h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(salt, 83492791);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -59,7 +52,6 @@ export class AmbientPropsView {
   private readonly connects;
   private readonly geometries = new Map<string, THREE.BufferGeometry>();
   private readonly materials = new Map<number, THREE.MeshLambertMaterial>();
-  private parkedCars: ParkedCarPlacement[] = [];
 
   constructor(
     private readonly map: GameMap,
@@ -76,13 +68,8 @@ export class AmbientPropsView {
     if (changes === null || changes.length > 0) this.rebuild();
   }
 
-  get parkedCarPlacements(): readonly ParkedCarPlacement[] {
-    return this.parkedCars;
-  }
-
   private rebuild(): void {
     const parts: Part[] = [];
-    this.parkedCars = [];
     this.cityProps(parts);
     this.ruralProps(parts);
 
@@ -153,7 +140,6 @@ export class AmbientPropsView {
       else if (value < 0.2) this.phoneBox(parts, px, pz, yaw);
       else if (value < 0.23) this.hydrant(parts, px, pz);
       else if (value < 0.255) this.streetTree(parts, px, pz);
-      else if (value < 0.31) this.parkedCar(x, y, vertical, hash(x, y, 102) > 0.5);
     }
   }
 
@@ -277,18 +263,6 @@ export class AmbientPropsView {
     this.box(parts, x, z, [0, 0.52, 0], [0.62, 0.04, 0.07], COLORS.roof, yaw);
     this.box(parts, x, z, [0, 0.3, -0.025], [0.5, 0.3, 0.008], COLORS.blue, yaw);
     this.box(parts, x, z, [0, 0.14, 0.01], [0.4, 0.025, 0.04], COLORS.wood, yaw);
-  }
-
-  private parkedCar(tileX: number, tileY: number, vertical: boolean, side: boolean): void {
-    const x = tileX + (vertical ? (side ? 0.37 : 0.63) : 0.5);
-    const z = tileY + (vertical ? 0.5 : side ? 0.37 : 0.63);
-    const models = ['hatchback-sports', 'sedan', 'suv', 'van'];
-    this.parkedCars.push({
-      x,
-      z,
-      yaw: vertical ? 0 : Math.PI / 2,
-      model: models[Math.floor(hash(tileX, tileY, 103) * models.length)],
-    });
   }
 
   private farm(parts: Part[], x: number, z: number, yaw: number): void {

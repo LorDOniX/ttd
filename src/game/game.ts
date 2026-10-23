@@ -150,11 +150,12 @@ export class Game {
     return Math.round((this.infrastructure * MAINTENANCE_RATE) / 12);
   }
 
-  update(dtMs: number): void {
+  update(dtMs: number): number {
     const days = this.clock.tick(dtMs);
     this.fleet.update(days);
     this.roadFleet.update(days);
     this.construction.update(dtMs);
+    return days;
   }
 
   earn(amount: number): void {

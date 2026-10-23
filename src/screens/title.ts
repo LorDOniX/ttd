@@ -208,6 +208,6 @@ export function runTitle(container: HTMLElement): void {
     const dt = now - lastFrame;
     lastFrame = now;
     view.camera.spin((SPIN_PER_SECOND * dt) / 1000);
-    view.frame(now, dt * DEMO_SPEED);
+    view.frame(now, dt * DEMO_SPEED, dt);
   });
 }
