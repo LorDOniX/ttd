@@ -5,6 +5,7 @@ import type { CityCar } from '../game/cityTraffic';
 import { roadVehicleModel, vehiclePoint, type RoadFleet, type RoadVehicle } from '../game/roadVehicles';
 import type { GameMap } from '../world/map';
 import { inView } from './camera';
+import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
 import { BRIDGE_DECK } from './rail';
 
 // Modely z car kitu jsou dlouhé ~3 jednotky podél +Z (předek), kola stojí na y = 0
@@ -18,24 +19,18 @@ interface VehicleView {
   group: THREE.Group;
   // Náklad na korbě, viditelný jen naložený
   load: THREE.Object3D | null;
-  lights: THREE.Group;
+  lights: THREE.Mesh;
 }
 
-function vehicleLightMarkers(): THREE.Group {
-  const lights = new THREE.Group();
-  const head = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 0.14, 0.05),
-    new THREE.MeshBasicMaterial({ color: 0xffedba }),
-  );
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.05), new THREE.MeshBasicMaterial({ color: 0xf04438 }));
-  for (const side of [-1, 1]) {
-    const headlight = head.clone();
-    headlight.position.set(side * 0.44, 0.34, 1.34);
-    lights.add(headlight);
-    const taillight = tail.clone();
-    taillight.position.set(side * 0.44, 0.32, -1.34);
-    lights.add(taillight);
-  }
+const VEHICLE_LIGHTS_GEOMETRY = lightMarkerGeometry(
+  [-1, 1].flatMap((side) => [
+    { size: [0.24, 0.14, 0.05], position: [side * 0.44, 0.34, 1.34], color: 0xffedba },
+    { size: [0.2, 0.12, 0.05], position: [side * 0.44, 0.32, -1.34], color: 0xf04438 },
+  ]),
+);
+
+function vehicleLightMarkers(): THREE.Mesh {
+  const lights = new THREE.Mesh(VEHICLE_LIGHTS_GEOMETRY, LIGHT_MARKER_MATERIAL);
   lights.visible = false;
   return lights;
 }

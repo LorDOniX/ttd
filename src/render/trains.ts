@@ -6,6 +6,7 @@ import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
 import { pointAt } from '../world/route';
 import { inView } from './camera';
+import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
 import { BRIDGE_DECK } from './rail';
 
 // Modely z train kitu jsou dlouhé ~2,6 jednotky podél +Z
@@ -20,25 +21,21 @@ interface TrainView {
   vehicles: THREE.Object3D[];
   // Náklad každého vagonu (část modelu `cargo`), null u vagonů bez viditelného nákladu
   loads: (THREE.Object3D | null)[];
-  lights: THREE.Group[];
+  lights: THREE.Mesh[];
 }
 
-function trainLightMarkers(): THREE.Group[] {
-  const headlights = new THREE.Group();
-  const headMaterial = new THREE.MeshBasicMaterial({ color: 0xffedbb });
-  for (const side of [-1, 1]) {
-    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.05), headMaterial);
-    lamp.position.set(side * 0.36, 0.36, 1.22);
-    headlights.add(lamp);
-  }
-  const tailLights = new THREE.Group();
-  const tailMaterial = new THREE.MeshBasicMaterial({ color: 0xef4037 });
-  for (const side of [-1, 1]) {
-    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.05), tailMaterial);
-    lamp.position.set(side * 0.36, 0.32, -1.22);
-    tailLights.add(lamp);
-  }
-  return [headlights, tailLights];
+const HEADLIGHTS_GEOMETRY = lightMarkerGeometry(
+  [-1, 1].map((side) => ({ size: [0.22, 0.14, 0.05], position: [side * 0.36, 0.36, 1.22], color: 0xffedbb })),
+);
+const TAIL_LIGHTS_GEOMETRY = lightMarkerGeometry(
+  [-1, 1].map((side) => ({ size: [0.18, 0.12, 0.05], position: [side * 0.36, 0.32, -1.22], color: 0xef4037 })),
+);
+
+function trainLightMarkers(): THREE.Mesh[] {
+  return [
+    new THREE.Mesh(HEADLIGHTS_GEOMETRY, LIGHT_MARKER_MATERIAL),
+    new THREE.Mesh(TAIL_LIGHTS_GEOMETRY, LIGHT_MARKER_MATERIAL),
+  ];
 }
 
 const PLATE_MATERIAL = new THREE.MeshLambertMaterial({ color: 0xc4ced8, flatShading: true });

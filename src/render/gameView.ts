@@ -22,7 +22,7 @@ import { SignalsView } from './signals';
 import { TerrainView } from './terrain';
 import { TrafficLightsView } from './trafficLights';
 import { TrafficOverlayView } from './trafficOverlay';
-import { NightLightsView } from './nightLights';
+import { NIGHT_DETAIL_ZOOM, NightLightsView } from './nightLights';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
 
@@ -315,6 +315,7 @@ export class GameView {
       this.nightMode,
       frustum,
       this.camera.camera.position,
+      this.camera.camera.zoom,
       this.roads.streetLamps,
       this.game.world.towns,
       now,
@@ -327,8 +328,10 @@ export class GameView {
     this.fallingLeaves.update(seconds, frustum);
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
-    this.trains.update(frustum, this.nightMode);
-    this.vehicles.update(frustum, this.cityTraffic.cars, this.nightMode);
+    // Světla vozidel jsou při oddálení menší než pixel, jen by přidávala draw cally
+    const vehicleLights = this.nightMode && this.camera.camera.zoom >= NIGHT_DETAIL_ZOOM;
+    this.trains.update(frustum, vehicleLights);
+    this.vehicles.update(frustum, this.cityTraffic.cars, vehicleLights);
     this.trafficLightView.update(this.trafficLights);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
