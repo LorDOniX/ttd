@@ -114,7 +114,7 @@ describe('výrobní řetězce', () => {
     // Zboží vykupuje jen nástupiště s dostatkem městské zástavby v dosahu
     expect(game.freight.accepted(a)).toEqual([]);
     for (let x = 6; x < 6 + TOWN_ACCEPTS_MIN_BUILDINGS - 1; x++) addBuilding(game, townA, x, 14);
-    expect(game.freight.accepted(a)).toEqual(['mail', 'goods']);
+    expect(game.freight.accepted(a)).toEqual(['mail', 'goods', 'food']);
     const train = buyTrain(game, depot, 2);
     game.fleet.setCargo(train, 'goods');
     game.fleet.start(train, [b.id, a.id]);
@@ -137,6 +137,39 @@ describe('výrobní řetězce', () => {
     expect(game.freight.monthlyMail(a)).toBeCloseTo(45);
     for (let i = 0; i < 400 && game.thisYear.freight.mail === 0; i++) runDays(game, 1);
     expect(game.thisYear.freight.mail).toBeGreaterThan(0);
+  });
+
+  it('farma dodá obilí potravinářskému závodu', () => {
+    const { game, a, b, depot } = buildLine();
+    const farm = addIndustry(game, 'farm', 5, 5);
+    const foodFactory = addIndustry(game, 'food-factory', 43, 16);
+
+    expect(game.freight.produced(a)).toContain('grain');
+    expect(game.freight.accepted(b)).toContain('grain');
+    const grainTrain = buyTrain(game, depot, 2);
+    expect(game.fleet.setCargo(grainTrain, 'grain')).toBeNull();
+    game.fleet.start(grainTrain, [a.id, b.id]);
+    a.freight.grain = 60;
+    for (let i = 0; i < 20_000 && foodFactory.received === 0; i++) game.update(200);
+    expect(farm.transported).toBeGreaterThan(0);
+    expect(foodFactory.received).toBeGreaterThan(0);
+  });
+
+  it('potravinářský závod zpracuje obilí a město vykoupí potraviny', () => {
+    const { game, a, b, depot, townA } = buildLine();
+    const foodFactory = addIndustry(game, 'food-factory', 43, 16);
+    foodFactory.received = 90;
+    for (let x = 6; x < 6 + TOWN_ACCEPTS_MIN_BUILDINGS; x++) addBuilding(game, townA, x, 14);
+    runDays(game, 31);
+    expect(foodFactory.production).toBeGreaterThan(0);
+    expect(game.freight.produced(b)).toContain('food');
+    expect(game.freight.accepted(a)).toContain('food');
+    const foodTrain = buyTrain(game, depot, 2);
+    expect(game.fleet.setCargo(foodTrain, 'food')).toBeNull();
+    game.fleet.start(foodTrain, [b.id, a.id]);
+    expect(game.freight.pickupStations(foodFactory)).toContain(b);
+    for (let i = 0; i < 20_000 && game.thisYear.freight.food === 0; i++) game.update(200);
+    expect(game.thisYear.freight.food).toBeGreaterThan(0);
   });
 });
 

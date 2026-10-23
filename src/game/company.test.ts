@@ -21,7 +21,7 @@ describe('společnost', () => {
     expect(parts).toHaveLength(5);
     expect(parts[0].points).toBe(200);
     expect(parts[2].points).toBe(200);
-    expect(parts[3].points).toBe(50);
+    expect(parts[3].points).toBe(40);
     const score = performanceScore(parts);
     expect(score).toBe(parts.reduce((sum, p) => sum + p.points, 0));
     expect(performanceTitle(score)).toBe(score >= 400 ? 'Manažer' : 'Podnikatel');

@@ -9,7 +9,7 @@ import { Rng } from '../world/rng';
 import type { TrafficLights } from './trafficLights';
 
 const CARS_PER_RESIDENT = 1 / 300;
-const CITY_CAR_MODELS = ['hatchback-sports', 'sedan', 'suv', 'taxi'] as const;
+export const CITY_CAR_MODELS = ['hatchback-sports', 'sedan', 'suv', 'taxi'] as const;
 // Ekvivalent rychlostí v herních dnech při běžném tempu hodin (365,25 dne za 15 minut).
 const CAR_SPEEDS = [2.4, 2.8, 3.1, 3.4].map((speed) => (speed * 365.25) / (15 * 60));
 const VEHICLE_GAP = 0.5;

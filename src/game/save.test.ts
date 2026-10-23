@@ -107,6 +107,30 @@ describe('uložení a načtení', () => {
     expect(copy.history[0].freight.coal).toBe(70);
   });
 
+  it('uložení verze 13 doplní nové zemědělské náklady nulou', () => {
+    const { game } = buildLine();
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    data.version = 13;
+    for (const station of data.rail.stations) {
+      delete station.freight.grain;
+      delete station.freight.food;
+      delete station.ratings.grain;
+      delete station.ratings.food;
+    }
+    for (const year of [data.game.thisYear, ...data.game.history]) {
+      delete year.freight.grain;
+      delete year.freight.food;
+    }
+
+    const copy = restoreGame(parseSave(JSON.stringify(data)));
+
+    expect(copy.world.rail.stations.map((station) => [station.freight.grain, station.freight.food])).toEqual([
+      [0, 0],
+      [0, 0],
+    ]);
+    expect([copy.thisYear.freight.grain, copy.thisYear.freight.food]).toEqual([0, 0]);
+  });
+
   it('průmysl se uloží a neplatný z cizího souboru zahodí', () => {
     const { game } = buildLine();
     game.world.industries.push({

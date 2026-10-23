@@ -1,6 +1,8 @@
 import {
   COAL_FARE_TIERS,
   FARE_TIERS,
+  FOOD_FARE_TIERS,
+  GRAIN_FARE_TIERS,
   GOODS_FARE_TIERS,
   IRON_ORE_FARE_TIERS,
   MAIL_FARE_TIERS,
@@ -11,12 +13,22 @@ import {
 } from './balance';
 
 // Druhy nákladu: přidání dalšího je položka v FREIGHT_TYPES, CARGOS a v INDUSTRY_TYPES (kdo ho vyrábí a přijímá)
-export type FreightType = 'mail' | 'coal' | 'wood' | 'oil' | 'iron-ore' | 'steel' | 'goods';
+export type FreightType = 'mail' | 'coal' | 'wood' | 'oil' | 'iron-ore' | 'steel' | 'goods' | 'grain' | 'food';
 export type Cargo = 'passengers' | FreightType;
 
-export const FREIGHT_TYPES: readonly FreightType[] = ['mail', 'coal', 'wood', 'oil', 'iron-ore', 'steel', 'goods'];
+export const FREIGHT_TYPES: readonly FreightType[] = [
+  'mail',
+  'coal',
+  'wood',
+  'oil',
+  'iron-ore',
+  'steel',
+  'goods',
+  'grain',
+  'food',
+];
 // Co vykupuje nástupiště s dostatkem městské zástavby v dosahu; pošta ve městech i vzniká
-export const TOWN_ACCEPTS: readonly FreightType[] = ['mail', 'goods'];
+export const TOWN_ACCEPTS: readonly FreightType[] = ['mail', 'goods', 'food'];
 
 export interface CargoSpec {
   name: string;
@@ -103,6 +115,24 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: GOODS_FARE_TIERS,
     wagonModels: ['train-carriage-container-blue', 'train-carriage-container-red', 'train-carriage-container-green'],
     color: '#d9a441',
+  },
+  grain: {
+    name: 'Obilí',
+    unit: 't obilí',
+    noun: 'obilí',
+    genitive: 'obilí',
+    fareTiers: GRAIN_FARE_TIERS,
+    wagonModels: ['train-carriage-dirt'],
+    color: '#c49a3a',
+  },
+  food: {
+    name: 'Potraviny',
+    unit: 't potravin',
+    noun: 'potraviny',
+    genitive: 'potravin',
+    fareTiers: FOOD_FARE_TIERS,
+    wagonModels: ['train-carriage-box', 'train-carriage-container-green'],
+    color: '#d97745',
   },
 };
 

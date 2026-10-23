@@ -1,4 +1,10 @@
-import { COAL_PRODUCTION, IRON_ORE_PRODUCTION, OIL_PRODUCTION, WOOD_PRODUCTION } from '../game/balance';
+import {
+  COAL_PRODUCTION,
+  GRAIN_PRODUCTION,
+  IRON_ORE_PRODUCTION,
+  OIL_PRODUCTION,
+  WOOD_PRODUCTION,
+} from '../game/balance';
 import type { FreightType } from '../game/cargo';
 import { GameMap, TileType } from './map';
 import type { Rng } from './rng';
@@ -13,7 +19,9 @@ export type IndustryKind =
   | 'refinery'
   | 'iron-mine'
   | 'steel-mill'
-  | 'factory';
+  | 'factory'
+  | 'farm'
+  | 'food-factory';
 
 export interface Industry {
   id: number;
@@ -47,8 +55,8 @@ export interface IndustryType {
   tilesPerIndustry: number;
 }
 
-// Řetězce jako v OpenTTD: uhlí → elektrárna, dřevo → pila, ropa → rafinerie, ruda → ocelárna → ocel → továrna;
-// zboží vykupují města
+// Řetězce: uhlí → elektrárna, dřevo → pila, ropa → rafinerie, ruda → ocelárna → továrna,
+// obilí z farmy → potravinářský závod → města
 export const INDUSTRY_TYPES: Record<IndustryKind, IndustryType> = {
   'coal-mine': {
     name: 'Uhelný důl',
@@ -112,6 +120,20 @@ export const INDUSTRY_TYPES: Record<IndustryKind, IndustryType> = {
     production: null,
     accepts: ['steel'],
     tilesPerIndustry: 22_000,
+  },
+  farm: {
+    name: 'Farma',
+    produces: 'grain',
+    production: GRAIN_PRODUCTION,
+    accepts: [],
+    tilesPerIndustry: 9_000,
+  },
+  'food-factory': {
+    name: 'Potravinářský závod',
+    produces: 'food',
+    production: null,
+    accepts: ['grain'],
+    tilesPerIndustry: 18_000,
   },
 };
 

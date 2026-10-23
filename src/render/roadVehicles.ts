@@ -51,6 +51,7 @@ function flatbedLoad(color: string, kind: 'pile' | 'logs' | 'plates'): THREE.Obj
 
 const FLATBED_LOADS: Partial<Record<string, 'pile' | 'logs' | 'plates'>> = {
   coal: 'pile',
+  grain: 'pile',
   'iron-ore': 'pile',
   wood: 'logs',
   steel: 'plates',

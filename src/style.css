@@ -117,6 +117,152 @@ body {
   cursor: default;
 }
 
+.model-gallery {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  color: var(--text);
+  background: var(--window);
+}
+
+.model-gallery__header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.model-gallery__header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.model-gallery__back {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.model-gallery__count {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.model-gallery__filters {
+  display: flex;
+  flex: 1 1 320px;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.model-gallery__filters input,
+.model-gallery__filters select {
+  min-width: 0;
+  height: 32px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--window);
+  border: 1px solid var(--border);
+  font: inherit;
+}
+
+.model-gallery__filters input {
+  flex: 1 1 220px;
+}
+
+.model-gallery__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.model-gallery__card {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.model-gallery__viewport {
+  position: relative;
+  aspect-ratio: 3 / 2;
+  background: #deddd7;
+}
+
+.model-gallery__preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.model-gallery__status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #555;
+  font-size: 12px;
+}
+
+.model-gallery__status[hidden] {
+  display: none;
+}
+
+.model-gallery__identity {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  overflow-wrap: anywhere;
+}
+
+.model-gallery__identity strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.model-gallery__identity span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.model-gallery__empty {
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+.model-gallery__renderer {
+  position: fixed;
+  top: 0;
+  left: -300px;
+  pointer-events: none;
+}
+
+@media (max-width: 520px) {
+  .model-gallery__header {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .model-gallery__filters {
+    flex-basis: 100%;
+  }
+
+  .model-gallery__grid {
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    gap: 7px;
+    padding: 7px;
+  }
+}
+
 .statusbar {
   position: absolute;
   left: 0;

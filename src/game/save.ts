@@ -1,5 +1,14 @@
 import { RATING_START, ROAD_VEHICLE_MODELS, STATION_LENGTH } from './balance';
-import { CARGO_TYPES, FREIGHT_TYPES, emptyFreight, isCargo, newRatings, type Cargo, type CargoRating, type FreightStock } from './cargo';
+import {
+  CARGO_TYPES,
+  FREIGHT_TYPES,
+  emptyFreight,
+  isCargo,
+  newRatings,
+  type Cargo,
+  type CargoRating,
+  type FreightStock,
+} from './cargo';
 import { Game, emptyYear, type ViewState, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Job } from './construction';
@@ -13,8 +22,8 @@ import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
 // 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům;
-// 11: den poslední dodávky (zánik závodů); 12: hodnocení nástupiště podle druhu nákladu; 13: auta, zastávky a garáže
-const SAVE_VERSION = 13;
+// 11: den poslední dodávky; 12: hodnocení podle nákladu; 13: silniční doprava; 14: zemědělský řetězec
+const SAVE_VERSION = 14;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -196,7 +205,7 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, SAVE_VERSION].includes(data.version as number)) {
+  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, SAVE_VERSION].includes(data.version as number)) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -206,7 +215,16 @@ export function parseSave(text: string): SaveData {
   const size = (v: unknown): boolean => Number.isInteger(v) && (v as number) > 0 && (v as number) <= MAX_MAP_SIZE;
   if (!size(map.width) || !size(map.height)) throw new Error('Neplatná velikost mapy.');
   const strings = [map.tiles, map.owner, rail.pieces, game.companyName, data.seedText];
-  const numbers = [data.seed, rail.nextStationId, rail.nextDepotId, fleet.nextId, game.money, game.rngState, clock.day, clock.dayProgress];
+  const numbers = [
+    data.seed,
+    rail.nextStationId,
+    rail.nextDepotId,
+    fleet.nextId,
+    game.money,
+    game.rngState,
+    clock.day,
+    clock.dayProgress,
+  ];
   const arrays = [data.towns, rail.stations, rail.depots, fleet.trains, rail.signals ?? [], data.industries ?? []];
   if (
     strings.some((s) => typeof s !== 'string') ||
@@ -313,7 +331,8 @@ export function restoreGame(data: SaveData): Game {
 function validJob(job: unknown, width: number, height: number): job is Job {
   if (!isObject(job) || !isObject(job.step) || (job.kind !== 'track' && job.kind !== 'road')) return false;
   const { x, y, piece, isNew, axis } = job.step;
-  const below = (v: unknown, size: number): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) < size;
+  const below = (v: unknown, size: number): boolean =>
+    Number.isInteger(v) && (v as number) >= 0 && (v as number) < size;
   const pieceOk = job.kind === 'road' || below(piece, PIECES.length);
   // Nový dílek mostu nese osu, jinak by se nad vodou nepostavil
   const axisOk = job.kind === 'track' || axis === undefined || axis === 'x' || axis === 'y';

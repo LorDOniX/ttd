@@ -2,14 +2,14 @@ import * as THREE from 'three';
 import { loadPrototype } from './buildings';
 import { MapChanges, TileType, type GameMap } from '../world/map';
 
-const MODELS = ['animal-deer', 'animal-fox', 'animal-hog', 'animal-bunny', 'animal-beaver'] as const;
+export const ANIMAL_MODELS = ['animal-deer', 'animal-fox', 'animal-hog', 'animal-bunny', 'animal-beaver'] as const;
 const SPAWN_CHANCE = 0.012;
 const BUNNY_SCALE = 0.55;
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
 export interface AnimalPlacement {
   tile: number;
-  model: (typeof MODELS)[number];
+  model: (typeof ANIMAL_MODELS)[number];
   x: number;
   z: number;
   rotation: number;
@@ -85,7 +85,7 @@ export function animalPlacements(map: GameMap): AnimalPlacement[] {
     if (neighbors < 2 || tileHash(x, y, 100) >= SPAWN_CHANCE) continue;
 
     const species = tileHash(x, y, 101);
-    const model = isNearWater(map, x, y) && species > 0.82 ? MODELS[4] : MODELS[Math.floor(species * 4)];
+    const model = isNearWater(map, x, y) && species > 0.82 ? ANIMAL_MODELS[4] : ANIMAL_MODELS[Math.floor(species * 4)];
     placements.push({
       tile,
       model,
@@ -190,12 +190,12 @@ export class AnimalsView {
   async refresh(): Promise<void> {
     const generation = ++this.generation;
     const placements = animalPlacements(this.map);
-    const matrices: THREE.Matrix4[][] = MODELS.map(() => []);
+    const matrices: THREE.Matrix4[][] = ANIMAL_MODELS.map(() => []);
     const roamers: RoamingAnimal[] = [];
     const up = new THREE.Vector3(0, 1, 0);
 
     for (const placement of placements) {
-      const model = MODELS.indexOf(placement.model);
+      const model = ANIMAL_MODELS.indexOf(placement.model);
       const index = matrices[model].length;
       const tileX = placement.tile % this.map.width;
       const tileY = Math.floor(placement.tile / this.map.width);
@@ -221,14 +221,14 @@ export class AnimalsView {
       matrices[model].push(new THREE.Matrix4().compose(new THREE.Vector3(animal.x, 0, animal.z), rotation, scale));
     }
 
-    const loadedModels = MODELS.filter((_, index) => matrices[index].length > 0);
+    const loadedModels = ANIMAL_MODELS.filter((_, index) => matrices[index].length > 0);
     const prototypes = new Map<string, Prototype[]>();
     await Promise.all(
       loadedModels.map(async (model) => prototypes.set(model, await loadPrototype('cube pets', model))),
     );
     if (generation !== this.generation) return;
 
-    const meshesByModel = MODELS.map((model, modelIndex) =>
+    const meshesByModel = ANIMAL_MODELS.map((model, modelIndex) =>
       (prototypes.get(model) ?? []).map((part) => {
         const mesh = new THREE.InstancedMesh(part.geometry, part.material, matrices[modelIndex].length);
         const matrix = new THREE.Matrix4();
@@ -246,7 +246,7 @@ export class AnimalsView {
     this.object.clear();
     this.object.add(...meshesByModel.flat());
     this.meshesByModel = meshesByModel;
-    this.prototypesByModel = MODELS.map((model) => prototypes.get(model) ?? []);
+    this.prototypesByModel = ANIMAL_MODELS.map((model) => prototypes.get(model) ?? []);
     this.roamers = roamers;
     this.built = true;
   }

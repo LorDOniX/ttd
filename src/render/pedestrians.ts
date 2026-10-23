@@ -16,7 +16,7 @@ import { SIDEWALK_HEIGHT, roadConnects, type RoadView } from './roads';
 
 // Chodců na obyvatele: 10 na každých 1000, počet roste i klesá s městem
 const PEDESTRIANS_PER_RESIDENT = 10 / 1000;
-const CHARACTERS = 'abcdefghijklmnopqr'.split('').map((s) => `character-${s}`);
+export const CHARACTER_MODELS = 'abcdefghijklmnopqr'.split('').map((s) => `character-${s}`);
 // Výška postavy v dlaždicích (auto je dlouhé ~0,4)
 const HEIGHT = 0.16;
 // Rychlost chůze v dlaždicích za sekundu a délka jednoho dvojkroku
@@ -89,7 +89,7 @@ const randomBetween = (min: number, max: number): number => min + Math.random() 
 // Chodci procházející se náhodně po chodnících svého města; nejsou součástí hry ani uložení
 export class PedestriansView {
   readonly object = new THREE.Group();
-  private readonly variants: (Variant | null)[] = CHARACTERS.map(() => null);
+  private readonly variants: (Variant | null)[] = CHARACTER_MODELS.map(() => null);
   private readonly pedestrians: Pedestrian[] = [];
   // Počet chodců podle města při poslední kontrole
   private readonly targets = new Map<number, number>();
@@ -110,7 +110,7 @@ export class PedestriansView {
     private readonly roads: RoadView,
   ) {
     this.connects = roadConnects(map, rail);
-    CHARACTERS.forEach((name, i) => {
+    CHARACTER_MODELS.forEach((name, i) => {
       void loadCharacter(name).then((parts) => (this.variants[i] = { parts, meshes: [], capacity: 0 }));
     });
   }
@@ -175,7 +175,7 @@ export class PedestriansView {
       for (let i = perTown.get(town) ?? 0; i < target; i++) {
         const p: Pedestrian = {
           town,
-          variant: Math.floor(Math.random() * CHARACTERS.length),
+          variant: Math.floor(Math.random() * CHARACTER_MODELS.length),
           from: 0,
           to: 0,
           crossing: false,

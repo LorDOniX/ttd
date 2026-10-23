@@ -56,6 +56,7 @@ const SKYSCRAPERS = [
 const OFFICES = 'abcdefghijkln'.split('').map((s) => `building-${s}`);
 const LOW_OFFICES = ['low-detail-building-n', 'low-detail-building-wide-a', 'low-detail-building-wide-b'];
 const HOUSES = 'abcdefghijklmnopqrstu'.split('').map((s) => `building-type-${s}`);
+export const TOWN_BUILDING_MODELS = [...new Set([...SKYSCRAPERS, ...OFFICES, ...LOW_OFFICES, ...HOUSES])];
 
 // Sousedé v pořadí S, V, J, Z a natočení budovy čelem k nim
 const NEIGHBOURS = [

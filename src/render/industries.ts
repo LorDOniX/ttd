@@ -77,6 +77,16 @@ function animated<T extends THREE.Object3D>(object: T, update: (seconds: number)
   return object;
 }
 
+async function rotatingWindmill(x: number, z: number): Promise<THREE.Object3D> {
+  const mill = await kenney('windmill', 0.8, x, z);
+  const blades = mill.getObjectByName('blades');
+  if (!blades) return mill;
+  const startRotation = blades.rotation.x;
+  return animated(mill, (seconds) => {
+    blades.rotation.x = startRotation + seconds * 1.8;
+  });
+}
+
 function smoke(): THREE.Group {
   const plume = new THREE.Group();
   const puffs = Array.from({ length: 4 }, (_, i) => {
@@ -322,6 +332,8 @@ function conveyor(from: THREE.Vector3, to: THREE.Vector3): THREE.Object3D {
 const now = (object: THREE.Object3D): Promise<THREE.Object3D> => Promise.resolve(object);
 const tree = (name: string, size: number, x: number, z: number): Promise<THREE.Object3D> =>
   kenney(name, size, x, z, x * 7 + z, 'city kit suburban');
+const crop = (name: string, size: number, x: number, z: number): Promise<THREE.Object3D> =>
+  kenney(name, size, x, z, 0, 'nature kit');
 
 const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
   'coal-mine': () => [
@@ -407,11 +419,55 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
     kenney('building-g', 1.6, -0.35, -0.45),
     smokingChimney('chimney-medium', 0.45, 0.95, -1.0),
     kenney('water-tower', 0.5, 1.0, -0.2),
-    kenney('shipping-container-a', 0.55, -0.9, 0.95),
-    kenney('shipping-container-b', 0.55, -0.25, 1.0),
-    kenney('shipping-container-c', 0.55, 0.45, 0.95, Math.PI / 2),
+    kenney('detail-tank', 0.8, -0.75, 0.9),
+  ],
+  farm: () => [
+    kenney('building-type-f', 0.95, -0.8, -0.6, 0, 'city kit suburban'),
+    rotatingWindmill(0.65, -0.75),
+    crop('crop_turnip', 0.5, -0.9, 0.55),
+    crop('crop_carrot', 0.5, -0.25, 0.75),
+    crop('crop_pumpkin', 0.55, 0.45, 0.72),
+    crop('crop_melon', 0.55, 1.0, 0.45),
+  ],
+  'food-factory': () => [
+    smokingBuilding('building-q', 1.35, -0.45, -0.45, [[-0.2, 0.3]], Math.PI / 2),
+    smokingChimney('chimney-small', 0.35, 0.8, -0.85),
+    kenney('planter', 0.8, -0.55, 0.9, 0, 'city kit suburban'),
   ],
 };
+
+export async function buildIndustryPreview(kind: IndustryKind): Promise<THREE.Group> {
+  const area = new THREE.Group();
+  area.add(...(await Promise.all(LAYOUTS[kind]())));
+  return area;
+}
+
+export const INDUSTRY_ASSET_MODELS: readonly { kit: Kit; name: string }[] = [
+  ...[
+    'building-k',
+    'building-n',
+    'building-e',
+    'building-c',
+    'building-b',
+    'building-m',
+    'building-f',
+    'building-g',
+    'building-q',
+    'chimney-small',
+    'chimney-medium',
+    'chimney-large',
+    'chimney-basic',
+    'detail-tank-large',
+    'detail-tank',
+    'water-tower',
+    'windmill',
+  ].map((name) => ({ kit: 'city kit industrial' as Kit, name })),
+  ...['tree-small', 'tree-large', 'building-type-f', 'planter'].map((name) => ({
+    kit: 'city kit suburban' as Kit,
+    name,
+  })),
+  ...['crop_turnip', 'crop_carrot', 'crop_pumpkin', 'crop_melon'].map((name) => ({ kit: 'nature kit' as Kit, name })),
+];
 
 // Průmyslové areály složené z modelů Kenney a jednoduchých těles, s popiskem názvu
 export class IndustriesView {
@@ -463,7 +519,8 @@ export class IndustriesView {
   }
 
   private async build(industry: Industry): Promise<void> {
-    const parts = await Promise.all(LAYOUTS[industry.kind]());
+    const preview = await buildIndustryPreview(industry.kind);
+    const parts = [...preview.children];
     const view = this.views.get(industry.id);
     // Mezitím mohl závod zaniknout
     if (!view) {

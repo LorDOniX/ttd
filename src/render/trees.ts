@@ -4,7 +4,7 @@ import type { Season } from '../game/seasons';
 import { loadPrototype } from './buildings';
 
 // Listnaté a jehličnaté stromy z nature kitu; varianty _dark mají tmavší listí
-const MODELS = [
+export const TREE_MODELS = [
   'tree_default',
   'tree_default_dark',
   'tree_oak',
@@ -157,7 +157,7 @@ export class TreesView {
   async refresh(): Promise<void> {
     const { map } = this;
     const generation = ++this.generation;
-    const matrices: THREE.Matrix4[][] = MODELS.map(() => []);
+    const matrices: THREE.Matrix4[][] = TREE_MODELS.map(() => []);
     const instancesByTile = new Map<number, [number, number][]>();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
@@ -168,7 +168,7 @@ export class TreesView {
       const count = 1 + Math.floor(tileHash(x, y, 1) * 3);
       const instances: [number, number][] = [];
       for (let k = 0; k < count; k++) {
-        const model = Math.min(MODELS.length - 1, Math.floor(tileHash(x, y, 10 + k) * MODELS.length));
+        const model = Math.min(TREE_MODELS.length - 1, Math.floor(tileHash(x, y, 10 + k) * TREE_MODELS.length));
         const scale = 0.35 + tileHash(x, y, 20 + k) * 0.25;
         const px = x + 0.2 + tileHash(x, y, 30 + k) * 0.6;
         const pz = y + 0.2 + tileHash(x, y, 40 + k) * 0.6;
@@ -181,7 +181,7 @@ export class TreesView {
       instancesByTile.set(i, instances);
     }
 
-    const prototypes = await Promise.all(MODELS.map(loadTree));
+    const prototypes = await Promise.all(TREE_MODELS.map(loadTree));
     if (generation !== this.generation) return;
     const meshesByModel = prototypes.map((parts, model) =>
       parts.map((part) => {

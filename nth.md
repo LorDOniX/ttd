@@ -22,7 +22,7 @@ Volitelná rozšíření mimo hlavní fáze ze [ttd.md](ttd.md).
 - **Silniční doprava** – zastávky a garáže, autobusy a nákladní auta z car kitu, ceny a kapacity podle OpenTTD
 - **Provoz městských aut** – autonomní doprava s křižovatkami, semafory a interakcí s hráčskými vozidly
 - **Zvířata v krajině** – dekorativní zvířata v lesích z cube pets kitu
+- **Zemědělský řetězec** – farma produkuje obilí, potravinářský závod z něj vyrábí potraviny pro města
 
 ## Zbývá
 - **Výška terénu** – teď nedává smysl: koleje, mosty, stavba i generátor počítají s rovinou, šlo by o přestavbu celé mapy
-- **další továrny podle modelů** - zkusit navrhnout další továrny
