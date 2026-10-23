@@ -35,6 +35,8 @@ export class GameView {
   private readonly trains: TrainsView;
   private readonly vehicles: RoadVehiclesView;
   private readonly pedestrians: PedestriansView;
+  private readonly trees: TreesView;
+  private readonly industries: IndustriesView;
   private readonly crossings: CrossingsView;
   private readonly signals: SignalsView;
   private readonly floatingTexts = new FloatingTexts();
@@ -63,10 +65,10 @@ export class GameView {
     const roads = new RoadView(map, world.rail);
     const buildings = new BuildingsView();
     void buildings.rebuild(towns);
-    const trees = new TreesView(map);
-    void trees.refresh();
-    const industries = new IndustriesView();
-    void industries.sync(world.industries);
+    this.trees = new TreesView(map);
+    void this.trees.refresh();
+    this.industries = new IndustriesView();
+    void this.industries.sync(world.industries);
     const railView = new RailView(world.rail);
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
@@ -83,8 +85,8 @@ export class GameView {
       this.terrain.object,
       roads.object,
       buildings.object,
-      industries.object,
-      trees.object,
+      this.industries.object,
+      this.trees.object,
       railView.object,
       this.signals.object,
       this.trains.object,
@@ -131,7 +133,7 @@ export class GameView {
     this.syncMap = () => {
       this.terrain.sync();
       roads.sync();
-      trees.sync();
+      this.trees.sync();
       if (this.railDirty) {
         this.railDirty = false;
         railView.rebuild();
@@ -145,7 +147,7 @@ export class GameView {
     });
     game.events.on('railChanged', () => (this.railDirty = true));
     game.events.on('stationsChanged', rebuildStationLabels);
-    game.events.on('industriesChanged', () => void industries.sync(world.industries));
+    game.events.on('industriesChanged', () => void this.industries.sync(world.industries));
     game.events.on('income', (amount, x, z) =>
       this.floatingTexts.show(`+${formatMoney(amount)}`, x, z, 'income-label'),
     );
@@ -202,6 +204,9 @@ export class GameView {
   frame(now: number, dtMs: number): void {
     this.game.update(dtMs);
     this.syncMap();
+    const seconds = now / 1000;
+    this.trees.update(seconds);
+    this.industries.update(seconds);
     const frustum = this.camera.frustum();
     this.trains.update(frustum);
     this.vehicles.update(frustum);

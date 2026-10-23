@@ -31,6 +31,7 @@ const TREE_COLORS: Record<string, number> = {
   woodBarkDark: 0x6e4630,
 };
 
+const treeTime = { value: 0 };
 type Parts = Awaited<ReturnType<typeof loadPrototype>>;
 const treeMaterials = new Map<string, THREE.Material>();
 
@@ -39,6 +40,21 @@ function treeMaterial(material: THREE.Material): THREE.Material {
   if (!result) {
     const color = TREE_COLORS[material.name] ?? (material as THREE.MeshStandardMaterial).color?.getHex() ?? 0xffffff;
     result = new THREE.MeshLambertMaterial({ color });
+    result.onBeforeCompile = (shader) => {
+      shader.uniforms.treeTime = treeTime;
+      shader.vertexShader =
+        'uniform float treeTime;\n' +
+        shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+           #ifdef USE_INSTANCING
+             float wind = sin(treeTime * 0.8 + instanceMatrix[3].x * 0.7 + instanceMatrix[3].z * 0.5);
+             transformed.x += wind * max(position.y, 0.0) * 0.014;
+             transformed.z += wind * max(position.y, 0.0) * 0.006;
+           #endif`,
+        );
+    };
+    result.customProgramCacheKey = () => 'tree-wind';
     treeMaterials.set(material.name, result);
   }
   return result;
@@ -85,6 +101,10 @@ export class TreesView {
 
   constructor(private readonly map: GameMap) {
     this.changes = new MapChanges(map);
+  }
+
+  update(seconds: number): void {
+    treeTime.value = seconds;
   }
 
   // Stromy jen ubývají: vykácené dlaždice se skryjí bez přestavby celé vrstvy

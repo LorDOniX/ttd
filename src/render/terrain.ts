@@ -28,6 +28,54 @@ const SIDES: readonly [number, number][] = [
   [-1, 0],
 ];
 
+function createGreenTexture(): THREE.DataTexture {
+  const size = 128;
+  const pixels = new Uint8Array(size * size * 4);
+  let seed = 173;
+  const random = (): number => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  const drawBlade = (startX: number, startY: number, length: number, color: readonly number[]): void => {
+    let x = startX;
+    for (let dy = 0; dy < length; dy++) {
+      x += Math.floor(random() * 3) - 1;
+      const y = (startY + dy) % size;
+      for (let dx = 0; dx < (random() > 0.72 ? 2 : 1); dx++) {
+        const offset = (y * size + ((x + dx + size) % size)) * 4;
+        pixels.set(color, offset);
+      }
+    }
+  };
+
+  const bladeColors = [
+    [39, 79, 29, 125],
+    [53, 100, 34, 115],
+    [72, 118, 40, 105],
+    [91, 137, 49, 95],
+    [126, 151, 50, 70],
+  ];
+  for (let i = 0; i < 500; i++) {
+    const x = Math.floor(random() * size);
+    const y = Math.floor(random() * size);
+    const length = 3 + Math.floor(random() * 7);
+    const color = bladeColors[Math.floor(random() * bladeColors.length)];
+    drawBlade(x, y, length, color);
+  }
+
+  const texture = new THREE.DataTexture(pixels, size, size, THREE.RGBAFormat);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const GREEN_TEXTURE = createGreenTexture();
+
 // Deterministický šum 0..1 pro jemné odstíny dlaždic
 function tileNoise(x: number, y: number): number {
   let h = (x * 374761393 + y * 668265263) | 0;
@@ -38,6 +86,8 @@ function tileNoise(x: number, y: number): number {
 export class TerrainView {
   readonly object = new THREE.Group();
   private readonly geometry: THREE.BufferGeometry;
+  private readonly greenDetails: THREE.BufferGeometry;
+  private readonly greenDetailColors: Float32Array;
   private readonly shore: THREE.Mesh;
   private readonly grid: THREE.LineSegments;
   private readonly changes: MapChanges;
@@ -51,6 +101,8 @@ export class TerrainView {
     this.changes = new MapChanges(map);
     this.water = new Uint8Array(map.width * map.height);
     this.geometry = this.buildGeometry();
+    this.greenDetails = this.buildGreenDetails();
+    this.greenDetailColors = this.greenDetails.getAttribute('color').array as Float32Array;
     // Hladina (dlaždice vody i mělčina) má animované vlnky
     const surface = -WATER_DEPTH + 0.005;
     const mesh = new THREE.Mesh(
@@ -58,12 +110,21 @@ export class TerrainView {
       withWater(new THREE.MeshLambertMaterial({ vertexColors: true }), surface),
     );
     mesh.onBeforeRender = () => updateWater(performance.now() / 1000);
+    const details = new THREE.Mesh(
+      this.greenDetails,
+      new THREE.MeshBasicMaterial({
+        map: GREEN_TEXTURE,
+        transparent: true,
+        depthWrite: false,
+        vertexColors: true,
+      }),
+    );
     this.shore = new THREE.Mesh(
       this.buildShore(),
       withWater(new THREE.MeshLambertMaterial({ vertexColors: true }), surface),
     );
     this.grid = this.buildGrid();
-    this.object.add(mesh, this.shore, this.grid);
+    this.object.add(mesh, details, this.shore, this.grid);
   }
 
   setGridVisible(visible: boolean): void {
@@ -78,6 +139,10 @@ export class TerrainView {
     const colors = this.geometry.getAttribute('color') as THREE.BufferAttribute;
     this.writeTileColor(colors.array as Float32Array, x, y);
     colors.needsUpdate = true;
+    this.writeGreenDetailAlpha(x, y);
+    const detailColors = this.greenDetails.getAttribute('color') as THREE.BufferAttribute;
+    detailColors.addUpdateRange((y * this.map.width + x) * 16 + 3, 16);
+    detailColors.needsUpdate = true;
   }
 
   // Přebarví jen dlaždice změněné od posledního volání; změna vody přestaví i břehy a mělčiny
@@ -90,11 +155,14 @@ export class TerrainView {
     if (changes.length === 0) return;
     const colors = this.geometry.getAttribute('color') as THREE.BufferAttribute;
     const positions = this.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const detailColors = this.greenDetails.getAttribute('color') as THREE.BufferAttribute;
     const { width } = this.map;
     let shoreChanged = false;
     for (const i of new Set(changes)) {
       const x = i % width;
       const y = Math.floor(i / width);
+      this.writeGreenDetailAlpha(x, y);
+      detailColors.addUpdateRange(i * 16 + 3, 16);
       const water = this.isWater(x, y) ? 1 : 0;
       if (water === this.water[i]) {
         this.writeTileColor(colors.array as Float32Array, x, y);
@@ -109,6 +177,7 @@ export class TerrainView {
       this.writeTileColor(colors.array as Float32Array, x, y);
       colors.addUpdateRange(i * 12, 12);
     }
+    detailColors.needsUpdate = true;
     colors.needsUpdate = true;
     if (shoreChanged) this.rebuildShore();
   }
@@ -121,13 +190,67 @@ export class TerrainView {
         this.water[y * this.map.width + x] = this.isWater(x, y) ? 1 : 0;
         this.writeTileHeight(positions.array as Float32Array, x, y);
         this.writeTileColor(colors.array as Float32Array, x, y);
+        this.writeGreenDetailAlpha(x, y);
       }
     }
     colors.clearUpdateRanges();
     colors.needsUpdate = true;
+    const detailColors = this.greenDetails.getAttribute('color') as THREE.BufferAttribute;
+    detailColors.clearUpdateRanges();
+    detailColors.needsUpdate = true;
     positions.clearUpdateRanges();
     positions.needsUpdate = true;
     this.rebuildShore();
+  }
+
+  private isGreenTile(x: number, y: number): boolean {
+    const type = this.map.get(x, y);
+    return (
+      type === TileType.Grass ||
+      type === TileType.Trees ||
+      (type === TileType.Building && this.towns[this.map.getOwner(x, y)]?.kind !== 'city')
+    );
+  }
+
+  private writeGreenDetailAlpha(x: number, y: number): void {
+    const offset = (y * this.map.width + x) * 16;
+    const alpha = this.isGreenTile(x, y) ? 1 : 0;
+    for (let k = 0; k < 4; k++) this.greenDetailColors[offset + k * 4 + 3] = alpha;
+  }
+
+  private buildGreenDetails(): THREE.BufferGeometry {
+    const { width, height } = this.map;
+    const count = width * height;
+    const positions = new Float32Array(count * 12);
+    const uvs = new Float32Array(count * 8);
+    const colors = new Float32Array(count * 16);
+    const indices = new Uint32Array(count * 6);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        const p = i * 12;
+        positions.set([x, 0.001, y, x + 1, 0.001, y, x + 1, 0.001, y + 1, x, 0.001, y + 1], p);
+        uvs.set(
+          [x * 0.5, y * 0.5, (x + 1) * 0.5, y * 0.5, (x + 1) * 0.5, (y + 1) * 0.5, x * 0.5, (y + 1) * 0.5],
+          i * 8,
+        );
+        for (let k = 0; k < 4; k++) {
+          const c = i * 16 + k * 4;
+          colors[c] = 1;
+          colors[c + 1] = 1;
+          colors[c + 2] = 1;
+          colors[c + 3] = this.isGreenTile(x, y) ? 1 : 0;
+        }
+        const v = i * 4;
+        indices.set([v, v + 2, v + 1, v, v + 3, v + 2], i * 6);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    return geometry;
   }
 
   // Voda včetně dlaždic pod železničním i silničním mostem

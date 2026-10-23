@@ -46,7 +46,67 @@ async function kenney(
   outer.add(inner);
   outer.position.set(x, 0, z);
   outer.rotation.y = rotation;
+  outer.userData.modelHeight = size.y * scale;
+  outer.userData.modelCenter = center;
+  outer.userData.modelScale = scale;
   return outer;
+}
+
+function animated<T extends THREE.Object3D>(object: T, update: (seconds: number) => void): T {
+  object.userData.updateAnimation = update;
+  return object;
+}
+
+function smoke(): THREE.Group {
+  const plume = new THREE.Group();
+  const puffs = Array.from({ length: 4 }, (_, i) => {
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0x45494a, transparent: true, opacity: 0.42, depthWrite: false }),
+    );
+    puff.renderOrder = 2;
+    plume.add(puff);
+    return { mesh: puff, phase: i / 4 };
+  });
+  return animated(plume, (seconds) => {
+    for (const { mesh: puff, phase } of puffs) {
+      const cycle = (seconds * 0.38 + phase) % 1;
+      puff.position.set(Math.sin(seconds * 0.7 + phase * Math.PI * 2) * cycle * 0.11, cycle * 0.75, 0);
+      puff.scale.setScalar(0.7 + cycle * 1.5);
+      (puff.material as THREE.MeshBasicMaterial).opacity = (1 - cycle) * 0.42;
+    }
+  });
+}
+
+async function smokingChimney(name: string, footprint: number, x: number, z: number): Promise<THREE.Object3D> {
+  const chimney = await kenney(name, footprint, x, z);
+  const plume = smoke();
+  plume.position.y = chimney.userData.modelHeight + 0.02;
+  chimney.add(plume);
+  return chimney;
+}
+
+async function smokingBuilding(
+  name: string,
+  footprint: number,
+  x: number,
+  z: number,
+  chimneys: readonly [number, number][],
+  rotation = 0,
+): Promise<THREE.Object3D> {
+  const building = await kenney(name, footprint, x, z, rotation);
+  const center = building.userData.modelCenter as THREE.Vector3;
+  const modelScale = building.userData.modelScale as number;
+  for (const [chimneyX, chimneyZ] of chimneys) {
+    const plume = smoke();
+    plume.position.set(
+      (chimneyX - center.x) * modelScale,
+      building.userData.modelHeight + 0.02,
+      (chimneyZ - center.z) * modelScale,
+    );
+    building.add(plume);
+  }
+  return building;
 }
 
 function mesh(geometry: THREE.BufferGeometry, color: number): THREE.Mesh {
@@ -142,11 +202,13 @@ function pumpjack(x: number, z: number, rotation = 0): THREE.Object3D {
     group.add(beam(new THREE.Vector3(-0.12, 0.05, side), new THREE.Vector3(0, 0.42, 0), 0.03, STEEL));
     group.add(beam(new THREE.Vector3(0.12, 0.05, side), new THREE.Vector3(0, 0.42, 0), 0.03, STEEL));
   }
-  const walking = box(0.62, 0.06, 0.06, 0.04, 0, COAL, 0.42);
-  walking.rotation.z = -0.15;
-  group.add(walking);
-  group.add(box(0.06, 0.16, 0.08, 0.34, 0, COAL, 0.34));
-  group.add(beam(new THREE.Vector3(0.34, 0.34, 0), new THREE.Vector3(0.34, 0.05, 0), 0.015, DARK_STEEL));
+  const arm = new THREE.Group();
+  arm.position.set(0, 0.42, 0);
+  arm.add(mesh(new THREE.BoxGeometry(0.62, 0.06, 0.06), COAL));
+  arm.children[arm.children.length - 1].position.set(0.04, 0.03, 0);
+  arm.add(box(0.06, 0.16, 0.08, 0.34, 0, COAL, -0.08));
+  arm.add(beam(new THREE.Vector3(0.34, -0.08, 0), new THREE.Vector3(0.34, -0.37, 0), 0.015, DARK_STEEL));
+  group.add(animated(arm, (seconds) => (arm.rotation.z = -0.15 + Math.sin(seconds * 1.5) * 0.2)));
   group.add(box(0.16, 0.12, 0.16, -0.24, 0, BELT, 0.05));
   group.position.set(x, 0, z);
   group.rotation.y = rotation;
@@ -217,9 +279,15 @@ function headframe(x: number, z: number): THREE.Object3D {
   // Vzpěra k budově strojovny
   group.add(beam(new THREE.Vector3(0.75, 0, 0), new THREE.Vector3(0.05, height * 0.95, 0), 0.05, STEEL));
   for (const side of [-0.06, 0.06]) {
-    const wheel = mesh(new THREE.TorusGeometry(0.16, 0.025, 6, 14), DARK_STEEL);
+    const wheel = new THREE.Group();
+    wheel.add(mesh(new THREE.TorusGeometry(0.16, 0.025, 6, 14), DARK_STEEL));
+    for (let i = 0; i < 4; i++) {
+      const spoke = mesh(new THREE.BoxGeometry(0.018, 0.29, 0.025), STEEL);
+      spoke.rotation.z = (i * Math.PI) / 4;
+      wheel.add(spoke);
+    }
     wheel.position.set(0, height + 0.1, side);
-    group.add(wheel);
+    group.add(animated(wheel, (seconds) => (wheel.rotation.z = seconds * 1.5)));
   }
   group.position.set(x, 0, z);
   return group;
@@ -238,16 +306,16 @@ const tree = (name: string, size: number, x: number, z: number): Promise<THREE.O
 const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
   'coal-mine': () => [
     now(headframe(-0.7, -0.75)),
-    kenney('building-k', 1.25, 0.75, -0.7),
-    kenney('building-n', 0.8, 0.85, 0.75, Math.PI),
+    smokingBuilding('building-k', 1.25, 0.75, -0.7, [[0.43, 0.2]]),
+    smokingBuilding('building-n', 0.8, 0.85, 0.75, [[-0.18, 0.82]], Math.PI),
     now(pile(0.5, 0.42, -0.75, 0.75)),
     now(pile(0.32, 0.28, 0.05, 1.0)),
     now(conveyor(new THREE.Vector3(-0.75, 0.35, 0.55), new THREE.Vector3(-0.7, 0.9, -0.5))),
   ],
   'power-station': () => [
-    kenney('chimney-large', 1.0, -0.9, -0.9),
-    kenney('chimney-large', 0.85, 0.2, -1.0),
-    kenney('chimney-basic', 0.3, 1.15, -0.95),
+    smokingChimney('chimney-large', 1.0, -0.9, -0.9),
+    smokingChimney('chimney-large', 0.85, 0.2, -1.0),
+    smokingChimney('chimney-basic', 0.3, 1.15, -0.95),
     kenney('building-e', 1.4, 0.55, 0.55, Math.PI / 2),
     kenney('detail-tank-large', 0.7, -0.95, 0.8),
     now(pile(0.35, 0.3, -0.15, 1.05)),
@@ -268,8 +336,11 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
     ...[-0.85, 0, 0.85].flatMap((x) => [now(logPile(x, 0.25, Math.PI / 2)), now(logPile(x, 0.95, Math.PI / 2))]),
   ],
   sawmill: () => [
-    kenney('building-c', 1.4, -0.5, -0.55),
-    kenney('chimney-small', 0.3, 0.75, -1.05),
+    smokingBuilding('building-c', 1.4, -0.5, -0.55, [
+      [0.34, 0.17],
+      [0.34, -0.18],
+    ]),
+    smokingChimney('chimney-small', 0.3, 0.75, -1.05),
     now(logPile(0.75, -0.3)),
     now(logPile(0.75, 0.3)),
     now(logPile(-1.0, 0.85, Math.PI / 2)),
@@ -288,13 +359,17 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
     now(tank(0.42, 0.55, 0.15, 0.95)),
     now(column(0.12, 1.5, -0.2, -0.9)),
     now(column(0.09, 1.1, 0.15, -0.75)),
-    kenney('chimney-medium', 0.4, -0.95, -0.85),
+    smokingChimney('chimney-medium', 0.4, -0.95, -0.85),
     kenney('building-b', 0.9, 0.85, -0.45, Math.PI / 2),
     now(beam(new THREE.Vector3(-0.2, 0.3, -0.9), new THREE.Vector3(-0.85, 0.3, 0.85), 0.04, DARK_STEEL)),
   ],
   'iron-mine': () => [
     now(headframe(0.7, -0.75)),
-    kenney('building-m', 1.2, -0.7, -0.7),
+    smokingBuilding('building-m', 1.2, -0.7, -0.7, [
+      [0.33, 0.4],
+      [0.33, 0],
+      [0.33, -0.4],
+    ]),
     now(pile(0.5, 0.42, 0.75, 0.75, ORE)),
     now(pile(0.35, 0.3, -0.1, 0.95, ORE)),
     now(pile(0.25, 0.2, -0.85, 0.6, ORE)),
@@ -303,14 +378,14 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
   'steel-mill': () => [
     kenney('building-f', 1.4, 0.5, -0.5),
     now(blastFurnace(-0.8, -0.6)),
-    kenney('chimney-large', 0.6, -0.95, 0.4),
-    kenney('chimney-medium', 0.45, -0.4, 0.55),
+    smokingChimney('chimney-large', 0.6, -0.95, 0.4),
+    smokingChimney('chimney-medium', 0.45, -0.4, 0.55),
     now(stack(0.4, 0.75, PLATE)),
     now(stack(0.95, 1.05, PLATE, 3)),
   ],
   factory: () => [
     kenney('building-g', 1.6, -0.35, -0.45),
-    kenney('chimney-medium', 0.45, 0.95, -1.0),
+    smokingChimney('chimney-medium', 0.45, 0.95, -1.0),
     kenney('water-tower', 0.5, 1.0, -0.2),
     kenney('shipping-container-a', 0.55, -0.9, 0.95),
     kenney('shipping-container-b', 0.55, -0.25, 1.0),
@@ -321,7 +396,10 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
 // Průmyslové areály složené z modelů Kenney a jednoduchých těles, s popiskem názvu
 export class IndustriesView {
   readonly object = new THREE.Group();
-  private readonly views = new Map<number, { area: THREE.Object3D; label: CSS2DObject }>();
+  private readonly views = new Map<
+    number,
+    { area: THREE.Object3D; label: CSS2DObject; animations: ((seconds: number) => void)[] }
+  >();
 
   // Doplní nově založené závody a odebere zaniklé
   async sync(industries: readonly Industry[]): Promise<void> {
@@ -333,8 +411,13 @@ export class IndustriesView {
       this.views.delete(id);
     }
     const added = industries.filter((i) => !this.views.has(i.id));
-    for (const industry of added) this.views.set(industry.id, { area: new THREE.Group(), label: this.label(industry) });
+    for (const industry of added)
+      this.views.set(industry.id, { area: new THREE.Group(), label: this.label(industry), animations: [] });
     await Promise.all(added.map((industry) => this.build(industry)));
+  }
+
+  update(seconds: number): void {
+    for (const view of this.views.values()) for (const update of view.animations) update(seconds);
   }
 
   private label(industry: Industry): CSS2DObject {
@@ -356,6 +439,10 @@ export class IndustriesView {
     if (!view) return;
     const { area, label } = view;
     area.add(...parts);
+    area.traverse((part) => {
+      const update = part.userData.updateAnimation;
+      if (typeof update === 'function') view.animations.push(update as (seconds: number) => void);
+    });
     const half = INDUSTRY_SIZE / 2;
     area.position.set(industry.x + half, 0, industry.y + half);
     area.rotation.y = (industry.rotation * Math.PI) / 2;

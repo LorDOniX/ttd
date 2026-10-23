@@ -130,7 +130,11 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
   };
   const hud = new Hud(container, game, actions);
   for (const [id, button] of hud.windowButtons) windows.setAnchor(id, button);
+  let infoCursorActive = false;
   buildTools.onToolChange = (tool) => {
+    const infoActive = tool === 'info';
+    if (infoActive !== infoCursorActive) cursor.setEnabled(infoActive);
+    infoCursorActive = infoActive;
     hud.setInfoActive(tool === 'info');
     view.setLabelsInteractive(tool === null);
   };
