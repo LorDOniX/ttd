@@ -18,6 +18,26 @@ const CELL = 128;
 const ROWS = 2;
 const CROSSWALK_ROW = 1;
 
+const STREETLIGHT_HEIGHT = 0.35;
+const STREETLIGHT_POLE = (() => {
+  const headHeight = 0.065 + 0.018;
+  const poleHeight = STREETLIGHT_HEIGHT - headHeight - 0.02;
+  const pole = new THREE.CylinderGeometry(0.014, 0.019, poleHeight, 6);
+  pole.translate(0, 0.02 + poleHeight / 2, 0);
+  const base = new THREE.CylinderGeometry(0.028, 0.028, 0.035, 8);
+  base.translate(0, 0.0175, 0);
+  return mergeGeometries([pole, base])!;
+})();
+const STREETLIGHT_HEAD = (() => {
+  const glass = new THREE.BoxGeometry(0.045, 0.065, 0.045);
+  glass.translate(0, STREETLIGHT_HEIGHT - 0.018 - 0.0325, 0);
+  const cap = new THREE.BoxGeometry(0.075, 0.018, 0.075);
+  cap.translate(0, STREETLIGHT_HEIGHT - 0.009, 0);
+  return mergeGeometries([glass, cap])!;
+})();
+const STREETLIGHT_POLE_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x454843 });
+const STREETLIGHT_HEAD_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x9a916d });
+
 // Zebra přes rameno křižovatky na ose chůze po chodníku
 function drawCrosswalks(ctx: CanvasRenderingContext2D, mask: number, ox: number, oy: number): void {
   const c = CELL / 2;
@@ -204,6 +224,7 @@ export class RoadView {
   private readonly road: THREE.Mesh;
   private readonly sidewalk: THREE.Mesh;
   private readonly bridges: THREE.Mesh;
+  private readonly streetLights = new THREE.Group();
   // Kód dlaždice při poslední přestavbě: silnice, garáž a město vlastnící chodník
   private readonly roadTiles: Int32Array;
   private readonly changes: MapChanges;
@@ -218,7 +239,7 @@ export class RoadView {
     );
     this.sidewalk = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ color: 0xc4c1b6 }));
     this.bridges = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }));
-    this.object.add(this.road, this.sidewalk, this.bridges);
+    this.object.add(this.road, this.sidewalk, this.bridges, this.streetLights);
     this.roadTiles = new Int32Array(map.width * map.height);
     this.changes = new MapChanges(map);
     this.rebuild();
@@ -282,6 +303,45 @@ export class RoadView {
         : new THREE.BufferGeometry();
     this.sidewalk.geometry.dispose();
     this.sidewalk.geometry = sidewalkGeometry(sidewalkTiles, connects);
+    this.rebuildStreetLights(sidewalkTiles, connects);
     this.version++;
+  }
+
+  private rebuildStreetLights(tiles: readonly { x: number; y: number }[], connects: RoadConnects): void {
+    for (const light of this.streetLights.children as THREE.InstancedMesh[]) light.dispose();
+    this.streetLights.clear();
+    const positions: THREE.Vector3[] = [];
+    for (const { x, y } of tiles) {
+      const vertical = connects(x, y, Edge.N) || connects(x, y, Edge.S);
+      const horizontal = connects(x, y, Edge.E) || connects(x, y, Edge.W);
+      const count = Number(vertical) + Number(horizontal);
+      if (count === 0 || hasCrosswalks(this.map, connects, x, y)) continue;
+
+      const alongVertical = vertical && (!horizontal || (x + y) % 2 === 0);
+      const along = alongVertical ? y : x;
+      const across = alongVertical ? x : y;
+      if (along % 4 !== across % 4) continue;
+
+      if (alongVertical) {
+        positions.push(new THREE.Vector3(x + 0.035, SIDEWALK_HEIGHT, y + 0.5));
+        positions.push(new THREE.Vector3(x + 0.965, SIDEWALK_HEIGHT, y + 0.5));
+      } else {
+        positions.push(new THREE.Vector3(x + 0.5, SIDEWALK_HEIGHT, y + 0.035));
+        positions.push(new THREE.Vector3(x + 0.5, SIDEWALK_HEIGHT, y + 0.965));
+      }
+    }
+
+    if (positions.length === 0) return;
+    const poles = new THREE.InstancedMesh(STREETLIGHT_POLE, STREETLIGHT_POLE_MATERIAL, positions.length);
+    const heads = new THREE.InstancedMesh(STREETLIGHT_HEAD, STREETLIGHT_HEAD_MATERIAL, positions.length);
+    const matrix = new THREE.Matrix4();
+    positions.forEach((position, i) => {
+      matrix.makeTranslation(position.x, position.y, position.z);
+      poles.setMatrixAt(i, matrix);
+      heads.setMatrixAt(i, matrix);
+    });
+    poles.computeBoundingSphere();
+    heads.computeBoundingSphere();
+    this.streetLights.add(poles, heads);
   }
 }
