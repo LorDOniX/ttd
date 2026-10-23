@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CARGOS, type Cargo } from '../game/cargo';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
+import { AmbientPropsView } from './ambientProps';
 import { BuildingsView } from './buildings';
 import { IsoCamera } from './camera';
 import { CrossingsView } from './crossings';
@@ -37,6 +38,7 @@ export class GameView {
   private readonly pedestrians: PedestriansView;
   private readonly trees: TreesView;
   private readonly industries: IndustriesView;
+  private readonly ambientProps: AmbientPropsView;
   private readonly crossings: CrossingsView;
   private readonly signals: SignalsView;
   private readonly floatingTexts = new FloatingTexts();
@@ -63,6 +65,7 @@ export class GameView {
 
     this.terrain = new TerrainView(map, towns);
     const roads = new RoadView(map, world.rail);
+    this.ambientProps = new AmbientPropsView(map, world.rail, roads);
     const buildings = new BuildingsView();
     void buildings.rebuild(towns);
     this.trees = new TreesView(map);
@@ -84,6 +87,7 @@ export class GameView {
     scene.add(
       this.terrain.object,
       roads.object,
+      this.ambientProps.object,
       buildings.object,
       this.industries.object,
       this.trees.object,
@@ -133,6 +137,7 @@ export class GameView {
     this.syncMap = () => {
       this.terrain.sync();
       roads.sync();
+      this.ambientProps.sync();
       this.trees.sync();
       if (this.railDirty) {
         this.railDirty = false;
