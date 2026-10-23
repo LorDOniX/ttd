@@ -2,18 +2,29 @@ import * as THREE from 'three';
 import type { ViewState } from '../game/game';
 
 const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 4;
+// Nejbližší pohled ukáže zhruba dvě dlaždice na výšku, aby byly vidět detaily postav a budov
+const MAX_ZOOM = 12;
 // Dimetrie 2:1 jako v OpenTTD: kamera z rohu mapy pod elevací 30°
 const ISO_DIRECTION = new THREE.Vector3(1, Math.SQRT2 * Math.tan(Math.PI / 6), 1).normalize();
 const ROTATION_STEP = Math.PI / 2;
 const ROTATION_MS = 300;
 const UP = new THREE.Vector3(0, 1, 0);
+const sphere = new THREE.Sphere();
+
+// Je koule kolem bodu aspoň zčásti v záběru kamery
+export function inView(frustum: THREE.Frustum, x: number, y: number, z: number, radius: number): boolean {
+  sphere.center.set(x, y, z);
+  sphere.radius = radius;
+  return frustum.intersectsSphere(sphere);
+}
 
 export class IsoCamera {
   readonly camera = new THREE.OrthographicCamera();
   readonly target = new THREE.Vector3();
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly raycaster = new THREE.Raycaster();
+  private readonly viewFrustum = new THREE.Frustum();
+  private readonly viewProjection = new THREE.Matrix4();
   private panAnchor: THREE.Vector3 | null = null;
   // Natočení pohledu kolem svislé osy; cílové se mění po 90°, aktuální k němu plynule dobíhá
   private azimuth = 0;
@@ -40,6 +51,12 @@ export class IsoCamera {
     this.camera.bottom = -this.viewSize;
     this.camera.updateProjectionMatrix();
     this.updatePosition();
+  }
+
+  // Aktuální záběr kamery pro vynechání objektů mimo obrazovku
+  frustum(): THREE.Frustum {
+    this.viewProjection.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    return this.viewFrustum.setFromProjectionMatrix(this.viewProjection);
   }
 
   focus(x: number, z: number): void {

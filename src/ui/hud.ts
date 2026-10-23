@@ -107,9 +107,9 @@ export class Hud {
           '🛣️',
           'Stavba silnic, zastávek a garáží (S, Z, U)',
           actions.openRoadBuild,
-          sceneIcon('road'),
+          sceneIcon('road-depot'),
         ),
-        windowButton('rail-build', '🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild, sceneIcon('track')),
+        windowButton('rail-build', '🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild, sceneIcon('depot')),
       ],
       [windowButton('news', '📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
     ];

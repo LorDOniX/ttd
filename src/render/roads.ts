@@ -1,6 +1,9 @@
 import * as THREE from 'three';
-import { GameMap, MapChanges, TileType } from '../world/map';
+import { GameMap, MapChanges, NO_OWNER, TileType } from '../world/map';
 import { EDGE_DELTA, Edge, RailNetwork, opposite } from '../world/rail';
+import { SIDEWALK_WIDTH, WALK_INSET, hasCrosswalks, sidewalkTown, type RoadConnects } from '../world/sidewalks';
+
+export type { RoadConnects } from '../world/sidewalks';
 
 // Bity propojení silnice se sousedy: S = y-1, V = x+1, J = y+1, Z = x-1
 const N = 1;
@@ -9,12 +12,31 @@ const S = 4;
 const W = 8;
 const VARIANTS = 16;
 const CELL = 128;
+// Řádek atlasu: obyčejná silnice a městská křižovatka se zebrami
+const ROWS = 2;
+const CROSSWALK_ROW = 1;
+
+// Zebra přes rameno křižovatky na ose chůze po chodníku
+function drawCrosswalks(ctx: CanvasRenderingContext2D, mask: number, ox: number, oy: number): void {
+  const c = CELL / 2;
+  const half = CELL * 0.25;
+  const across = CELL * WALK_INSET;
+  const depth = CELL * 0.12;
+  const stripe = CELL * 0.05;
+  ctx.fillStyle = '#ecece4';
+  for (let s = -half + stripe / 2; s + stripe <= half; s += stripe * 2) {
+    if (mask & N) ctx.fillRect(ox + c + s, oy + across - depth / 2, stripe, depth);
+    if (mask & S) ctx.fillRect(ox + c + s, oy + CELL - across - depth / 2, stripe, depth);
+    if (mask & W) ctx.fillRect(ox + across - depth / 2, oy + c + s, depth, stripe);
+    if (mask & E) ctx.fillRect(ox + CELL - across - depth / 2, oy + c + s, depth, stripe);
+  }
+}
 
 // Atlas 16 variant silnice podle propojení se sousedy, kreslený do canvasu
 function createRoadAtlas(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = CELL * VARIANTS;
-  canvas.height = CELL;
+  canvas.height = CELL * ROWS;
   const ctx = canvas.getContext('2d')!;
   const c = CELL / 2;
 
@@ -52,6 +74,14 @@ function createRoadAtlas(): THREE.CanvasTexture {
     ctx.stroke();
   }
 
+  // Druhý řádek je kopie prvního, křižovatky v něm mají zebry
+  ctx.setLineDash([]);
+  ctx.drawImage(canvas, 0, 0, CELL * VARIANTS, CELL, 0, CELL * CROSSWALK_ROW, CELL * VARIANTS, CELL);
+  for (let mask = 0; mask < VARIANTS; mask++) {
+    const count = [N, E, S, W].filter((bit) => mask & bit).length;
+    if (count >= 3) drawCrosswalks(ctx, mask, mask * CELL, CELL * CROSSWALK_ROW);
+  }
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.generateMipmaps = false;
@@ -67,9 +97,6 @@ export function roadAtlas(): THREE.CanvasTexture {
   return atlas;
 }
 
-// Napojení silnice na dlaždici (x, y) přes hranu edge: na sousední silnici nebo vjezd garáže
-export type RoadConnects = (x: number, y: number, edge: Edge) => boolean;
-
 export function roadConnects(map: GameMap, rail: RailNetwork): RoadConnects {
   return (x, y, edge) => {
     const nx = x + EDGE_DELTA[edge][0];
@@ -79,16 +106,18 @@ export function roadConnects(map: GameMap, rail: RailNetwork): RoadConnects {
   };
 }
 
-// Silnice na dlaždicích tiles s napojením podle connects
+// Silnice na dlaždicích tiles s napojením podle connects; crosswalks určí křižovatky se zebrami
 export function roadGeometry(
   tiles: Iterable<{ x: number; y: number }>,
   connects: RoadConnects,
   lift: number,
+  crosswalks: (x: number, y: number) => boolean = () => false,
 ): THREE.BufferGeometry {
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
   const inset = 0.5 / (CELL * VARIANTS);
+  const insetV = 0.5 / (CELL * ROWS);
   for (const { x, y } of tiles) {
     const mask =
       (connects(x, y, Edge.N) ? N : 0) |
@@ -97,9 +126,13 @@ export function roadGeometry(
       (connects(x, y, Edge.W) ? W : 0);
     const u0 = mask / VARIANTS + inset;
     const u1 = (mask + 1) / VARIANTS - inset;
+    // Řádek 0 je v canvasu nahoře, tedy u v = 1
+    const row = crosswalks(x, y) ? CROSSWALK_ROW : 0;
+    const v0 = 1 - (row + 1) / ROWS + insetV;
+    const v1 = 1 - row / ROWS - insetV;
     const v = positions.length / 3;
     positions.push(x, lift, y, x + 1, lift, y, x + 1, lift, y + 1, x, lift, y + 1);
-    uvs.push(u0, 1, u1, 1, u1, 0, u0, 0);
+    uvs.push(u0, v1, u1, v1, u1, v0, u0, v0);
     indices.push(v, v + 2, v + 1, v, v + 3, v + 2);
   }
   const geometry = new THREE.BufferGeometry();
@@ -110,31 +143,84 @@ export function roadGeometry(
   return geometry;
 }
 
+// Výška chodníku nad terénem; obrubník je jeho bočnice
+export const SIDEWALK_HEIGHT = 0.02;
+
+// Chodníky městských silnic: rohy dlaždice vždy, podél hrany jen tam, kde silnice nepokračuje
+export function sidewalkGeometry(
+  tiles: Iterable<{ x: number; y: number }>,
+  connects: RoadConnects,
+): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  const h = SIDEWALK_HEIGHT;
+  const quad = (corners: number[], normal: [number, number, number]): void => {
+    const v = positions.length / 3;
+    positions.push(...corners);
+    for (let k = 0; k < 4; k++) normals.push(...normal);
+    indices.push(v, v + 1, v + 2, v, v + 2, v + 3);
+  };
+  // Kvádr chodníku nad obdélníkem [x0, x1] × [z0, z1]
+  const slab = (x0: number, z0: number, x1: number, z1: number): void => {
+    quad([x0, h, z0, x0, h, z1, x1, h, z1, x1, h, z0], [0, 1, 0]);
+    quad([x0, 0, z1, x1, 0, z1, x1, h, z1, x0, h, z1], [0, 0, 1]);
+    quad([x1, 0, z0, x0, 0, z0, x0, h, z0, x1, h, z0], [0, 0, -1]);
+    quad([x1, 0, z1, x1, 0, z0, x1, h, z0, x1, h, z1], [1, 0, 0]);
+    quad([x0, 0, z0, x0, 0, z1, x0, h, z1, x0, h, z0], [-1, 0, 0]);
+  };
+  const w = SIDEWALK_WIDTH;
+  for (const { x, y } of tiles) {
+    slab(x, y, x + w, y + w);
+    slab(x + 1 - w, y, x + 1, y + w);
+    slab(x + 1 - w, y + 1 - w, x + 1, y + 1);
+    slab(x, y + 1 - w, x + w, y + 1);
+    if (!connects(x, y, Edge.N)) slab(x + w, y, x + 1 - w, y + w);
+    if (!connects(x, y, Edge.S)) slab(x + w, y + 1 - w, x + 1 - w, y + 1);
+    if (!connects(x, y, Edge.W)) slab(x, y + w, x + w, y + 1 - w);
+    if (!connects(x, y, Edge.E)) slab(x + 1 - w, y + w, x + 1, y + 1 - w);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
+// Silnice a chodníky městských silnic
 export class RoadView {
-  readonly object: THREE.Mesh;
-  // Které dlaždice byly silnicí (1) nebo garáží (2) při poslední přestavbě
-  private readonly roadTiles: Uint8Array;
+  readonly object = new THREE.Group();
+  // Zvyšuje se s každou přestavbou, aby chodci poznali změnu chodníků
+  version = 0;
+  // Dlaždice s chodníky podle města
+  readonly sidewalks = new Map<number, number[]>();
+  private readonly road: THREE.Mesh;
+  private readonly sidewalk: THREE.Mesh;
+  // Kód dlaždice při poslední přestavbě: silnice, garáž a město vlastnící chodník
+  private readonly roadTiles: Int32Array;
   private readonly changes: MapChanges;
 
   constructor(
     private readonly map: GameMap,
     private readonly rail: RailNetwork,
   ) {
-    this.object = new THREE.Mesh(
+    this.road = new THREE.Mesh(
       new THREE.BufferGeometry(),
       new THREE.MeshLambertMaterial({ map: roadAtlas(), alphaTest: 0.5 }),
     );
-    this.roadTiles = new Uint8Array(map.width * map.height);
+    this.sidewalk = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ color: 0xc4c1b6 }));
+    this.object.add(this.road, this.sidewalk);
+    this.roadTiles = new Int32Array(map.width * map.height);
     this.changes = new MapChanges(map);
     this.rebuild();
   }
 
   private code(x: number, y: number): number {
-    if (this.map.isRoad(x, y)) return 1;
-    return this.map.isType(x, y, TileType.RoadDepot) ? 2 : 0;
+    const road = this.map.isRoad(x, y) ? 1 : this.map.isType(x, y, TileType.RoadDepot) ? 2 : 0;
+    return road + (sidewalkTown(this.map, x, y) + 1) * 4;
   }
 
-  // Přestavba jen při změně silniční sítě nebo garáží, ne při každé změně mapy
+  // Přestavba jen při změně silniční sítě, garáží nebo vlastníka silnice, ne při každé změně mapy
   sync(): void {
     const changes = this.changes.take();
     const width = this.map.width;
@@ -146,14 +232,26 @@ export class RoadView {
   rebuild(): void {
     const { map } = this;
     const tiles: { x: number; y: number }[] = [];
+    const sidewalkTiles: { x: number; y: number }[] = [];
+    this.sidewalks.clear();
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         const code = this.code(x, y);
         this.roadTiles[y * map.width + x] = code;
-        if (code === 1) tiles.push({ x, y });
+        if ((code & 3) === 1) tiles.push({ x, y });
+        const town = sidewalkTown(map, x, y);
+        if (town === NO_OWNER) continue;
+        sidewalkTiles.push({ x, y });
+        let list = this.sidewalks.get(town);
+        if (!list) this.sidewalks.set(town, (list = []));
+        list.push(y * map.width + x);
       }
     }
-    this.object.geometry.dispose();
-    this.object.geometry = roadGeometry(tiles, roadConnects(map, this.rail), 0.005);
+    const connects = roadConnects(map, this.rail);
+    this.road.geometry.dispose();
+    this.road.geometry = roadGeometry(tiles, connects, 0.005, (x, y) => hasCrosswalks(map, connects, x, y));
+    this.sidewalk.geometry.dispose();
+    this.sidewalk.geometry = sidewalkGeometry(sidewalkTiles, connects);
+    this.version++;
   }
 }

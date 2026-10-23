@@ -5,6 +5,7 @@ import { CARGOS } from '../game/cargo';
 import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
 import { pointAt } from '../world/route';
+import { inView } from './camera';
 import { BRIDGE_DECK } from './rail';
 
 // Modely z train kitu jsou dlouhé ~2,6 jednotky podél +Z
@@ -55,7 +56,8 @@ export class TrainsView {
     private readonly map: GameMap,
   ) {}
 
-  update(): void {
+  // Vozy mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
+  update(frustum: THREE.Frustum): void {
     const alive = new Set(this.fleet.trains.map((t) => t.id));
     for (const [id, view] of this.views) {
       if (!alive.has(id)) {
@@ -72,7 +74,7 @@ export class TrainsView {
         this.object.add(view.group);
       }
       view.group.visible = train.state !== 'depot';
-      if (view.group.visible) this.place(train, view);
+      if (view.group.visible) this.place(train, view, frustum);
     }
   }
 
@@ -108,7 +110,7 @@ export class TrainsView {
     return view;
   }
 
-  private place(train: Train, view: TrainView): void {
+  private place(train: Train, view: TrainView, frustum: THREE.Frustum): void {
     // Vagony se plní od lokomotivy
     const loaded = Math.ceil(train.passengers / WAGON_CAPACITY);
     view.loads.forEach((load, i) => {
@@ -123,10 +125,14 @@ export class TrainsView {
       const [bx, bz] = pointAt(train.path, center - BOGIE);
       const x = (fx + bx) / 2;
       const z = (fz + bz) / 2;
-      vehicle.position.set(x, RAIL_TOP + (this.map.isType(Math.floor(x), Math.floor(z), TileType.Bridge) ? BRIDGE_DECK : 0), z);
+      const y = RAIL_TOP + (this.map.isType(Math.floor(x), Math.floor(z), TileType.Bridge) ? BRIDGE_DECK : 0);
+      vehicle.position.set(x, y, z);
       vehicle.rotation.y = Math.atan2(fx - bx, fz - bz);
       // Vozy ještě (nebo už) v depu nejsou vidět
-      vehicle.visible = center > 0 && this.map.get(Math.floor(x), Math.floor(z)) !== TileType.Depot;
+      vehicle.visible =
+        center > 0 &&
+        this.map.get(Math.floor(x), Math.floor(z)) !== TileType.Depot &&
+        inView(frustum, x, y, z, VEHICLE_LENGTH);
     }
   }
 }

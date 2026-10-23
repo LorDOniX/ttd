@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { loadModel } from '../assets';
 import { CARGOS } from '../game/cargo';
 import { roadVehicleModel, vehiclePoint, type RoadFleet, type RoadVehicle } from '../game/roadVehicles';
+import { inView } from './camera';
 
 // Modely z car kitu jsou dlouhé ~3 jednotky podél +Z (předek), kola stojí na y = 0
 const SCALE = 0.13;
@@ -59,7 +60,8 @@ export class RoadVehiclesView {
 
   constructor(private readonly fleet: RoadFleet) {}
 
-  update(): void {
+  // Auta mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
+  update(frustum: THREE.Frustum): void {
     const alive = new Set(this.fleet.vehicles.map((v) => v.id));
     for (const [id, view] of this.views) {
       if (!alive.has(id)) {
@@ -76,7 +78,10 @@ export class RoadVehiclesView {
         this.object.add(view.group);
       }
       view.group.visible = vehicle.state !== 'depot' && vehicle.path.length > 0;
-      if (view.group.visible) this.place(vehicle, view);
+      if (!view.group.visible) continue;
+      this.place(vehicle, view);
+      const { x, y, z } = view.group.position;
+      view.group.visible = inView(frustum, x, y, z, 0.3);
     }
   }
 

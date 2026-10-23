@@ -7,6 +7,7 @@ import { IsoCamera } from './camera';
 import { CrossingsView } from './crossings';
 import { IndustriesView } from './industries';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
+import { PedestriansView } from './pedestrians';
 import { RailView } from './rail';
 import { RoadVehiclesView } from './roadVehicles';
 import { RoadView } from './roads';
@@ -33,6 +34,7 @@ export class GameView {
   private readonly labels: TownLabels;
   private readonly trains: TrainsView;
   private readonly vehicles: RoadVehiclesView;
+  private readonly pedestrians: PedestriansView;
   private readonly crossings: CrossingsView;
   private readonly signals: SignalsView;
   private readonly floatingTexts = new FloatingTexts();
@@ -70,6 +72,7 @@ export class GameView {
     this.signals.rebuild();
     this.trains = new TrainsView(game.fleet, map);
     this.vehicles = new RoadVehiclesView(game.roadFleet);
+    this.pedestrians = new PedestriansView(map, world.rail, towns, roads);
     this.crossings = new CrossingsView(map, world.rail);
     this.labels = new TownLabels(container);
     this.labels.setSize(window.innerWidth, window.innerHeight);
@@ -86,6 +89,7 @@ export class GameView {
       this.signals.object,
       this.trains.object,
       this.vehicles.object,
+      this.pedestrians.object,
       this.crossings.object,
       this.labels.object,
       stationLabels.object,
@@ -198,8 +202,11 @@ export class GameView {
   frame(now: number, dtMs: number): void {
     this.game.update(dtMs);
     this.syncMap();
-    this.trains.update();
-    this.vehicles.update();
+    const frustum = this.camera.frustum();
+    this.trains.update(frustum);
+    this.vehicles.update(frustum);
+    // Chodci chodí v reálném čase nezávisle na rychlosti hry, při pauze stojí
+    this.pedestrians.update(this.game.clock.paused ? 0 : Math.min(dtMs, 100) / 1000, frustum);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
     this.crossings.update(now, (x, y) => reservations.ownerAt(x, y) !== undefined);
