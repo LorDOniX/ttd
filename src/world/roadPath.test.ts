@@ -28,11 +28,30 @@ describe('hledání trasy silnice', () => {
     expect(findRoadPath(world.rail, { x: 5, y: 20 }, { x: 15, y: 20 })).toBeNull();
   });
 
-  it('vodu obejde', () => {
+  it('malou vodu obejde', () => {
     const { world } = emptyGame();
-    for (let x = 0; x < 30; x++) world.map.set(x, 10, TileType.Water);
+    // Úzké a dlouhé jezírko: objížďka je levnější než pět dílků mostu
+    for (let x = 4; x < 7; x++) for (let y = 8; y < 13; y++) world.map.set(x, y, TileType.Water);
     const path = findRoadPath(world.rail, { x: 5, y: 5 }, { x: 5, y: 15 })!;
     expect(path.some((s) => world.map.get(s.x, s.y) === TileType.Water)).toBe(false);
+  });
+
+  it('přes řeku postaví rovný most s osou ve směru jízdy', () => {
+    const { world } = emptyGame();
+    for (let x = 0; x < 64; x++) for (let y = 9; y < 12; y++) world.map.set(x, y, TileType.Water);
+    const path = findRoadPath(world.rail, { x: 5, y: 5 }, { x: 8, y: 15 })!;
+    const bridge = path.filter((s) => world.map.get(s.x, s.y) === TileType.Water);
+    expect(bridge).toHaveLength(3);
+    expect(bridge.every((s) => s.axis === 'y' && s.x === bridge[0].x)).toBe(true);
+    expect(path.filter((s) => s.axis !== undefined)).toEqual(bridge);
+  });
+
+  it('po existujícím mostě jen podél něj', () => {
+    const { world } = emptyGame();
+    for (let x = 0; x < 64; x++) world.map.set(x, 10, TileType.Water);
+    world.map.set(5, 10, TileType.RoadBridgeX);
+    const path = findRoadPath(world.rail, { x: 5, y: 5 }, { x: 5, y: 15 })!;
+    expect(path.some((s) => s.x === 5 && s.y === 10)).toBe(false);
   });
 });
 
@@ -52,7 +71,12 @@ describe('silnice kliknutím', () => {
       { x: 5, y: 5, isNew: false },
       { x: 6, y: 5, isNew: true },
     ]);
+    // K vodě se silnice prodlouží mostem, samotná dlaždice vody směr nemá
     world.map.set(5, 4, TileType.Water);
-    expect(singleRoadSteps(world.rail, { x: 5, y: 5 }, 0.5, 0.1)).toBeNull();
+    expect(singleRoadSteps(world.rail, { x: 5, y: 5 }, 0.5, 0.1)).toEqual([
+      { x: 5, y: 5, isNew: false },
+      { x: 5, y: 4, isNew: true, axis: 'y' },
+    ]);
+    expect(singleRoadSteps(world.rail, { x: 5, y: 4 }, 0.5, 0.5)).toBeNull();
   });
 });

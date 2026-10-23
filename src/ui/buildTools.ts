@@ -12,7 +12,7 @@ import {
   TRACK_PIECE_COST,
 } from '../game/balance';
 import { CARGOS } from '../game/cargo';
-import { stationCost, trackPieceCost } from '../game/construction';
+import { roadPieceCost, stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoneyShort } from '../game/game';
 import { catchmentArea } from '../game/passengers';
 import { iconElement, sceneIcon, type SceneIcon } from '../render/icons';
@@ -257,11 +257,14 @@ export class BuildTools {
   // Náhled silnice, vrací text s počtem nových dílků a cenou
   private showRoad(steps: RoadStep[]): string {
     const { map, rail } = this.game.world;
-    const n = steps.filter((s) => s.isNew).length;
-    const cost = n * ROAD_TILE_COST;
+    const fresh = steps.filter((s) => s.isNew);
+    const n = fresh.length;
+    const cost = fresh.reduce((sum, s) => sum + roadPieceCost(map, s.x, s.y), 0);
+    const bridges = fresh.filter((s) => map.isType(s.x, s.y, TileType.Water)).length;
     this.preview.showRoad(steps, roadConnects(map, rail), cost <= this.game.money);
     if (n === 0) return 'Silnice už je postavená';
-    return `${n} ${n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků'} · ${formatMoneyShort(cost)}`;
+    const pieces = n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků';
+    return `${n} ${pieces}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoneyShort(cost)}`;
   }
 
   private draggingDiagonal(): boolean {

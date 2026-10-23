@@ -6,6 +6,7 @@ import {
   DEMOLISH_TREES_COST,
   DEPOT_COST,
   PLATFORM_TILE_COST,
+  ROAD_BRIDGE_COST,
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
   ROAD_TILE_COST,
@@ -32,6 +33,11 @@ export function stationCost(shape: StationShape & { kind?: 'road' }): number {
 export function trackPieceCost(map: GameMap, x: number, y: number): number {
   const type = map.get(x, y);
   return type === TileType.Water || type === TileType.Bridge ? BRIDGE_PIECE_COST : TRACK_PIECE_COST;
+}
+
+// Cena nového dílku silnice: přes vodu se staví most
+export function roadPieceCost(map: GameMap, x: number, y: number): number {
+  return map.isType(x, y, TileType.Water) || map.roadBridgeAxis(x, y) ? ROAD_BRIDGE_COST : ROAD_TILE_COST;
 }
 
 // Cena všech kolejí, nástupišť a dep společnosti, ze které se počítá údržba
@@ -186,7 +192,14 @@ export class Construction {
       if (!map.inBounds(x, y)) continue;
       const type = map.get(x, y);
       const railway = [TileType.Rail, TileType.Crossing, TileType.Bridge, TileType.Station, TileType.Depot].includes(type);
-      const roadway = [TileType.Road, TileType.Crossing, TileType.RoadStop, TileType.RoadDepot].includes(type);
+      const roadway = [
+        TileType.Road,
+        TileType.Crossing,
+        TileType.RoadStop,
+        TileType.RoadDepot,
+        TileType.RoadBridgeX,
+        TileType.RoadBridgeY,
+      ].includes(type);
       const blocker =
         (railway ? this.game.fleet.demolitionBlocker(x, y) : null) ??
         (roadway ? this.game.roadFleet.demolitionBlocker(x, y) : null);
@@ -226,6 +239,11 @@ export class Construction {
           break;
         case TileType.Road:
           cost += map.getOwner(x, y) === NO_OWNER ? -ROAD_TILE_COST * DEMOLISH_REFUND : DEMOLISH_TOWN_ROAD_COST;
+          tiles.push({ x, y });
+          break;
+        case TileType.RoadBridgeX:
+        case TileType.RoadBridgeY:
+          cost -= ROAD_BRIDGE_COST * DEMOLISH_REFUND;
           tiles.push({ x, y });
           break;
         case TileType.Building: {
@@ -298,6 +316,12 @@ export class Construction {
           map.setOwner(x, y, NO_OWNER);
           roadsChanged = true;
           break;
+        // Zbouráním mostu se obnoví voda
+        case TileType.RoadBridgeX:
+        case TileType.RoadBridgeY:
+          map.set(x, y, TileType.Water);
+          roadsChanged = true;
+          break;
         case TileType.Building: {
           const town = towns[map.getOwner(x, y)];
           const building = buildingAt(town, x, y);
@@ -336,8 +360,9 @@ export class Construction {
         this.queue.shift();
         continue;
       }
+      const { map } = this.game.world;
       const cost =
-        job.kind === 'track' ? trackPieceCost(this.game.world.map, job.step.x, job.step.y) : ROAD_TILE_COST;
+        job.kind === 'track' ? trackPieceCost(map, job.step.x, job.step.y) : roadPieceCost(map, job.step.x, job.step.y);
       if (this.game.money < cost) {
         this.queue = [];
         this.game.events.emit('outOfMoney');
@@ -368,6 +393,7 @@ export class Construction {
     const { map, rail } = this.game.world;
     const type = map.get(step.x, step.y);
     if (map.isFree(step.x, step.y)) return true;
+    if (type === TileType.Water) return step.axis !== undefined;
     // Přejezd jen přes samotnou rovnou kolej
     const mask = rail.mask(step.x, step.y);
     return type === TileType.Rail && (mask === 1 || mask === 2);
@@ -375,6 +401,9 @@ export class Construction {
 
   private placeRoad(step: RoadStep): void {
     const { map } = this.game.world;
-    map.set(step.x, step.y, map.get(step.x, step.y) === TileType.Rail ? TileType.Crossing : TileType.Road);
+    const type = map.get(step.x, step.y);
+    if (type === TileType.Water)
+      map.set(step.x, step.y, step.axis === 'x' ? TileType.RoadBridgeX : TileType.RoadBridgeY);
+    else map.set(step.x, step.y, type === TileType.Rail ? TileType.Crossing : TileType.Road);
   }
 }

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TileType } from '../world/map';
 import { EDGE_MID, Edge, PIECES, RailNetwork, isCorner, stationTiles, type Axis, type StationShape } from '../world/rail';
+import { WATER_DEPTH } from './terrain';
 
 const BALLAST = 0x8c8273;
 const SLEEPER = 0x5a3d26;
@@ -103,9 +104,26 @@ function bridgeGeometry(): THREE.BufferGeometry {
     parts.push(box(1, 0.03, 0.035, BRIDGE_RAIL, 0, BRIDGE_DECK + 0.16, z));
     parts.push(box(1, 0.02, 0.025, BRIDGE_RAIL, 0, BRIDGE_DECK + 0.08, z));
   }
-  for (const z of [-0.22, 0.22]) parts.push(box(0.12, BRIDGE_DECK - 0.05, 0.12, BRIDGE, 0, 0, z));
+  // Pilíře sahají až k hladině pod úrovní terénu
+  const pier = BRIDGE_DECK - 0.05 + WATER_DEPTH;
+  for (const z of [-0.22, 0.22]) parts.push(box(0.12, pier, 0.12, BRIDGE, 0, -WATER_DEPTH, z));
   return mergeGeometries(parts)!;
 }
+
+// Silniční most podél osy X: širší mostovka než u kolejí, zábradlí po okrajích a pilíře k hladině
+function roadBridgeGeometry(): THREE.BufferGeometry {
+  const parts = [box(1, 0.05, 0.84, BRIDGE, 0, BRIDGE_DECK - 0.05, 0)];
+  for (const z of [-0.4, 0.4]) {
+    for (let i = 0; i < 5; i++) parts.push(box(0.03, 0.14, 0.03, BRIDGE_RAIL, -0.4 + i * 0.2, BRIDGE_DECK, z));
+    parts.push(box(1, 0.03, 0.035, BRIDGE_RAIL, 0, BRIDGE_DECK + 0.13, z));
+    parts.push(box(1, 0.02, 0.025, BRIDGE_RAIL, 0, BRIDGE_DECK + 0.065, z));
+  }
+  const pier = BRIDGE_DECK - 0.05 + WATER_DEPTH;
+  for (const z of [-0.28, 0.28]) parts.push(box(0.12, pier, 0.12, BRIDGE, 0, -WATER_DEPTH, z));
+  return mergeGeometries(parts)!;
+}
+
+export const ROAD_BRIDGE = roadBridgeGeometry();
 
 const STRAIGHT = pieceGeometry(1);
 const CORNER = pieceGeometry(Math.SQRT1_2);

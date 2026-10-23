@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { GameMap, MapChanges, NO_OWNER, TileType } from '../world/map';
+import { GameMap, MapChanges, NO_OWNER, TileType, bridgeAlong } from '../world/map';
 import { EDGE_DELTA, Edge, RailNetwork, opposite } from '../world/rail';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { BRIDGE_DECK, ROAD_BRIDGE, axisRotation } from './rail';
 import { SIDEWALK_WIDTH, WALK_INSET, hasCrosswalks, sidewalkTown, type RoadConnects } from '../world/sidewalks';
 
 export type { RoadConnects } from '../world/sidewalks';
@@ -101,6 +103,11 @@ export function roadConnects(map: GameMap, rail: RailNetwork): RoadConnects {
   return (x, y, edge) => {
     const nx = x + EDGE_DELTA[edge][0];
     const ny = y + EDGE_DELTA[edge][1];
+    // Most se napojuje jen na svých koncích
+    const own = map.roadBridgeAxis(x, y);
+    if (own && !bridgeAlong(own, edge)) return false;
+    const other = map.roadBridgeAxis(nx, ny);
+    if (other) return bridgeAlong(other, edge);
     if (map.isRoad(nx, ny)) return true;
     return map.isType(nx, ny, TileType.RoadDepot) && rail.roadDepotAt(nx, ny)?.entrance === opposite(edge);
   };
@@ -187,7 +194,7 @@ export function sidewalkGeometry(
   return geometry;
 }
 
-// Silnice a chodníky městských silnic
+// Silnice a chodníky městských silnic, silniční mosty s vozovkou na mostovce
 export class RoadView {
   readonly object = new THREE.Group();
   // Zvyšuje se s každou přestavbou, aby chodci poznali změnu chodníků
@@ -196,6 +203,7 @@ export class RoadView {
   readonly sidewalks = new Map<number, number[]>();
   private readonly road: THREE.Mesh;
   private readonly sidewalk: THREE.Mesh;
+  private readonly bridges: THREE.Mesh;
   // Kód dlaždice při poslední přestavbě: silnice, garáž a město vlastnící chodník
   private readonly roadTiles: Int32Array;
   private readonly changes: MapChanges;
@@ -209,7 +217,8 @@ export class RoadView {
       new THREE.MeshLambertMaterial({ map: roadAtlas(), alphaTest: 0.5 }),
     );
     this.sidewalk = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ color: 0xc4c1b6 }));
-    this.object.add(this.road, this.sidewalk);
+    this.bridges = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    this.object.add(this.road, this.sidewalk, this.bridges);
     this.roadTiles = new Int32Array(map.width * map.height);
     this.changes = new MapChanges(map);
     this.rebuild();
@@ -232,13 +241,16 @@ export class RoadView {
   rebuild(): void {
     const { map } = this;
     const tiles: { x: number; y: number }[] = [];
+    const bridgeTiles: { x: number; y: number; axis: 'x' | 'y' }[] = [];
     const sidewalkTiles: { x: number; y: number }[] = [];
     this.sidewalks.clear();
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         const code = this.code(x, y);
         this.roadTiles[y * map.width + x] = code;
-        if ((code & 3) === 1) tiles.push({ x, y });
+        const axis = map.roadBridgeAxis(x, y);
+        if (axis) bridgeTiles.push({ x, y, axis });
+        else if ((code & 3) === 1) tiles.push({ x, y });
         const town = sidewalkTown(map, x, y);
         if (town === NO_OWNER) continue;
         sidewalkTiles.push({ x, y });
@@ -248,8 +260,26 @@ export class RoadView {
       }
     }
     const connects = roadConnects(map, this.rail);
+    const crosswalks = (x: number, y: number): boolean => hasCrosswalks(map, connects, x, y);
+    const land = roadGeometry(tiles, connects, 0.005, crosswalks);
     this.road.geometry.dispose();
-    this.road.geometry = roadGeometry(tiles, connects, 0.005, (x, y) => hasCrosswalks(map, connects, x, y));
+    this.road.geometry =
+      bridgeTiles.length > 0
+        ? mergeGeometries([land, roadGeometry(bridgeTiles, connects, BRIDGE_DECK + 0.005)])!
+        : land;
+    this.bridges.geometry.dispose();
+    this.bridges.geometry =
+      bridgeTiles.length > 0
+        ? mergeGeometries(
+            bridgeTiles.map(({ x, y, axis }) =>
+              ROAD_BRIDGE.clone().applyMatrix4(
+                new THREE.Matrix4()
+                  .makeTranslation(x + 0.5, 0, y + 0.5)
+                  .multiply(new THREE.Matrix4().makeRotationY(axisRotation(axis))),
+              ),
+            ),
+          )!
+        : new THREE.BufferGeometry();
     this.sidewalk.geometry.dispose();
     this.sidewalk.geometry = sidewalkGeometry(sidewalkTiles, connects);
     this.version++;

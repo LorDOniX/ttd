@@ -18,6 +18,14 @@ export enum TileType {
   RoadStop = 11,
   // Garáž aut s vjezdem z jedné strany
   RoadDepot = 12,
+  // Silniční most nad vodou, vede jen rovně podél osy X (západ–východ), resp. Y (sever–jih)
+  RoadBridgeX = 13,
+  RoadBridgeY = 14,
+}
+
+// Vede silniční most podél osy přes hranu edge? Hrany V a Z (lichá čísla) leží na ose X
+export function bridgeAlong(axis: 'x' | 'y', edge: number): boolean {
+  return (edge % 2 === 1) === (axis === 'x');
 }
 
 export interface TilePos {
@@ -104,7 +112,19 @@ export class GameMap {
   isRoad(x: number, y: number): boolean {
     if (!this.inBounds(x, y)) return false;
     const type = this.get(x, y);
-    return type === TileType.Road || type === TileType.Crossing || type === TileType.RoadStop;
+    return (
+      type === TileType.Road ||
+      type === TileType.Crossing ||
+      type === TileType.RoadStop ||
+      type === TileType.RoadBridgeX ||
+      type === TileType.RoadBridgeY
+    );
+  }
+
+  // Osa silničního mostu na dlaždici, jinak null
+  roadBridgeAxis(x: number, y: number): 'x' | 'y' | null {
+    if (this.isType(x, y, TileType.RoadBridgeX)) return 'x';
+    return this.isType(x, y, TileType.RoadBridgeY) ? 'y' : null;
   }
 
   // Směr silnice podle napojení na sousední silnice

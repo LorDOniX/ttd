@@ -312,10 +312,12 @@ export function restoreGame(data: SaveData): Game {
 
 function validJob(job: unknown, width: number, height: number): job is Job {
   if (!isObject(job) || !isObject(job.step) || (job.kind !== 'track' && job.kind !== 'road')) return false;
-  const { x, y, piece, isNew } = job.step;
+  const { x, y, piece, isNew, axis } = job.step;
   const below = (v: unknown, size: number): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) < size;
   const pieceOk = job.kind === 'road' || below(piece, PIECES.length);
-  return below(x, width) && below(y, height) && pieceOk && typeof isNew === 'boolean';
+  // Nový dílek mostu nese osu, jinak by se nad vodou nepostavil
+  const axisOk = job.kind === 'track' || axis === undefined || axis === 'x' || axis === 'y';
+  return below(x, width) && below(y, height) && pieceOk && axisOk && typeof isNew === 'boolean';
 }
 
 function validView(view: unknown): ViewState | null {

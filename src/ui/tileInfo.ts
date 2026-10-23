@@ -24,6 +24,8 @@ const TILE_NAMES: Record<TileType, string> = {
   [TileType.Industry]: 'Průmysl',
   [TileType.RoadStop]: 'Zastávka aut',
   [TileType.RoadDepot]: 'Garáž aut',
+  [TileType.RoadBridgeX]: 'Silniční most',
+  [TileType.RoadBridgeY]: 'Silniční most',
 };
 
 export interface TileInfoLinks {
@@ -57,7 +59,7 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
 
     const owner = map.getOwner(x, y);
     const town = owner === NO_OWNER ? null : towns[owner];
-    if (type === TileType.Road || type === TileType.Crossing || type === TileType.RoadStop) {
+    if (map.isRoad(x, y)) {
       rows.push(['Vlastník silnice', town ? town.name : 'vaše společnost']);
     }
     if (type === TileType.Building && town) {

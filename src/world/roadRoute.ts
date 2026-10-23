@@ -1,8 +1,8 @@
-import { TileType, type TilePos } from './map';
+import { TileType, bridgeAlong, type TilePos } from './map';
 import { EDGE_DELTA, RailNetwork, axisPiece, opposite, type Edge } from './rail';
 
 // Smí auto opustit (nebo vjet na) dlaždici přes danou hranu? Zastávkou jen podél silnice,
-// přejezdem kolmo na kolej, garáží jen vjezdem.
+// přejezdem kolmo na kolej, mostem jen podél něj, garáží jen vjezdem.
 function opensTo(rail: RailNetwork, x: number, y: number, edge: Edge): boolean {
   const { map } = rail;
   if (!map.inBounds(x, y)) return false;
@@ -13,6 +13,9 @@ function opensTo(rail: RailNetwork, x: number, y: number, edge: Edge): boolean {
       return rail.mask(x, y) === 1 << axisPiece(edge % 2 === 0 ? 'x' : 'y');
     case TileType.RoadStop:
       return rail.stationAt(x, y)?.axis === (edge % 2 === 0 ? 'y' : 'x');
+    case TileType.RoadBridgeX:
+    case TileType.RoadBridgeY:
+      return bridgeAlong(map.roadBridgeAxis(x, y)!, edge);
     case TileType.RoadDepot:
       return rail.roadDepotAt(x, y)?.entrance === edge;
     default:

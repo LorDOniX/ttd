@@ -115,7 +115,8 @@ function growRoads(map: GameMap, town: Town, radius: number): void {
     insideShape(town, x, y, radius) &&
     onRoadGrid(town, x, y) &&
     isFreeFor(map, town, x, y) &&
-    (map.isFree(x, y) || map.isRoad(x, y));
+    // Most hráče si město nepřivlastní
+    (map.isFree(x, y) || (map.isRoad(x, y) && !map.roadBridgeAxis(x, y)));
 
   if (!canBeRoad(town.x, town.y)) return;
   const visited = new Set<number>([town.y * map.width + town.x]);

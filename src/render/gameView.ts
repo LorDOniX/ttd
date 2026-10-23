@@ -71,7 +71,7 @@ export class GameView {
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
     this.trains = new TrainsView(game.fleet, map);
-    this.vehicles = new RoadVehiclesView(game.roadFleet);
+    this.vehicles = new RoadVehiclesView(game.roadFleet, map);
     this.pedestrians = new PedestriansView(map, world.rail, towns, roads);
     this.crossings = new CrossingsView(map, world.rail);
     this.labels = new TownLabels(container);

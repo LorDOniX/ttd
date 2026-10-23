@@ -1,16 +1,24 @@
+import { ROAD_BRIDGE_COST, ROAD_TILE_COST } from '../game/balance';
 import { MinHeap } from './heap';
-import { GameMap, TileType, type TilePos } from './map';
-import { EDGE_DELTA, Edge, RailNetwork, axisPiece, opposite } from './rail';
+import { GameMap, TileType, bridgeAlong, type TilePos } from './map';
+import { EDGE_DELTA, Edge, RailNetwork, axisPiece, opposite, type Axis } from './rail';
 
 export interface RoadStep {
   x: number;
   y: number;
   isNew: boolean;
+  // Směr mostu u nového dílku nad vodou
+  axis?: Axis;
 }
 
 const MAX_EXPANSIONS = 200_000;
 const TURN_PENALTY = 0.2;
 const REUSE_COST = 0.1;
+// Most stojí víc než silnice, trasa proto malou vodu objede a přes řeku se přemostí
+const BRIDGE_COST = ROAD_BRIDGE_COST / ROAD_TILE_COST;
+
+// Osa pohybu ve směru dir (hrana, přes kterou se jede)
+const moveAxis = (dir: number): Axis => (dir % 2 === 1 ? 'x' : 'y');
 
 function isRoadTile(map: GameMap, x: number, y: number): boolean {
   return map.isRoad(x, y);
@@ -29,6 +37,12 @@ function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: nu
       return rail.mask(x, y) === 1 << axisPiece(dir % 2 === 0 ? 'x' : 'y');
     case TileType.RoadStop:
       return rail.stationAt(x, y)?.axis === (dir % 2 === 0 ? 'y' : 'x');
+    // Přes vodu vede most, po existujícím mostě jen podél něj
+    case TileType.Water:
+      return true;
+    case TileType.RoadBridgeX:
+    case TileType.RoadBridgeY:
+      return bridgeAlong(map.roadBridgeAxis(x, y)!, dir);
     default:
       return false;
   }
@@ -36,7 +50,19 @@ function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: nu
 
 function straightOnly(map: GameMap, x: number, y: number): boolean {
   const type = map.get(x, y);
-  return type === TileType.Rail || type === TileType.Crossing || type === TileType.RoadStop;
+  return (
+    type === TileType.Rail ||
+    type === TileType.Crossing ||
+    type === TileType.RoadStop ||
+    type === TileType.Water ||
+    type === TileType.RoadBridgeX ||
+    type === TileType.RoadBridgeY
+  );
+}
+
+// Nový dílek; nad vodou s osou mostu podle směru jízdy
+function newStep(map: GameMap, x: number, y: number, dir: number): RoadStep {
+  return map.isType(x, y, TileType.Water) ? { x, y, isNew: true, axis: moveAxis(dir) } : { x, y, isNew: true };
 }
 
 // Kurzor blíž než EDGE_ZONE od středu dlaždice nemíří k žádné hraně
@@ -50,11 +76,13 @@ export function roadEdgeAtCursor(fx: number, fy: number): Edge | null {
   return dy < 0 ? Edge.N : Edge.S;
 }
 
-// Kliknutí: silnice na dlaždici pod kurzorem; už postavenou prodlouží přes hranu, ke které kurzor míří
+// Kliknutí: silnice na dlaždici pod kurzorem; už postavenou prodlouží přes hranu, ke které kurzor míří.
+// Most nad vodu jde jen prodloužením silnice, samotná dlaždice vody by neměla daný směr
 export function singleRoadSteps(rail: RailNetwork, tile: TilePos, fx: number, fy: number): RoadStep[] | null {
   const { map } = rail;
   const { x, y } = tile;
   if (!isRoadTile(map, x, y)) {
+    if (map.isType(x, y, TileType.Water)) return null;
     const buildable = [Edge.N, Edge.E, Edge.S, Edge.W].some((dir) => passable(map, rail, x, y, dir));
     return buildable ? [{ x, y, isNew: true }] : null;
   }
@@ -63,10 +91,7 @@ export function singleRoadSteps(rail: RailNetwork, tile: TilePos, fx: number, fy
   const nx = x + EDGE_DELTA[edge][0];
   const ny = y + EDGE_DELTA[edge][1];
   if (isRoadTile(map, nx, ny) || !passable(map, rail, x, y, edge) || !passable(map, rail, nx, ny, edge)) return null;
-  return [
-    { x, y, isNew: false },
-    { x: nx, y: ny, isNew: true },
-  ];
+  return [{ x, y, isNew: false }, newStep(map, nx, ny, edge)];
 }
 
 // A* po dlaždicích ve 4 směrech; stav = dlaždice a směr příjezdu
@@ -74,7 +99,8 @@ export function findRoadPath(rail: RailNetwork, from: TilePos, to: TilePos): Roa
   const { map } = rail;
   const width = map.width;
   const key = (x: number, y: number, dir: number): number => (y * width + x) * 4 + dir;
-  const tileCost = (x: number, y: number): number => (isRoadTile(map, x, y) ? REUSE_COST : 1);
+  const tileCost = (x: number, y: number): number =>
+    isRoadTile(map, x, y) ? REUSE_COST : map.isType(x, y, TileType.Water) ? BRIDGE_COST : 1;
   const estimate = (x: number, y: number): number => Math.abs(x - to.x) + Math.abs(y - to.y);
 
   const g = new Map<number, number>();
@@ -123,7 +149,7 @@ export function findRoadPath(rail: RailNetwork, from: TilePos, to: TilePos): Roa
     const tile = Math.floor(k / 4);
     const x = tile % width;
     const y = Math.floor(tile / width);
-    steps.push({ x, y, isNew: !isRoadTile(map, x, y) });
+    steps.push(isRoadTile(map, x, y) ? { x, y, isNew: false } : newStep(map, x, y, k % 4));
   }
   return steps.reverse();
 }

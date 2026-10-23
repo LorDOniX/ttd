@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { loadModel } from '../assets';
 import { CARGOS } from '../game/cargo';
 import { roadVehicleModel, vehiclePoint, type RoadFleet, type RoadVehicle } from '../game/roadVehicles';
+import type { GameMap } from '../world/map';
 import { inView } from './camera';
+import { BRIDGE_DECK } from './rail';
 
 // Modely z car kitu jsou dlouhé ~3 jednotky podél +Z (předek), kola stojí na y = 0
 const SCALE = 0.13;
@@ -58,7 +60,10 @@ export class RoadVehiclesView {
   readonly object = new THREE.Group();
   private readonly views = new Map<number, VehicleView>();
 
-  constructor(private readonly fleet: RoadFleet) {}
+  constructor(
+    private readonly fleet: RoadFleet,
+    private readonly map: GameMap,
+  ) {}
 
   // Auta mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
   update(frustum: THREE.Frustum): void {
@@ -120,8 +125,9 @@ export class RoadVehiclesView {
     const { x, y, dx, dy } = vehiclePoint(vehicle.path, vehicle.pos);
     const length = Math.hypot(dx, dy) || 1;
     const [ux, uy] = [dx / length, dy / length];
-    // Vpravo od směru jízdy (osa Y mapy je osa Z scény)
-    view.group.position.set(x - uy * LANE, ROAD_TOP, y + ux * LANE);
+    // Vpravo od směru jízdy (osa Y mapy je osa Z scény); na mostě po mostovce
+    const lift = this.map.roadBridgeAxis(Math.floor(x), Math.floor(y)) ? BRIDGE_DECK : 0;
+    view.group.position.set(x - uy * LANE, ROAD_TOP + lift, y + ux * LANE);
     view.group.rotation.y = Math.atan2(ux, uy);
     if (view.load) view.load.visible = vehicle.passengers > 0;
   }
