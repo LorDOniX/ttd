@@ -271,6 +271,7 @@ describe('silniční vozidla', () => {
     bus.pos = 0;
     const junctionIndex = bus.path.findIndex((tile) => tile.x === 20 && tile.y === 10);
     expect(junctionIndex).toBeGreaterThan(1);
+    bus.pos = junctionIndex - 0.5 - 0.2;
     game.roadFleet.setTrafficObstacles([
       {
         id: -1,
@@ -285,7 +286,7 @@ describe('silniční vozidla', () => {
 
     runDays(game, 15);
 
-    expect(bus.pos).toBeCloseTo(junctionIndex - 0.5 - 0.2);
+    expect(bus.pos).toBeCloseTo(junctionIndex - 0.5 - 0.8);
     expect(game.roadFleet.tileOf(bus)).toEqual({ x: 19, y: 10 });
   });
 

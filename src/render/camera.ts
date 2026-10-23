@@ -8,8 +8,17 @@ const MAX_ZOOM = 12;
 const ISO_DIRECTION = new THREE.Vector3(1, Math.SQRT2 * Math.tan(Math.PI / 6), 1).normalize();
 const ROTATION_STEP = Math.PI / 2;
 const ROTATION_MS = 300;
+const ROTATION_DRAG_RADIANS_PER_PIXEL = Math.PI / 360;
+const ROTATION_EPSILON = 1e-6;
 const UP = new THREE.Vector3(0, 1, 0);
 const sphere = new THREE.Sphere();
+
+export function nextRotationTarget(angle: number, direction: 1 | -1): number {
+  const step = angle / ROTATION_STEP;
+  const nearest = Math.round(step);
+  if (Math.abs(step - nearest) < ROTATION_EPSILON) return (nearest + direction) * ROTATION_STEP;
+  return (direction > 0 ? Math.floor(step) + 1 : Math.ceil(step) - 1) * ROTATION_STEP;
+}
 
 // Je koule kolem bodu aspoň zčásti v záběru kamery
 export function inView(frustum: THREE.Frustum, x: number, y: number, z: number, radius: number): boolean {
@@ -26,6 +35,9 @@ export class IsoCamera {
   private readonly viewFrustum = new THREE.Frustum();
   private readonly viewProjection = new THREE.Matrix4();
   private panAnchor: THREE.Vector3 | null = null;
+  private rotatingPointer = false;
+  private pointerX = 0;
+  private rotationAnimation = 0;
   // Natočení pohledu kolem svislé osy; cílové se mění po 90°, aktuální k němu plynule dobíhá
   private azimuth = 0;
   private targetAzimuth = 0;
@@ -70,6 +82,7 @@ export class IsoCamera {
   }
 
   restore(view: ViewState): void {
+    this.rotationAnimation++;
     this.camera.zoom = THREE.MathUtils.clamp(view.zoom, MIN_ZOOM, MAX_ZOOM);
     this.camera.updateProjectionMatrix();
     this.azimuth = this.targetAzimuth = view.rotation * ROTATION_STEP;
@@ -89,6 +102,7 @@ export class IsoCamera {
 
   // Plynulé kroužení (úvodní obrazovka): pootočí pohled o daný úhel bez animace
   spin(radians: number): void {
+    this.rotationAnimation++;
     this.azimuth += radians;
     this.targetAzimuth = this.azimuth;
     this.updatePosition();
@@ -96,17 +110,19 @@ export class IsoCamera {
 
   // Otočí pohled o 90° (direction 1 = po směru hodinových ručiček)
   rotate(direction: 1 | -1 = 1): void {
-    this.targetAzimuth += direction * ROTATION_STEP;
+    this.targetAzimuth = nextRotationTarget(this.targetAzimuth, direction);
     const from = this.azimuth;
     const to = this.targetAzimuth;
     const start = performance.now();
+    const animation = ++this.rotationAnimation;
     const step = (now: number): void => {
       const t = Math.min(1, (now - start) / ROTATION_MS);
       // Při rychlém klikání novou animaci nepřeruší stará
-      if (to !== this.targetAzimuth) return;
+      if (animation !== this.rotationAnimation) return;
       this.azimuth = from + (to - from) * (1 - (1 - t) * (1 - t));
       this.updatePosition();
       if (t < 1) requestAnimationFrame(step);
+      else this.azimuth = this.targetAzimuth;
     };
     requestAnimationFrame(step);
   }
@@ -159,11 +175,25 @@ export class IsoCamera {
 
     this.dom.addEventListener('pointerdown', (e) => {
       if (e.button !== 2) return;
-      this.panAnchor = this.groundPoint(e.clientX, e.clientY);
       this.dom.setPointerCapture(e.pointerId);
+      this.rotatingPointer = e.shiftKey;
+      this.panAnchor = this.rotatingPointer ? null : this.groundPoint(e.clientX, e.clientY);
+      this.pointerX = e.clientX;
+      if (this.rotatingPointer) {
+        this.targetAzimuth = this.azimuth;
+        this.rotationAnimation++;
+      }
     });
 
     this.dom.addEventListener('pointermove', (e) => {
+      if (this.rotatingPointer) {
+        this.azimuth += (e.clientX - this.pointerX) * ROTATION_DRAG_RADIANS_PER_PIXEL;
+        this.targetAzimuth = this.azimuth;
+        this.pointerX = e.clientX;
+        this.rotationAnimation++;
+        this.updatePosition();
+        return;
+      }
       if (!this.panAnchor) return;
       const current = this.groundPoint(e.clientX, e.clientY);
       if (!current) return;
@@ -173,8 +203,14 @@ export class IsoCamera {
 
     this.dom.addEventListener('pointerup', (e) => {
       if (e.button !== 2) return;
+      this.rotatingPointer = false;
       this.panAnchor = null;
-      this.dom.releasePointerCapture(e.pointerId);
+      if (this.dom.hasPointerCapture(e.pointerId)) this.dom.releasePointerCapture(e.pointerId);
+    });
+
+    this.dom.addEventListener('pointercancel', () => {
+      this.rotatingPointer = false;
+      this.panAnchor = null;
     });
   }
 }

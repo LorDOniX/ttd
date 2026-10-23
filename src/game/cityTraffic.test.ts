@@ -155,7 +155,7 @@ describe('městský provoz', () => {
 
     traffic.update(0.5, new Set(), [], 1);
 
-    expect(waitingCar.pos).toBeCloseTo(1.25);
+    expect(waitingCar.pos).toBeCloseTo(0.7);
     expect(vehiclePoint(waitingCar.path, waitingCar.pos).x).toBeLessThan(6);
   });
 
@@ -200,15 +200,61 @@ describe('městský provoz', () => {
 
     traffic.update(0.6, new Set(), [], 1);
 
-    expect(fartherCar.pos).toBeCloseTo(1.25);
+    expect(fartherCar.pos).toBeCloseTo(0.7);
     expect(nearerCar.pos).toBeGreaterThan(1.5);
 
-    traffic.update(1.2, new Set(), [], 1);
+    traffic.update(1.4, new Set(), [], 1);
 
     expect(nearerCar.pos).toBeGreaterThan(2.5);
 
     traffic.update(0.4, new Set(), [], 1);
 
-    expect(fartherCar.pos).toBeGreaterThan(1.25);
+    expect(fartherCar.pos).toBeGreaterThan(0.7);
+  });
+
+  it('dvě auta přijíždějící proti sobě projedou křižovatku postupně bez deadlocku', () => {
+    const map = new GameMap(12, 12);
+    for (let x = 3; x <= 9; x++) {
+      map.set(x, 6, TileType.Road);
+      map.setOwner(x, 6, 0);
+    }
+    for (let y = 3; y <= 9; y++) {
+      map.set(6, y, TileType.Road);
+      map.setOwner(6, y, 0);
+    }
+    const town: Town = {
+      id: 0,
+      name: 'Město',
+      kind: 'city',
+      x: 6,
+      y: 6,
+      population: 600,
+      radius: 2,
+      shape: Array(12).fill(1),
+      buildings: [],
+      served: false,
+    };
+    const traffic = new CityTraffic(map, new RailNetwork(map), [town], 42, 1);
+    const [eastbound, northbound] = traffic.cars;
+    traffic.cars.splice(2);
+    eastbound.path = Array.from({ length: 7 }, (_, i) => ({ x: 3 + i, y: 6 }));
+    northbound.path = Array.from({ length: 7 }, (_, i) => ({ x: 6, y: 3 + i }));
+    eastbound.pos = northbound.pos = 2.8;
+    eastbound.speed = northbound.speed = 1;
+    let eastboundDistance = 0;
+    let northboundDistance = 0;
+
+    for (let frame = 0; frame < 120; frame++) {
+      const beforeEastbound = vehiclePoint(eastbound.path, eastbound.pos);
+      const beforeNorthbound = vehiclePoint(northbound.path, northbound.pos);
+      traffic.update(0.1, new Set(), [], 1);
+      const afterEastbound = vehiclePoint(eastbound.path, eastbound.pos);
+      const afterNorthbound = vehiclePoint(northbound.path, northbound.pos);
+      eastboundDistance += Math.hypot(afterEastbound.x - beforeEastbound.x, afterEastbound.y - beforeEastbound.y);
+      northboundDistance += Math.hypot(afterNorthbound.x - beforeNorthbound.x, afterNorthbound.y - beforeNorthbound.y);
+    }
+
+    expect(eastboundDistance).toBeGreaterThan(1);
+    expect(northboundDistance).toBeGreaterThan(1);
   });
 });

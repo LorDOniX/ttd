@@ -3,6 +3,7 @@ import type { RailNetwork } from '../world/rail';
 import { roadMoves } from '../world/roadRoute';
 
 const JUNCTION_CLEARANCE = 0.2;
+export const JUNCTION_STOP_GAP = 0.8;
 
 export interface JunctionTraffic {
   id?: number;

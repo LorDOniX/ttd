@@ -13,7 +13,8 @@ import { formatMoney, type Game } from './game';
 import { TileType, type TilePos } from '../world/map';
 import type { Depot, Station } from '../world/rail';
 import { findRoadRoute, roadMoves } from '../world/roadRoute';
-import { junctionPriorities, reservesJunction } from './roadJunctions';
+import { JUNCTION_STOP_GAP, junctionPriorities, reservesJunction } from './roadJunctions';
+import type { TrafficLights } from './trafficLights';
 import type { RoadTrafficObstacle } from './cityTraffic';
 
 const DAYS_PER_YEAR = 365.25;
@@ -205,7 +206,12 @@ export function safeVehiclePosition(
 ): number {
   const start = vehiclePoint(path, pos);
   let safe = pos;
-  for (let candidate = Math.min(target, pos + MOVEMENT_STEP); candidate <= target;) {
+  const direction = Math.sign(target - pos);
+  if (direction === 0) return pos;
+  for (
+    let candidate = pos + direction * Math.min(Math.abs(target - pos), MOVEMENT_STEP);
+    direction > 0 ? candidate <= target : candidate >= target;
+  ) {
     const point = vehiclePoint(path, candidate);
     const blocked = obstacles.some((other) => {
       if (other.path.length === 0) return false;
@@ -224,12 +230,14 @@ export function safeVehiclePosition(
         return false;
       }
       const distance = Math.hypot(ox, oy);
-      return distance < (direction < -0.5 ? ROAD_LANE_OFFSET * 1.5 : CAR_CLEARANCE);
+      const clearance = direction > 0.5 ? CAR_CLEARANCE : ROAD_LANE_OFFSET * 1.5;
+      const startDistance = Math.hypot(start.x - obstacle.x, start.y - obstacle.y);
+      return distance < clearance && !(startDistance < clearance && distance > startDistance);
     });
     if (blocked) break;
     safe = candidate;
     if (candidate === target) break;
-    candidate = Math.min(target, candidate + MOVEMENT_STEP);
+    candidate += direction * Math.min(Math.abs(target - candidate), MOVEMENT_STEP);
   }
   return safe;
 }
@@ -240,6 +248,7 @@ export class RoadFleet {
   nextId = 1;
   private pedestrianCrossings: ReadonlySet<number> = new Set();
   private trafficObstacles: readonly RoadTrafficObstacle[] = [];
+  private trafficLights?: TrafficLights;
 
   constructor(private readonly game: Game) {
     game.clock.events.on('month', () => this.chargeRunningCosts());
@@ -264,6 +273,10 @@ export class RoadFleet {
 
   setTrafficObstacles(vehicles: readonly RoadTrafficObstacle[]): void {
     this.trafficObstacles = vehicles;
+  }
+
+  setTrafficLights(trafficLights: TrafficLights): void {
+    this.trafficLights = trafficLights;
   }
 
   // Od každého nákladu nejnovější model, který už se vyrábí
@@ -461,8 +474,9 @@ export class RoadFleet {
       ...this.trafficObstacles,
     ];
     let pos = safeVehiclePosition(vehicle.path, vehicle.pos, targetPos, obstacles, vehicle.id);
-    // Vjezd na dlaždici k nastává v polovině cesty mezi středy (k − 0,5); před přejezdem už o CROSSING_GAP dřív
-    for (let k = Math.floor(vehicle.pos + 0.5) + 1; k <= end && k - 0.5 - CROSSING_GAP <= pos; k++) {
+    let backingOff = false;
+    // Vyhodnocuj překážky před stopčárou, ne až při dosažení středu křižovatky.
+    for (let k = Math.floor(vehicle.pos + 0.5) + 1; k <= end; k++) {
       const from = vehicle.path[k - 1];
       const to = vehicle.path[k];
       const crossingTile = to.y * map.width + to.x;
@@ -478,8 +492,22 @@ export class RoadFleet {
           }));
       const mustYield =
         junction && priorities.get(crossingTile) !== undefined && priorities.get(crossingTile) !== vehicle.id;
-      if ((this.pedestrianCrossings.has(crossingTile) || junctionOccupied || mustYield) && vehicle.pos < k - 0.5) {
-        pos = Math.max(vehicle.pos, k - 0.5 - CROSSING_GAP);
+      const redSignal = junction && this.trafficLights !== undefined && !this.trafficLights.allows(from, to);
+      const blocked = this.pedestrianCrossings.has(crossingTile) || junctionOccupied || mustYield || redSignal;
+      const gap = junction && (junctionOccupied || mustYield || redSignal) ? JUNCTION_STOP_GAP : CROSSING_GAP;
+      if (k - 0.5 - gap > pos) break;
+      if (blocked && vehicle.pos < k - 0.5) {
+        const stopPos = k - 0.5 - gap;
+        if (stopPos < vehicle.pos) {
+          if (redSignal) {
+            pos = vehicle.pos;
+          } else {
+            pos = safeVehiclePosition(vehicle.path, vehicle.pos, stopPos, obstacles, vehicle.id);
+            backingOff = true;
+          }
+        } else {
+          pos = Math.min(pos, stopPos);
+        }
         break;
       }
       // Před zavřenou závorou auto stojí; kdo už k ní dojel před zavřením, projede
@@ -495,7 +523,7 @@ export class RoadFleet {
       }
       vehicle.tiles++;
     }
-    vehicle.pos = Math.max(vehicle.pos, pos);
+    vehicle.pos = backingOff ? pos : Math.max(vehicle.pos, pos);
     if (vehicle.pos >= end) this.arrive(vehicle);
   }
 

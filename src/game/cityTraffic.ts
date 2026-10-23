@@ -2,10 +2,11 @@ import type { RoadVehicle } from './roadVehicles';
 import { TileType, type GameMap, type TilePos } from '../world/map';
 import type { RailNetwork } from '../world/rail';
 import { roadMoves } from '../world/roadRoute';
-import { junctionPriorities, reservesJunction } from './roadJunctions';
+import { JUNCTION_STOP_GAP, junctionPriorities, reservesJunction } from './roadJunctions';
 import type { Town } from '../world/town';
 import { safeVehiclePosition, vehiclePoint } from './roadVehicles';
 import { Rng } from '../world/rng';
+import type { TrafficLights } from './trafficLights';
 
 const CARS_PER_RESIDENT = 1 / 300;
 const CITY_CAR_MODELS = ['hatchback-sports', 'sedan', 'suv', 'taxi'] as const;
@@ -56,6 +57,7 @@ export class CityTraffic {
   private nextId = 1;
   private readonly townRoads = new Map<number, TilePos[]>();
   private roadsVersion = -1;
+  private trafficLights?: TrafficLights;
 
   constructor(
     private readonly map: GameMap,
@@ -71,6 +73,10 @@ export class CityTraffic {
 
   obstacles(): RoadTrafficObstacle[] {
     return this.cars.map(({ id, path, pos }) => ({ id: -id, path, pos }));
+  }
+
+  setTrafficLights(trafficLights: TrafficLights): void {
+    this.trafficLights = trafficLights;
   }
 
   update(
@@ -205,15 +211,23 @@ export class CityTraffic {
     const crowdAhead = roomAhead(car.path, car.pos, [...this.cars.filter((other) => other !== car), ...playerVehicles]);
     let pos = Math.min(end, car.pos + car.speed * seconds, car.pos + crowdAhead);
     let blocked = false;
-    for (let k = Math.floor(car.pos + 0.5) + 1; k <= end && k - 0.5 <= pos; k++) {
+    let redSignalWaiting = false;
+    for (let k = Math.floor(car.pos + 0.5) + 1; k <= end; k++) {
       const tile = car.path[k];
       const junction = roadMoves(this.rail, tile.x, tile.y).length >= 3;
       const occupied = junction && this.junctionOccupied(tile, car, playerVehicles);
       const tileIndex = tile.y * this.map.width + tile.x;
       const mustYield = junction && priorities.get(tileIndex) !== undefined && priorities.get(tileIndex) !== -car.id;
       const pedestrian = crossings.has(tile.y * this.map.width + tile.x);
-      if ((occupied || mustYield || pedestrian) && car.pos < k - 0.5) {
-        pos = Math.max(car.pos, k - 0.5 - VEHICLE_GAP / 2);
+      const redSignal =
+        junction && this.trafficLights !== undefined && !this.trafficLights.allows(car.path[k - 1], tile);
+      redSignalWaiting ||= redSignal;
+      const junctionBlocked = occupied || mustYield || pedestrian || redSignal;
+      const gap = junction && (occupied || mustYield || redSignal) ? JUNCTION_STOP_GAP : VEHICLE_GAP / 2;
+      if (k - 0.5 - gap > pos) break;
+      if (junctionBlocked && car.pos < k - 0.5) {
+        const stopPos = k - 0.5 - gap;
+        pos = Math.min(pos, redSignal ? Math.max(car.pos, stopPos) : stopPos);
         blocked = true;
         break;
       }
@@ -235,8 +249,15 @@ export class CityTraffic {
     if (pos === car.pos && crowdAhead < car.speed * seconds) blocked = true;
     if (blocked) {
       car.pos = pos;
-      car.stuckSeconds += seconds;
-      if (car.stuckSeconds >= STUCK_SECONDS_BEFORE_DETOUR && town) this.detour(car, crossings, playerVehicles);
+      car.stuckSeconds = redSignalWaiting ? 0 : car.stuckSeconds + seconds;
+      if (
+        !redSignalWaiting &&
+        car.stuckSeconds >= STUCK_SECONDS_BEFORE_DETOUR &&
+        town &&
+        !this.detour(car, crossings, playerVehicles)
+      ) {
+        this.backOutOfJunction(car, playerVehicles);
+      }
       return;
     }
     car.stuckSeconds = 0;
@@ -270,10 +291,14 @@ export class CityTraffic {
     }
   }
 
-  private detour(car: CityCar, crossings: ReadonlySet<number>, playerVehicles: readonly RoadTrafficObstacle[]): void {
+  private detour(
+    car: CityCar,
+    crossings: ReadonlySet<number>,
+    playerVehicles: readonly RoadTrafficObstacle[],
+  ): boolean {
     const current = car.path[Math.floor(car.pos)];
     const target = car.path[Math.min(car.path.length - 1, Math.floor(car.pos) + DETOUR_LOOKAHEAD)];
-    if (!current || !target) return;
+    if (!current || !target) return false;
     const blockedTiles = new Set(
       [
         ...this.cars
@@ -317,9 +342,27 @@ export class CityTraffic {
       }
       route.reverse();
     }
-    if (!route || route.length < 3) return;
+    if (!route || route.length < 3) return false;
     car.path = route;
     car.pos = 0;
+    car.stuckSeconds = 0;
+    return true;
+  }
+
+  private backOutOfJunction(car: CityCar, playerVehicles: readonly RoadTrafficObstacle[]): void {
+    const nextJunction = car.path.findIndex(
+      (tile, index) => index > Math.floor(car.pos) && roadMoves(this.rail, tile.x, tile.y).length >= 3,
+    );
+    if (nextJunction < 1) return;
+    const stopPos = nextJunction - 0.5 - JUNCTION_STOP_GAP;
+    if (stopPos >= car.pos) return;
+    const obstacles = [
+      ...this.cars.filter((other) => other !== car).map(({ id, path, pos }) => ({ id: -id, path, pos })),
+      ...playerVehicles,
+    ];
+    const position = safeVehiclePosition(car.path, car.pos, stopPos, obstacles, -car.id);
+    if (position >= car.pos) return;
+    car.pos = position;
     car.stuckSeconds = 0;
   }
 }

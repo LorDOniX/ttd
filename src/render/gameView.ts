@@ -3,6 +3,7 @@ import { CARGOS, type Cargo } from '../game/cargo';
 import { CityTraffic } from '../game/cityTraffic';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
+import { TrafficLights } from '../game/trafficLights';
 import { AmbientPropsView } from './ambientProps';
 import { BuildingsView } from './buildings';
 import { IsoCamera } from './camera';
@@ -15,6 +16,7 @@ import { RoadVehiclesView } from './roadVehicles';
 import { RoadView } from './roads';
 import { SignalsView } from './signals';
 import { TerrainView } from './terrain';
+import { TrafficLightsView } from './trafficLights';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
 
@@ -44,6 +46,8 @@ export class GameView {
   private readonly crossings: CrossingsView;
   private readonly signals: SignalsView;
   private readonly roads: RoadView;
+  private readonly trafficLights: TrafficLights;
+  private readonly trafficLightView = new TrafficLightsView();
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
   private railDirty = false;
@@ -69,7 +73,11 @@ export class GameView {
     this.terrain = new TerrainView(map, towns);
     const roads = (this.roads = new RoadView(map, world.rail));
     this.ambientProps = new AmbientPropsView(map, world.rail, roads);
+    this.trafficLights = new TrafficLights(map, world.rail, towns);
     this.cityTraffic = new CityTraffic(map, world.rail, towns, world.seed, roads.version, game.roadFleet.vehicles);
+    this.cityTraffic.setTrafficLights(this.trafficLights);
+    game.roadFleet.setTrafficLights(this.trafficLights);
+    this.trafficLightView.sync(this.trafficLights.all);
     const buildings = new BuildingsView();
     void buildings.rebuild(towns);
     this.trees = new TreesView(map);
@@ -92,6 +100,7 @@ export class GameView {
       this.terrain.object,
       roads.object,
       this.ambientProps.object,
+      this.trafficLightView.object,
       buildings.object,
       this.industries.object,
       this.trees.object,
@@ -141,6 +150,8 @@ export class GameView {
     this.syncMap = () => {
       this.terrain.sync();
       this.roads.sync();
+      this.trafficLights.reconcile(this.roads.version);
+      this.trafficLightView.sync(this.trafficLights.all);
       this.ambientProps.sync();
       game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
       this.trees.sync();
@@ -154,6 +165,8 @@ export class GameView {
     game.events.on('townsChanged', () => {
       void buildings.rebuild(towns);
       towns.forEach((town) => this.labels.update(town));
+      this.trafficLights.refresh();
+      this.trafficLightView.sync(this.trafficLights.all);
       this.cityTraffic.reconcile(this.roads.version, game.roadFleet.vehicles);
     });
     game.events.on('railChanged', () => (this.railDirty = true));
@@ -221,6 +234,7 @@ export class GameView {
     this.game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
     this.game.update(dtMs);
     const trafficSeconds = this.game.clock.paused ? 0 : Math.min(trafficDtMs, 100) / 1000;
+    this.trafficLights.update(trafficSeconds);
     this.cityTraffic.update(
       trafficSeconds,
       this.pedestrians.crossingTiles,
@@ -234,6 +248,7 @@ export class GameView {
     this.industries.update(seconds);
     this.trains.update(frustum);
     this.vehicles.update(frustum, this.cityTraffic.cars);
+    this.trafficLightView.update(this.trafficLights);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
     this.crossings.update(now, (x, y) => reservations.ownerAt(x, y) !== undefined);

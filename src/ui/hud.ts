@@ -73,7 +73,11 @@ export class Hud {
       return b;
     };
 
-    const rotate = button('🔄', 'Otočit pohled o 90° (Q/E, pravé tlačítko opačně)', () => actions.rotateView(1));
+    const rotate = button(
+      '🔄',
+      'Otočit pohled o 90° (Q/E, pravé tlačítko opačně; Shift + pravé tlačítko myši pro plynulé otáčení)',
+      () => actions.rotateView(1),
+    );
     rotate.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       actions.rotateView(-1);
