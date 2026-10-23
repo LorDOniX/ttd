@@ -2,7 +2,68 @@ import * as THREE from 'three';
 import { MapChanges, TileType, type GameMap } from '../world/map';
 import { loadPrototype } from './buildings';
 
-const MODELS = ['tree-large', 'tree-small'];
+// Listnaté a jehličnaté stromy z nature kitu; varianty _dark mají tmavší listí
+const MODELS = [
+  'tree_default',
+  'tree_default_dark',
+  'tree_oak',
+  'tree_oak_dark',
+  'tree_detailed',
+  'tree_fat',
+  'tree_simple',
+  'tree_tall_dark',
+  'tree_cone',
+  'tree_cone_dark',
+  'tree_pineDefaultA',
+  'tree_pineDefaultB',
+  'tree_pineRoundA',
+  'tree_pineRoundC',
+  'tree_pineSmallA',
+];
+// Nejvyšší strom v plném měřítku (jako dřívější velký strom ze suburban kitu); štíhlé jehličnany
+// by po normalizaci na šířku dlaždice byly příliš vysoké
+const TREE_HEIGHT = 2.7;
+// Kit má tyrkysové listí a kovový materiál, stromy se přebarví do zelené jako zbytek krajiny
+const TREE_COLORS: Record<string, number> = {
+  leafsGreen: 0x3f9d4f,
+  leafsDark: 0x2b7f4c,
+  woodBark: 0x8a5636,
+  woodBarkDark: 0x6e4630,
+};
+
+type Parts = Awaited<ReturnType<typeof loadPrototype>>;
+const treeMaterials = new Map<string, THREE.Material>();
+
+function treeMaterial(material: THREE.Material): THREE.Material {
+  let result = treeMaterials.get(material.name);
+  if (!result) {
+    const color = TREE_COLORS[material.name] ?? (material as THREE.MeshStandardMaterial).color?.getHex() ?? 0xffffff;
+    result = new THREE.MeshLambertMaterial({ color });
+    treeMaterials.set(material.name, result);
+  }
+  return result;
+}
+
+// Strom z nature kitu: přebarvený, na šířku dlaždice a nejvýš TREE_HEIGHT vysoký
+async function loadTree(model: string): Promise<Parts> {
+  const parts = await loadPrototype('nature kit', model);
+  const box = new THREE.Box3();
+  for (const part of parts) {
+    part.geometry.computeBoundingBox();
+    box.union(part.geometry.boundingBox!.clone().applyMatrix4(part.matrix));
+  }
+  const s = Math.min(1, TREE_HEIGHT / box.max.y);
+  const scale = new THREE.Matrix4().makeScale(s, s, s);
+  // Zbytky exportu s výchozím bílým materiálem se vynechají
+  return parts
+    .filter((part) => !Array.isArray(part.material) && part.material.name !== '_defaultMat')
+    .map((part) => ({
+      ...part,
+      material: treeMaterial(part.material as THREE.Material),
+      matrix: scale.clone().multiply(part.matrix),
+    }));
+}
+
 // Vykácený strom: nulové měřítko instanci schová
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
@@ -12,7 +73,7 @@ function tileHash(x: number, y: number, salt: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
-// Stromy jako instancované modely ze suburban kitu; rozmístění je dané dlaždicí, takže je stabilní
+// Stromy jako instancované modely z nature kitu; rozmístění je dané dlaždicí, takže je stabilní
 export class TreesView {
   readonly object = new THREE.Group();
   private generation = 0;
@@ -64,7 +125,7 @@ export class TreesView {
       const count = 1 + Math.floor(tileHash(x, y, 1) * 3);
       const instances: [number, number][] = [];
       for (let k = 0; k < count; k++) {
-        const model = tileHash(x, y, 10 + k) < 0.5 ? 0 : 1;
+        const model = Math.min(MODELS.length - 1, Math.floor(tileHash(x, y, 10 + k) * MODELS.length));
         const scale = 0.35 + tileHash(x, y, 20 + k) * 0.25;
         const px = x + 0.2 + tileHash(x, y, 30 + k) * 0.6;
         const pz = y + 0.2 + tileHash(x, y, 40 + k) * 0.6;
@@ -77,7 +138,7 @@ export class TreesView {
       instancesByTile.set(i, instances);
     }
 
-    const prototypes = await Promise.all(MODELS.map((m) => loadPrototype('city kit suburban', m)));
+    const prototypes = await Promise.all(MODELS.map(loadTree));
     if (generation !== this.generation) return;
     const meshesByModel = prototypes.map((parts, model) =>
       parts.map((part) => {
