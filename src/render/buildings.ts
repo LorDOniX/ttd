@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loadScene, type Kit } from '../assets';
 import type { Town } from '../world/town';
+import { Surface, addWindows } from './windows';
 
 // Největší půdorysný rozměr budovy vůči dlaždici
 const FOOTPRINT = 0.86;
@@ -105,15 +106,40 @@ function facadeAt(kit: Kit, x: number, y: number): number {
   return (((x * 73_856_093) ^ (y * 19_349_663)) >>> 0) % (FACADES[kit]?.length ?? 1);
 }
 
+// Modely bez detailů mají holé stěny, okna se jim dokreslují shaderem
+function needsWindows(model: string): boolean {
+  return model.startsWith('low-detail-building-');
+}
+
+// Světlé stěny dostanou okna po patrech, tmavé panely příčky prosklené fasády
+function windowSurface(u: number, v: number): Surface {
+  const at = paletteCell(u, v);
+  return at === WHITE ? Surface.Wall : at === GRAY ? Surface.Glass : Surface.Plain;
+}
+
+const windowed = new Map<string, Promise<Part[]>>();
+
+// Okna se určují z původních barev palety, proto před přebarvením fasády
+function loadWindowed(kit: Kit, model: string): Promise<Part[]> {
+  if (!needsWindows(model)) return loadPrototype(kit, model);
+  const key = `${kit}/${model}`;
+  let pending = windowed.get(key);
+  if (!pending) {
+    pending = loadPrototype(kit, model).then((parts) => addWindows(parts, windowSurface));
+    windowed.set(key, pending);
+  }
+  return pending;
+}
+
 const facades = new Map<string, Promise<Part[]>>();
 
 function loadFacade(kit: Kit, model: string, facade: number): Promise<Part[]> {
   const scheme = FACADES[kit]?.[facade];
-  if (!scheme) return loadPrototype(kit, model);
+  if (!scheme) return loadWindowed(kit, model);
   const key = `${kit}/${model}/${facade}`;
   let pending = facades.get(key);
   if (!pending) {
-    pending = loadPrototype(kit, model).then((parts) => recolor(parts, scheme));
+    pending = loadWindowed(kit, model).then((parts) => recolor(parts, scheme));
     facades.set(key, pending);
   }
   return pending;
