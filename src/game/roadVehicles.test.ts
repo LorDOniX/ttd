@@ -6,7 +6,7 @@ import { addBuilding, addIndustry, emptyGame, makeTown, runDays } from '../test/
 import { TileType } from '../world/map';
 import { Edge, axisPiece, type Depot, type Station } from '../world/rail';
 import { roadMoves } from '../world/roadRoute';
-import { vehiclePoint } from './roadVehicles';
+import { safeVehiclePosition, vehiclePoint } from './roadVehicles';
 
 const model = (id: string) => ROAD_VEHICLE_MODELS.find((m) => m.id === id)!;
 
@@ -75,17 +75,58 @@ describe('silniční vozidla', () => {
     const end = vehiclePoint(path, 1.5);
 
     expect(start.x).toBeCloseTo(1);
-    expect(start.y).toBeCloseTo(1.5);
+    expect(start.y).toBeCloseTo(1.66);
     expect(start.dx).toBeCloseTo(1);
     expect(start.dy).toBeCloseTo(0);
     expect(middle.x).toBeGreaterThan(start.x);
     expect(middle.y).toBeLessThan(start.y);
     expect(middle.dx).toBeCloseTo(Math.SQRT1_2);
     expect(middle.dy).toBeCloseTo(-Math.SQRT1_2);
-    expect(end.x).toBeCloseTo(1.5);
+    expect(end.x).toBeCloseTo(1.66);
     expect(end.y).toBeCloseTo(1);
     expect(end.dx).toBeCloseTo(0);
     expect(end.dy).toBeCloseTo(-1);
+  });
+
+  it('ve slepé ulici se otočí obloukem a vyjede správným směrem', () => {
+    const path = [
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ];
+    const start = vehiclePoint(path, 0.5);
+    const middle = vehiclePoint(path, 1);
+    const end = vehiclePoint(path, 1.5);
+
+    expect(start.x).toBeCloseTo(1);
+    expect(start.y).toBeCloseTo(1.66);
+    expect(start.dx).toBeCloseTo(1);
+    expect(start.dy).toBeCloseTo(0);
+    expect(middle.x).toBeGreaterThan(start.x);
+    expect(middle.dx).toBeCloseTo(0);
+    expect(middle.dy).toBeLessThan(0);
+    expect(end.x).toBeCloseTo(1);
+    expect(end.y).toBeCloseTo(1.34);
+    expect(end.dx).toBeCloseTo(-1);
+    expect(end.dy).toBeCloseTo(0);
+  });
+
+  it('udrží bezpečný odstup mezi auty i během zatáčky', () => {
+    const path = [
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+      { x: 1, y: 0 },
+    ];
+    const obstaclePath = path;
+    const safe = safeVehiclePosition(path, 0.5, 1.5, [{ path: obstaclePath, pos: 1.2 }]);
+
+    expect(safe).toBeLessThan(1.5);
+    expect(
+      Math.hypot(
+        vehiclePoint(path, safe + 0.04).x - vehiclePoint(obstaclePath, 1.2).x,
+        vehiclePoint(path, safe + 0.04).y - vehiclePoint(obstaclePath, 1.2).y,
+      ),
+    ).toBeLessThan(0.42);
   });
 
   it('autobus vozí cestující mezi zastávkami a vydělává', () => {
@@ -238,7 +279,7 @@ describe('silniční vozidla', () => {
           { x: 20, y: 10 },
           { x: 21, y: 10 },
         ],
-        pos: 1,
+        pos: 1.6,
       },
     ]);
 

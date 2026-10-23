@@ -13,6 +13,7 @@ import { formatMoney, type Game } from './game';
 import { TileType, type TilePos } from '../world/map';
 import type { Depot, Station } from '../world/rail';
 import { findRoadRoute, roadMoves } from '../world/roadRoute';
+import { junctionPriorities, reservesJunction } from './roadJunctions';
 import type { RoadTrafficObstacle } from './cityTraffic';
 
 const DAYS_PER_YEAR = 365.25;
@@ -24,6 +25,9 @@ const CROSSING_GAP = 0.2;
 // Odstup aut za sebou (délka auta s mezerou) a šířka pruhu pro rozpoznání auta před sebou
 const VEHICLE_GAP = 0.5;
 const LANE_WIDTH = 0.3;
+export const ROAD_LANE_OFFSET = 0.16;
+const CAR_CLEARANCE = 0.42;
+const MOVEMENT_STEP = 0.04;
 
 export type RoadVehicleState = 'depot' | 'running' | 'loading' | 'lost';
 
@@ -106,10 +110,56 @@ export function vehiclePoint(path: TilePos[], pos: number): { x: number; y: numb
     const incoming = { x: corner.x - previous.x, y: corner.y - previous.y };
     const outgoing = { x: next.x - corner.x, y: next.y - corner.y };
     const cross = incoming.x * outgoing.y - incoming.y * outgoing.x;
+    const cornerCenter = { x: corner.x + 0.5, y: corner.y + 0.5 };
+    const startCenter = {
+      x: cornerCenter.x - incoming.x * 0.5,
+      y: cornerCenter.y - incoming.y * 0.5,
+    };
+    if (incoming.x === -outgoing.x && incoming.y === -outgoing.y) {
+      const t = pos - (turn - 0.5);
+      const start = {
+        x: startCenter.x - incoming.y * ROAD_LANE_OFFSET,
+        y: startCenter.y + incoming.x * ROAD_LANE_OFFSET,
+      };
+      const end = {
+        x: startCenter.x - outgoing.y * ROAD_LANE_OFFSET,
+        y: startCenter.y + outgoing.x * ROAD_LANE_OFFSET,
+      };
+      const controlDistance = 0.35;
+      const firstControl = {
+        x: start.x + incoming.x * controlDistance,
+        y: start.y + incoming.y * controlDistance,
+      };
+      const secondControl = {
+        x: end.x - outgoing.x * controlDistance,
+        y: end.y - outgoing.y * controlDistance,
+      };
+      const inverse = 1 - t;
+      const x =
+        inverse ** 3 * start.x +
+        3 * inverse ** 2 * t * firstControl.x +
+        3 * inverse * t ** 2 * secondControl.x +
+        t ** 3 * end.x;
+      const y =
+        inverse ** 3 * start.y +
+        3 * inverse ** 2 * t * firstControl.y +
+        3 * inverse * t ** 2 * secondControl.y +
+        t ** 3 * end.y;
+      const tangentX =
+        3 * inverse ** 2 * (firstControl.x - start.x) +
+        6 * inverse * t * (secondControl.x - firstControl.x) +
+        3 * t ** 2 * (end.x - secondControl.x);
+      const tangentY =
+        3 * inverse ** 2 * (firstControl.y - start.y) +
+        6 * inverse * t * (secondControl.y - firstControl.y) +
+        3 * t ** 2 * (end.y - secondControl.y);
+      const length = Math.hypot(tangentX, tangentY) || 1;
+      return { x, y, dx: tangentX / length, dy: tangentY / length };
+    }
     if (cross !== 0) {
       const radius = 0.5;
-      const centerX = corner.x + 0.5 - incoming.x * radius + outgoing.x * radius;
-      const centerY = corner.y + 0.5 - incoming.y * radius + outgoing.y * radius;
+      const centerX = cornerCenter.x - incoming.x * radius + outgoing.x * radius;
+      const centerY = cornerCenter.y - incoming.y * radius + outgoing.y * radius;
       const startX = -outgoing.x * radius;
       const startY = -outgoing.y * radius;
       const endX = incoming.x * radius;
@@ -124,12 +174,11 @@ export function vehiclePoint(path: TilePos[], pos: number): { x: number; y: numb
       const t = pos - (turn - 0.5);
       const angle = startAngle + angleDelta * t;
       const direction = Math.sign(angleDelta);
-      return {
-        x: centerX + Math.cos(angle) * radius,
-        y: centerY + Math.sin(angle) * radius,
-        dx: -Math.sin(angle) * direction,
-        dy: Math.cos(angle) * direction,
-      };
+      const x = centerX + Math.cos(angle) * radius;
+      const y = centerY + Math.sin(angle) * radius;
+      const dx = -Math.sin(angle) * direction;
+      const dy = Math.cos(angle) * direction;
+      return { x: x - dy * ROAD_LANE_OFFSET, y: y + dx * ROAD_LANE_OFFSET, dx, dy };
     }
   }
   const i = Math.max(0, Math.min(path.length - 2, Math.floor(pos)));
@@ -137,7 +186,52 @@ export function vehiclePoint(path: TilePos[], pos: number): { x: number; y: numb
   const a = path[i];
   const b = path[i + 1];
   // Obrat na místě (A → B → A) má nulový směr; použije se směr k další dlaždici
-  return { x: a.x + 0.5 + (b.x - a.x) * t, y: a.y + 0.5 + (b.y - a.y) * t, dx: b.x - a.x, dy: b.y - a.y };
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return {
+    x: a.x + 0.5 + dx * t - dy * ROAD_LANE_OFFSET,
+    y: a.y + 0.5 + dy * t + dx * ROAD_LANE_OFFSET,
+    dx,
+    dy,
+  };
+}
+
+export function safeVehiclePosition(
+  path: TilePos[],
+  pos: number,
+  target: number,
+  obstacles: readonly RoadTrafficObstacle[],
+  vehicleId?: number,
+): number {
+  const start = vehiclePoint(path, pos);
+  let safe = pos;
+  for (let candidate = Math.min(target, pos + MOVEMENT_STEP); candidate <= target;) {
+    const point = vehiclePoint(path, candidate);
+    const blocked = obstacles.some((other) => {
+      if (other.path.length === 0) return false;
+      const obstacle = vehiclePoint(other.path, other.pos);
+      const direction = point.dx * obstacle.dx + point.dy * obstacle.dy;
+      const ox = obstacle.x - point.x;
+      const oy = obstacle.y - point.y;
+      const along = ox * point.dx + oy * point.dy;
+      if (direction > 0.5 && along < 0) return false;
+      if (
+        vehicleId !== undefined &&
+        other.id !== undefined &&
+        vehicleId < other.id &&
+        Math.hypot(start.x - obstacle.x, start.y - obstacle.y) < 0.001
+      ) {
+        return false;
+      }
+      const distance = Math.hypot(ox, oy);
+      return distance < (direction < -0.5 ? ROAD_LANE_OFFSET * 1.5 : CAR_CLEARANCE);
+    });
+    if (blocked) break;
+    safe = candidate;
+    if (candidate === target) break;
+    candidate = Math.min(target, candidate + MOVEMENT_STEP);
+  }
+  return safe;
 }
 
 // Silniční vozidla společnosti: nákup, jízdní řád a jízda po silnicích
@@ -291,10 +385,17 @@ export class RoadFleet {
 
   update(days: number): void {
     if (days <= 0) return;
+    const traffic = [
+      ...this.vehicles
+        .filter((vehicle) => vehicle.state !== 'depot' && vehicle.path.length > 0)
+        .map(({ id, path, pos }) => ({ id, path, pos })),
+      ...this.trafficObstacles,
+    ];
+    const priorities = junctionPriorities(traffic, this.game.world.rail);
     for (const vehicle of this.vehicles) {
       switch (vehicle.state) {
         case 'running':
-          this.move(vehicle, days);
+          this.move(vehicle, days, priorities);
           break;
         case 'loading':
           vehicle.waitDays -= days;
@@ -344,15 +445,22 @@ export class RoadFleet {
     return null;
   }
 
-  private move(vehicle: RoadVehicle, days: number): void {
+  private move(vehicle: RoadVehicle, days: number, priorities: ReadonlyMap<number, number>): void {
     const { map } = this.game.world;
     const { reservations } = this.game.fleet;
     const end = vehicle.path.length - 1;
-    let pos = Math.min(
+    const targetPos = Math.min(
       end,
       vehicle.pos + roadVehicleModel(vehicle).speed * days,
       vehicle.pos + this.roomAhead(vehicle),
     );
+    const obstacles = [
+      ...this.vehicles
+        .filter((other) => other !== vehicle && other.state !== 'depot' && other.path.length > 0)
+        .map(({ id, path, pos }) => ({ id, path, pos })),
+      ...this.trafficObstacles,
+    ];
+    let pos = safeVehiclePosition(vehicle.path, vehicle.pos, targetPos, obstacles, vehicle.id);
     // Vjezd na dlaždici k nastává v polovině cesty mezi středy (k − 0,5); před přejezdem už o CROSSING_GAP dřív
     for (let k = Math.floor(vehicle.pos + 0.5) + 1; k <= end && k - 0.5 - CROSSING_GAP <= pos; k++) {
       const from = vehicle.path[k - 1];
@@ -363,14 +471,14 @@ export class RoadFleet {
         junction &&
         (this.vehicles.some((other) => {
           if (other === vehicle || other.state === 'depot' || other.path.length === 0) return false;
-          const occupied = other.path[Math.round(other.pos)];
-          return occupied?.x === to.x && occupied.y === to.y;
+          return reservesJunction(other.path, other.pos, to.x, to.y, this.game.world.rail);
         }) ||
           this.trafficObstacles.some((other) => {
-            const occupied = other.path[Math.round(other.pos)];
-            return occupied?.x === to.x && occupied.y === to.y;
+            return reservesJunction(other.path, other.pos, to.x, to.y, this.game.world.rail);
           }));
-      if ((this.pedestrianCrossings.has(crossingTile) || junctionOccupied) && vehicle.pos < k - 0.5) {
+      const mustYield =
+        junction && priorities.get(crossingTile) !== undefined && priorities.get(crossingTile) !== vehicle.id;
+      if ((this.pedestrianCrossings.has(crossingTile) || junctionOccupied || mustYield) && vehicle.pos < k - 0.5) {
         pos = Math.max(vehicle.pos, k - 0.5 - CROSSING_GAP);
         break;
       }

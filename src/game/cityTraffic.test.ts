@@ -141,7 +141,7 @@ describe('městský provoz', () => {
       { x: 9, y: 5 },
       { x: 10, y: 5 },
     ];
-    blockingCar.pos = 1;
+    blockingCar.pos = 1.6;
     blockingCar.speed = 0;
     waitingCar.path = [
       { x: 3, y: 5 },
@@ -157,5 +157,58 @@ describe('městský provoz', () => {
 
     expect(waitingCar.pos).toBeCloseTo(1.25);
     expect(vehiclePoint(waitingCar.path, waitingCar.pos).x).toBeLessThan(6);
+  });
+
+  it('na křižovatce jede první auto blíž stopčáře, druhé pokračuje po jeho průjezdu', () => {
+    const map = new GameMap(12, 12);
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        map.set(x, y, TileType.Road);
+        map.setOwner(x, y, 0);
+      }
+    }
+    const town: Town = {
+      id: 0,
+      name: 'Město',
+      kind: 'city',
+      x: 6,
+      y: 6,
+      population: 600,
+      radius: 2,
+      shape: Array(12).fill(1),
+      buildings: [],
+      served: false,
+    };
+    const traffic = new CityTraffic(map, new RailNetwork(map), [town], 42, 1);
+    const [fartherCar, nearerCar] = traffic.cars;
+    fartherCar.path = [
+      { x: 4, y: 6 },
+      { x: 5, y: 6 },
+      { x: 6, y: 6 },
+      { x: 7, y: 6 },
+    ];
+    fartherCar.pos = 1;
+    fartherCar.speed = 1;
+    nearerCar.path = [
+      { x: 6, y: 4 },
+      { x: 6, y: 5 },
+      { x: 6, y: 6 },
+      { x: 6, y: 7 },
+    ];
+    nearerCar.pos = 1.2;
+    nearerCar.speed = 1;
+
+    traffic.update(0.6, new Set(), [], 1);
+
+    expect(fartherCar.pos).toBeCloseTo(1.25);
+    expect(nearerCar.pos).toBeGreaterThan(1.5);
+
+    traffic.update(1.2, new Set(), [], 1);
+
+    expect(nearerCar.pos).toBeGreaterThan(2.5);
+
+    traffic.update(0.4, new Set(), [], 1);
+
+    expect(fartherCar.pos).toBeGreaterThan(1.25);
   });
 });

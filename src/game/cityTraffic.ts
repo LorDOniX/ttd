@@ -2,8 +2,9 @@ import type { RoadVehicle } from './roadVehicles';
 import { TileType, type GameMap, type TilePos } from '../world/map';
 import type { RailNetwork } from '../world/rail';
 import { roadMoves } from '../world/roadRoute';
+import { junctionPriorities, reservesJunction } from './roadJunctions';
 import type { Town } from '../world/town';
-import { vehiclePoint } from './roadVehicles';
+import { safeVehiclePosition, vehiclePoint } from './roadVehicles';
 import { Rng } from '../world/rng';
 
 const CARS_PER_RESIDENT = 1 / 300;
@@ -12,8 +13,6 @@ const CITY_CAR_MODELS = ['hatchback-sports', 'sedan', 'suv', 'taxi'] as const;
 const CAR_SPEEDS = [2.4, 2.8, 3.1, 3.4].map((speed) => (speed * 365.25) / (15 * 60));
 const VEHICLE_GAP = 0.5;
 const LANE_WIDTH = 0.3;
-const CAR_CLEARANCE = 0.42;
-const MOVEMENT_STEP = 0.04;
 const STUCK_SECONDS_BEFORE_DETOUR = (1.5 * (15 * 60)) / 365.25;
 const DETOUR_LOOKAHEAD = 4;
 
@@ -84,7 +83,9 @@ export class CityTraffic {
     const playerObstacles = playerVehicles
       .filter((vehicle) => vehicle.state !== 'depot' && vehicle.path.length > 0)
       .map(({ id, path, pos }) => ({ id, path, pos }));
-    for (const car of this.cars) this.move(car, seconds, crossings, playerObstacles);
+    const traffic = [...this.cars.map(({ id, path, pos }) => ({ id: -id, path, pos })), ...playerObstacles];
+    const priorities = junctionPriorities(traffic, this.rail);
+    for (const car of this.cars) this.move(car, seconds, crossings, playerObstacles, priorities);
   }
 
   reconcile(roadVersion: number, playerVehicles: readonly RoadVehicle[] = []): void {
@@ -196,6 +197,7 @@ export class CityTraffic {
     seconds: number,
     crossings: ReadonlySet<number>,
     playerVehicles: readonly RoadTrafficObstacle[],
+    priorities: ReadonlyMap<number, number>,
   ): void {
     if (seconds <= 0) return;
     const town = this.towns[car.townId];
@@ -207,14 +209,25 @@ export class CityTraffic {
       const tile = car.path[k];
       const junction = roadMoves(this.rail, tile.x, tile.y).length >= 3;
       const occupied = junction && this.junctionOccupied(tile, car, playerVehicles);
+      const tileIndex = tile.y * this.map.width + tile.x;
+      const mustYield = junction && priorities.get(tileIndex) !== undefined && priorities.get(tileIndex) !== -car.id;
       const pedestrian = crossings.has(tile.y * this.map.width + tile.x);
-      if ((occupied || pedestrian) && car.pos < k - 0.5) {
+      if ((occupied || mustYield || pedestrian) && car.pos < k - 0.5) {
         pos = Math.max(car.pos, k - 0.5 - VEHICLE_GAP / 2);
         blocked = true;
         break;
       }
     }
-    const safePos = this.safePosition(car, pos, playerVehicles);
+    const safePos = safeVehiclePosition(
+      car.path,
+      car.pos,
+      pos,
+      [
+        ...this.cars.filter((other) => other !== car).map(({ id, path, pos }) => ({ id: -id, path, pos })),
+        ...playerVehicles,
+      ],
+      -car.id,
+    );
     if (safePos < pos) {
       pos = safePos;
       blocked = true;
@@ -234,32 +247,12 @@ export class CityTraffic {
   private junctionOccupied(tile: TilePos, car: CityCar, playerVehicles: readonly RoadTrafficObstacle[]): boolean {
     const cityCarOccupies = this.cars.some((other) => {
       if (other === car || other.path.length === 0) return false;
-      const occupied = other.path[Math.round(other.pos)];
-      return occupied?.x === tile.x && occupied.y === tile.y;
+      return reservesJunction(other.path, other.pos, tile.x, tile.y, this.rail);
     });
     if (cityCarOccupies) return true;
     return playerVehicles.some((other) => {
-      const occupied = other.path[Math.round(other.pos)];
-      return occupied?.x === tile.x && occupied.y === tile.y;
+      return reservesJunction(other.path, other.pos, tile.x, tile.y, this.rail);
     });
-  }
-
-  private safePosition(car: CityCar, target: number, playerVehicles: readonly RoadTrafficObstacle[]): number {
-    const obstacles = [...this.cars.filter((other) => other !== car), ...playerVehicles];
-    let safe = car.pos;
-    for (let candidate = Math.min(target, car.pos + MOVEMENT_STEP); candidate <= target;) {
-      const point = vehiclePoint(car.path, candidate);
-      const blocked = obstacles.some((other) => {
-        const obstacle = vehiclePoint(other.path, other.pos);
-        if (point.dx * obstacle.dx + point.dy * obstacle.dy < -0.5) return false;
-        return Math.hypot(point.x - obstacle.x, point.y - obstacle.y) < CAR_CLEARANCE;
-      });
-      if (blocked) break;
-      safe = candidate;
-      if (candidate === target) break;
-      candidate = Math.min(target, candidate + MOVEMENT_STEP);
-    }
-    return safe;
   }
 
   private extendPath(car: CityCar): void {

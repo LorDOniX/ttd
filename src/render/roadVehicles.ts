@@ -11,7 +11,6 @@ import { BRIDGE_DECK } from './rail';
 const SCALE = 0.13;
 const ROAD_TOP = 0.01;
 // Jízda vpravo: posun od osy silnice kolmo ke směru jízdy
-const LANE = 0.16;
 
 interface VehicleView {
   modelId: string;
@@ -149,9 +148,9 @@ export class RoadVehiclesView {
     const { x, y, dx, dy } = vehiclePoint(path, pos);
     const length = Math.hypot(dx, dy) || 1;
     const [ux, uy] = [dx / length, dy / length];
-    // Vpravo od směru jízdy (osa Y mapy je osa Z scény); na mostě po mostovce
+    // Pozice už zahrnuje jízdní pruh; na mostě auto jede po mostovce
     const lift = this.map.roadBridgeAxis(Math.floor(x), Math.floor(y)) ? BRIDGE_DECK : 0;
-    view.group.position.set(x - uy * LANE, ROAD_TOP + lift, y + ux * LANE);
+    view.group.position.set(x, ROAD_TOP + lift, y);
     view.group.rotation.y = Math.atan2(ux, uy);
     if (view.load && view.playerId !== null) {
       const vehicle = this.fleet.vehicles.find((candidate) => candidate.id === view.playerId);
