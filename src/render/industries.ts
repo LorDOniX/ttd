@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { loadModel, type Kit } from '../assets';
+import type { Season } from '../game/seasons';
 import { INDUSTRY_SIZE, type Industry, type IndustryKind } from '../world/industry';
+import { createSnowRoofGeometry, SNOW_MATERIAL } from './buildings';
 
 const COAL = 0x2b2927;
 const ORE = 0x8a4a32;
@@ -13,6 +15,13 @@ const LOG_END = 0xc79a62;
 const LUMBER = 0xd8b483;
 const TANK = 0xd9d4c7;
 const PLATE = 0x9aa4ad;
+let activeSeason: Season = 'summer';
+
+function disposeSnow(object: THREE.Object3D): void {
+  object.traverse((part) => {
+    if (part.userData.snowRoof && part instanceof THREE.Mesh) part.geometry.dispose();
+  });
+}
 
 const materials = new Map<number, THREE.MeshLambertMaterial>();
 function material(color: number): THREE.MeshLambertMaterial {
@@ -42,8 +51,19 @@ async function kenney(
   model.position.set(-center.x, -box.min.y, -center.z);
   inner.add(model);
   inner.scale.setScalar(scale);
+  inner.updateMatrixWorld(true);
+  const snowMeshes: THREE.Mesh[] = [];
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    const geometry = createSnowRoofGeometry(part.geometry, part.matrixWorld);
+    if (!geometry) return;
+    const snow = new THREE.Mesh(geometry, SNOW_MATERIAL);
+    snow.userData.snowRoof = true;
+    snow.visible = activeSeason === 'winter';
+    snowMeshes.push(snow);
+  });
   const outer = new THREE.Group();
-  outer.add(inner);
+  outer.add(inner, ...snowMeshes);
   outer.position.set(x, 0, z);
   outer.rotation.y = rotation;
   outer.userData.modelHeight = size.y * scale;
@@ -408,6 +428,7 @@ export class IndustriesView {
       if (ids.has(id)) continue;
       // Popisek musí odejít sám, jinak jeho element zůstane v DOM
       this.object.remove(view.area, view.label);
+      disposeSnow(view.area);
       this.views.delete(id);
     }
     const added = industries.filter((i) => !this.views.has(i.id));
@@ -418,6 +439,15 @@ export class IndustriesView {
 
   update(seconds: number): void {
     for (const view of this.views.values()) for (const update of view.animations) update(seconds);
+  }
+
+  setSeason(season: Season): void {
+    activeSeason = season;
+    for (const { area } of this.views.values()) {
+      area.traverse((part) => {
+        if (part.userData.snowRoof) part.visible = season === 'winter';
+      });
+    }
   }
 
   private label(industry: Industry): CSS2DObject {
@@ -436,7 +466,10 @@ export class IndustriesView {
     const parts = await Promise.all(LAYOUTS[industry.kind]());
     const view = this.views.get(industry.id);
     // Mezitím mohl závod zaniknout
-    if (!view) return;
+    if (!view) {
+      for (const part of parts) disposeSnow(part);
+      return;
+    }
     const { area, label } = view;
     area.add(...parts);
     area.traverse((part) => {

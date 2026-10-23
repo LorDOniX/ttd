@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { loadScene, type Kit } from '../assets';
+import type { Season } from '../game/seasons';
 import type { Town } from '../world/town';
 import { Surface, addWindows } from './windows';
 
@@ -13,6 +14,72 @@ interface Part {
 }
 
 const prototypes = new Map<string, Promise<Part[]>>();
+
+function createSnowTexture(): THREE.DataTexture {
+  const size = 64;
+  const pixels = new Uint8Array(size * size * 4);
+  let seed = 0x5f3759df;
+  for (let i = 0; i < size * size; i++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const shade = 228 + (seed % 28);
+    pixels.set([shade - 2, shade, Math.min(255, shade + 3), 255], i * 4);
+  }
+  const texture = new THREE.DataTexture(pixels, size, size, THREE.RGBAFormat);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+export const SNOW_MATERIAL = new THREE.MeshLambertMaterial({
+  map: createSnowTexture(),
+  color: 0xffffff,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+});
+
+export function createSnowRoofGeometry(
+  geometry: THREE.BufferGeometry,
+  matrix: THREE.Matrix4,
+): THREE.BufferGeometry | null {
+  const source = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  const position = source.getAttribute('position');
+  const snowPositions: number[] = [];
+  const snowNormals: number[] = [];
+  const snowUvs: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+
+  for (let i = 0; i + 2 < position.count; i += 3) {
+    a.fromBufferAttribute(position, i).applyMatrix4(matrix);
+    b.fromBufferAttribute(position, i + 1).applyMatrix4(matrix);
+    c.fromBufferAttribute(position, i + 2).applyMatrix4(matrix);
+    normal.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+    if (normal.y < 0.3 || (a.y + b.y + c.y) / 3 < 0.25) continue;
+
+    for (const point of [a, b, c]) {
+      const snowPoint = point.clone().addScaledVector(normal, 0.002);
+      snowPositions.push(snowPoint.x, snowPoint.y, snowPoint.z);
+      snowNormals.push(normal.x, normal.y, normal.z);
+      snowUvs.push(snowPoint.x * 4, snowPoint.z * 4);
+    }
+  }
+  source.dispose();
+  if (snowPositions.length === 0) return null;
+
+  const snow = new THREE.BufferGeometry();
+  snow.setAttribute('position', new THREE.Float32BufferAttribute(snowPositions, 3));
+  snow.setAttribute('normal', new THREE.Float32BufferAttribute(snowNormals, 3));
+  snow.setAttribute('uv', new THREE.Float32BufferAttribute(snowUvs, 2));
+  snow.computeBoundingSphere();
+  return snow;
+}
 
 // Rozloží model na části a normalizuje ho na střed dlaždice se dnem v y = 0
 export function loadPrototype(kit: Kit, model: string): Promise<Part[]> {
@@ -173,6 +240,13 @@ function recolor(parts: Part[], scheme: Facade): Part[] {
 export class BuildingsView {
   readonly object = new THREE.Group();
   private generation = 0;
+  private season: Season = 'summer';
+  private snowMeshes: THREE.InstancedMesh[] = [];
+
+  setSeason(season: Season): void {
+    this.season = season;
+    for (const mesh of this.snowMeshes) mesh.visible = season === 'winter';
+  }
 
   async rebuild(towns: readonly Town[]): Promise<void> {
     const generation = ++this.generation;
@@ -197,6 +271,7 @@ export class BuildingsView {
     }
 
     const meshes: THREE.InstancedMesh[] = [];
+    const snowMeshes: THREE.InstancedMesh[] = [];
     await Promise.all(
       [...groups.values()].map(async (group) => {
         const parts = await loadFacade(group.kit, group.model, group.facade);
@@ -208,14 +283,32 @@ export class BuildingsView {
           });
           mesh.computeBoundingSphere();
           meshes.push(mesh);
+
+          const snowGeometry = createSnowRoofGeometry(part.geometry, part.matrix);
+          if (!snowGeometry) continue;
+          const snowMesh = new THREE.InstancedMesh(snowGeometry, SNOW_MATERIAL, group.matrices.length);
+          group.matrices.forEach((placement, i) => snowMesh.setMatrixAt(i, placement));
+          snowMesh.instanceMatrix.needsUpdate = true;
+          snowMesh.visible = this.season === 'winter';
+          snowMesh.computeBoundingSphere();
+          snowMeshes.push(snowMesh);
         }
       }),
     );
 
     // Mezitím mohl začít novější rebuild
-    if (generation !== this.generation) return;
+    if (generation !== this.generation) {
+      for (const mesh of meshes) mesh.dispose();
+      for (const mesh of snowMeshes) {
+        mesh.dispose();
+        mesh.geometry.dispose();
+      }
+      return;
+    }
     for (const old of this.object.children as THREE.InstancedMesh[]) old.dispose();
+    for (const mesh of this.snowMeshes) mesh.geometry.dispose();
     this.object.clear();
-    if (meshes.length > 0) this.object.add(...meshes);
+    if (meshes.length > 0 || snowMeshes.length > 0) this.object.add(...meshes, ...snowMeshes);
+    this.snowMeshes = snowMeshes;
   }
 }

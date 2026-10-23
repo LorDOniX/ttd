@@ -44,6 +44,7 @@ export class GameView {
   private readonly pedestrians: PedestriansView;
   private readonly trees: TreesView;
   private readonly animals: AnimalsView;
+  private readonly buildings: BuildingsView;
   private readonly industries: IndustriesView;
   private readonly ambientProps: AmbientPropsView;
   private readonly crossings: CrossingsView;
@@ -83,14 +84,14 @@ export class GameView {
     this.cityTraffic.setTrafficLights(this.trafficLights);
     game.roadFleet.setTrafficLights(this.trafficLights);
     this.trafficLightView.sync(this.trafficLights.all);
-    const buildings = new BuildingsView();
-    void buildings.rebuild(towns);
+    this.buildings = new BuildingsView();
+    void this.buildings.rebuild(towns);
     this.trees = new TreesView(map);
     void this.trees.refresh();
-    this.applySeason();
     this.animals = new AnimalsView(map);
     void this.animals.refresh();
     this.industries = new IndustriesView();
+    this.applySeason();
     void this.industries.sync(world.industries);
     const railView = new RailView(world.rail);
     this.signals = new SignalsView(world.rail);
@@ -109,7 +110,7 @@ export class GameView {
       roads.object,
       this.ambientProps.object,
       this.trafficLightView.object,
-      buildings.object,
+      this.buildings.object,
       this.industries.object,
       this.trees.object,
       this.animals.object,
@@ -173,7 +174,7 @@ export class GameView {
       }
     };
     game.events.on('townsChanged', () => {
-      void buildings.rebuild(towns);
+      void this.buildings.rebuild(towns);
       towns.forEach((town) => this.labels.update(town));
       this.trafficLights.refresh();
       this.trafficLightView.sync(this.trafficLights.all);
@@ -207,6 +208,8 @@ export class GameView {
     this.currentSeason = season;
     this.terrain.setSeason(season);
     this.trees.setSeason(season);
+    this.buildings.setSeason(season);
+    this.industries.setSeason(season);
   }
 
   // Id vlaku pod kurzorem
