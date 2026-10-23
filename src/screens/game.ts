@@ -24,6 +24,7 @@ import { NO_OWNER } from '../world/map';
 import { industryAt, type Industry } from '../world/industry';
 import { openIndustry } from '../ui/industry';
 import { openStation } from '../ui/station';
+import { openTrafficOverview } from '../ui/traffic';
 import type { Depot, Station } from '../world/rail';
 import { hashSeed } from '../world/rng';
 import type { Town } from '../world/town';
@@ -124,6 +125,13 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openRoadBuild: () => buildTools.openRoadWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
+    openTraffic: () =>
+      openTrafficOverview(windows, {
+        hotspots: () => view.trafficHotspots(),
+        overlay: view.trafficOverlay,
+        focus,
+        buildDetour: () => buildTools.toggleTool('road'),
+      }),
     openTrainList: () => openTrainList(windows, game, links),
     openVehicleList: () => openVehicleList(windows, game, vehicleLinks),
     openNews: () => openNewsLog(windows, game, focus),

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { CityTraffic } from '../game/cityTraffic';
 import { seasonForDate, type Season, type SeasonMode } from '../game/seasons';
+import { collectTrafficHotspots, type TrafficHotspot } from '../game/traffic';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { TrafficLights } from '../game/trafficLights';
@@ -20,6 +21,7 @@ import { RoadView } from './roads';
 import { SignalsView } from './signals';
 import { TerrainView } from './terrain';
 import { TrafficLightsView } from './trafficLights';
+import { TrafficOverlayView } from './trafficOverlay';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
 
@@ -54,6 +56,7 @@ export class GameView {
   private readonly roads: RoadView;
   private readonly trafficLights: TrafficLights;
   private readonly trafficLightView = new TrafficLightsView();
+  readonly trafficOverlay = new TrafficOverlayView();
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
   private railDirty = false;
@@ -111,6 +114,7 @@ export class GameView {
     scene.add(
       this.terrain.object,
       roads.object,
+      this.trafficOverlay.object,
       this.ambientProps.object,
       this.trafficLightView.object,
       this.buildings.object,
@@ -207,6 +211,15 @@ export class GameView {
     this.applySeason();
   }
 
+  trafficHotspots(): TrafficHotspot[] {
+    return collectTrafficHotspots(
+      this.game.world.map,
+      this.game.world.towns,
+      this.cityTraffic.cars,
+      this.game.roadFleet.vehicles,
+    );
+  }
+
   private applySeason(): void {
     const season = seasonForDate(this.game.clock.date, this.seasonMode);
     if (this.currentSeason === season) return;
@@ -277,6 +290,7 @@ export class GameView {
       this.game.roadFleet.vehicles,
       this.roads.version,
     );
+    if (this.trafficOverlay.visible) this.trafficOverlay.update(this.trafficHotspots());
     this.game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
     this.syncMap();
     this.applySeason();

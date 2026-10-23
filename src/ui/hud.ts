@@ -9,6 +9,7 @@ export interface ToolbarActions {
   openSaveLoad: () => void;
   openSettings: () => void;
   openFinance: () => void;
+  openTraffic: () => void;
   openRailBuild: () => void;
   openRoadBuild: () => void;
   rotateView: (direction: 1 | -1) => void;
@@ -92,7 +93,10 @@ export class Hud {
         windowButton('settings', '⚙️', 'Nastavení a klávesové zkratky', actions.openSettings),
         windowButton('save-load', '💾', 'Uložit / načíst hru', actions.openSaveLoad),
       ],
-      [windowButton('minimap', '🗺️', 'Minimapa (M)', actions.openMinimap)],
+      [
+        windowButton('minimap', '🗺️', 'Minimapa (M)', actions.openMinimap),
+        windowButton('traffic', '🚦', 'Městský provoz', actions.openTraffic),
+      ],
       [windowButton('finance', '💰', 'Finance (F)', actions.openFinance)],
       [
         windowButton('vehicle-list', '🚌', 'Seznam aut (A)', actions.openVehicleList, modelIcon('car kit', 'van')),
