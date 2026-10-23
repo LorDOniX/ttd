@@ -221,6 +221,7 @@ export class RoadView {
   version = 0;
   // Dlaždice s chodníky podle města
   readonly sidewalks = new Map<number, number[]>();
+  private streetLampPositions: THREE.Vector3[] = [];
   private readonly road: THREE.Mesh;
   private readonly sidewalk: THREE.Mesh;
   private readonly bridges: THREE.Mesh;
@@ -243,6 +244,16 @@ export class RoadView {
     this.roadTiles = new Int32Array(map.width * map.height);
     this.changes = new MapChanges(map);
     this.rebuild();
+  }
+
+  get streetLamps(): readonly THREE.Vector3[] {
+    return this.streetLampPositions;
+  }
+
+  setNightMode(night: boolean): void {
+    STREETLIGHT_HEAD_MATERIAL.color.setHex(night ? 0xffd58a : 0x9a916d);
+    STREETLIGHT_HEAD_MATERIAL.emissive.setHex(night ? 0xffb74d : 0x000000);
+    STREETLIGHT_HEAD_MATERIAL.emissiveIntensity = night ? 1.8 : 0;
   }
 
   private code(x: number, y: number): number {
@@ -331,6 +342,7 @@ export class RoadView {
       }
     }
 
+    this.streetLampPositions = positions;
     if (positions.length === 0) return;
     const poles = new THREE.InstancedMesh(STREETLIGHT_POLE, STREETLIGHT_POLE_MATERIAL, positions.length);
     const heads = new THREE.InstancedMesh(STREETLIGHT_HEAD, STREETLIGHT_HEAD_MATERIAL, positions.length);

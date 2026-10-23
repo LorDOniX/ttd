@@ -132,6 +132,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
         focus,
         buildDetour: () => buildTools.toggleTool('road'),
       }),
+    toggleNight: () => view.toggleNightMode(),
     openTrainList: () => openTrainList(windows, game, links),
     openVehicleList: () => openVehicleList(windows, game, vehicleLinks),
     openNews: () => openNewsLog(windows, game, focus),

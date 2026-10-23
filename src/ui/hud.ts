@@ -10,6 +10,7 @@ export interface ToolbarActions {
   openSettings: () => void;
   openFinance: () => void;
   openTraffic: () => void;
+  toggleNight: () => boolean;
   openRailBuild: () => void;
   openRoadBuild: () => void;
   rotateView: (direction: 1 | -1) => void;
@@ -84,6 +85,15 @@ export class Hud {
       actions.rotateView(-1);
     });
 
+    const dayNight = button('☀', 'Přepnout na noc', () => {
+      const night = actions.toggleNight();
+      dayNight.textContent = night ? '☾' : '☀';
+      dayNight.title = night ? 'Přepnout na den' : 'Přepnout na noc';
+      dayNight.classList.toggle('toolbar__button--active', night);
+      dayNight.setAttribute('aria-pressed', String(night));
+    });
+    dayNight.setAttribute('aria-pressed', 'false');
+
     this.infoButton = button('❓', 'Informace o dlaždici a dosah nástupiště (I)', actions.toggleInfo);
 
     // Skupiny v pořadí jako v OpenTTD: čas, hra, mapa, finance, vozidla, pohled, stavba, zprávy a nápověda
@@ -96,6 +106,7 @@ export class Hud {
       [
         windowButton('minimap', '🗺️', 'Minimapa (M)', actions.openMinimap),
         windowButton('traffic', '🚦', 'Městský provoz', actions.openTraffic),
+        dayNight,
       ],
       [windowButton('finance', '💰', 'Finance (F)', actions.openFinance)],
       [

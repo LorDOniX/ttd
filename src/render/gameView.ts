@@ -22,6 +22,7 @@ import { SignalsView } from './signals';
 import { TerrainView } from './terrain';
 import { TrafficLightsView } from './trafficLights';
 import { TrafficOverlayView } from './trafficOverlay';
+import { NightLightsView } from './nightLights';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
 
@@ -55,13 +56,17 @@ export class GameView {
   private readonly signals: SignalsView;
   private readonly roads: RoadView;
   private readonly trafficLights: TrafficLights;
+  private readonly hemisphere: THREE.HemisphereLight;
+  private readonly sun: THREE.DirectionalLight;
   private readonly trafficLightView = new TrafficLightsView();
+  private readonly nightLights = new NightLightsView();
   readonly trafficOverlay = new TrafficOverlayView();
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
   private railDirty = false;
   private seasonMode: SeasonMode = 'auto';
   private currentSeason: Season | null = null;
+  private nightMode = false;
 
   constructor(
     container: HTMLElement,
@@ -76,10 +81,11 @@ export class GameView {
 
     const scene = this.scene;
     scene.background = new THREE.Color(0x87b5d8);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x556644, 1.2));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-    sun.position.set(10, 20, 5);
-    scene.add(sun);
+    this.hemisphere = new THREE.HemisphereLight(0xffffff, 0x556644, 1.2);
+    scene.add(this.hemisphere);
+    this.sun = new THREE.DirectionalLight(0xffffff, 1.5);
+    this.sun.position.set(10, 20, 5);
+    scene.add(this.sun);
 
     this.terrain = new TerrainView(map, towns);
     const roads = (this.roads = new RoadView(map, world.rail));
@@ -114,6 +120,7 @@ export class GameView {
     scene.add(
       this.terrain.object,
       roads.object,
+      this.nightLights.object,
       this.trafficOverlay.object,
       this.ambientProps.object,
       this.trafficLightView.object,
@@ -220,6 +227,18 @@ export class GameView {
     );
   }
 
+  toggleNightMode(): boolean {
+    this.nightMode = !this.nightMode;
+    this.scene.background = new THREE.Color(this.nightMode ? 0x10182a : 0x87b5d8);
+    this.hemisphere.color.setHex(this.nightMode ? 0x536b9a : 0xffffff);
+    this.hemisphere.groundColor.setHex(this.nightMode ? 0x171b26 : 0x556644);
+    this.hemisphere.intensity = this.nightMode ? 0.28 : 1.2;
+    this.sun.color.setHex(this.nightMode ? 0x8095c0 : 0xffffff);
+    this.sun.intensity = this.nightMode ? 0.12 : 1.5;
+    this.roads.setNightMode(this.nightMode);
+    return this.nightMode;
+  }
+
   private applySeason(): void {
     const season = seasonForDate(this.game.clock.date, this.seasonMode);
     if (this.currentSeason === season) return;
@@ -291,6 +310,7 @@ export class GameView {
       this.roads.version,
     );
     if (this.trafficOverlay.visible) this.trafficOverlay.update(this.trafficHotspots());
+    this.nightLights.update(this.nightMode, frustum, this.camera.camera.position, this.roads.streetLamps);
     this.game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
     this.syncMap();
     this.applySeason();
@@ -299,8 +319,8 @@ export class GameView {
     this.fallingLeaves.update(seconds, frustum);
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
-    this.trains.update(frustum);
-    this.vehicles.update(frustum, this.cityTraffic.cars);
+    this.trains.update(frustum, this.nightMode);
+    this.vehicles.update(frustum, this.cityTraffic.cars, this.nightMode);
     this.trafficLightView.update(this.trafficLights);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);

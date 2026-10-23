@@ -20,6 +20,25 @@ interface TrainView {
   vehicles: THREE.Object3D[];
   // Náklad každého vagonu (část modelu `cargo`), null u vagonů bez viditelného nákladu
   loads: (THREE.Object3D | null)[];
+  lights: THREE.Group[];
+}
+
+function trainLightMarkers(): THREE.Group[] {
+  const headlights = new THREE.Group();
+  const headMaterial = new THREE.MeshBasicMaterial({ color: 0xffedbb });
+  for (const side of [-1, 1]) {
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.05), headMaterial);
+    lamp.position.set(side * 0.36, 0.36, 1.22);
+    headlights.add(lamp);
+  }
+  const tailLights = new THREE.Group();
+  const tailMaterial = new THREE.MeshBasicMaterial({ color: 0xef4037 });
+  for (const side of [-1, 1]) {
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.05), tailMaterial);
+    lamp.position.set(side * 0.36, 0.32, -1.22);
+    tailLights.add(lamp);
+  }
+  return [headlights, tailLights];
 }
 
 const PLATE_MATERIAL = new THREE.MeshLambertMaterial({ color: 0xc4ced8, flatShading: true });
@@ -57,7 +76,7 @@ export class TrainsView {
   ) {}
 
   // Vozy mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
-  update(frustum: THREE.Frustum): void {
+  update(frustum: THREE.Frustum, night = false): void {
     const alive = new Set(this.fleet.trains.map((t) => t.id));
     for (const [id, view] of this.views) {
       if (!alive.has(id)) {
@@ -74,6 +93,7 @@ export class TrainsView {
         this.object.add(view.group);
       }
       view.group.visible = train.state !== 'depot';
+      for (const lights of view.lights) lights.visible = night && view.group.visible;
       if (view.group.visible) this.place(train, view, frustum);
     }
   }
@@ -94,12 +114,16 @@ export class TrainsView {
 
   private createView(train: Train): TrainView {
     const model = trainModel(train);
-    const view: TrainView = { key: trainKey(train), group: new THREE.Group(), vehicles: [], loads: [] };
+    const view: TrainView = { key: trainKey(train), group: new THREE.Group(), vehicles: [], loads: [], lights: [] };
     const wagonModels = CARGOS[train.cargo].wagonModels ?? [model.wagonModel];
     const names = [model.model, ...Array.from({ length: train.wagons }, (_, i) => wagonModels[i % wagonModels.length])];
     void Promise.all(names.map((n) => loadModel('train kit', n))).then((objects) => {
       const [, ...wagons] = objects;
       if (train.cargo === 'steel') wagons.forEach(addSteelLoad);
+      const [headlights, tailLights] = trainLightMarkers();
+      objects[0].add(headlights);
+      objects[objects.length - 1].add(tailLights);
+      view.lights = [headlights, tailLights];
       for (const o of objects) {
         o.scale.setScalar(SCALE);
         view.group.add(o);

@@ -18,6 +18,26 @@ interface VehicleView {
   group: THREE.Group;
   // Náklad na korbě, viditelný jen naložený
   load: THREE.Object3D | null;
+  lights: THREE.Group;
+}
+
+function vehicleLightMarkers(): THREE.Group {
+  const lights = new THREE.Group();
+  const head = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.14, 0.05),
+    new THREE.MeshBasicMaterial({ color: 0xffedba }),
+  );
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.05), new THREE.MeshBasicMaterial({ color: 0xf04438 }));
+  for (const side of [-1, 1]) {
+    const headlight = head.clone();
+    headlight.position.set(side * 0.44, 0.34, 1.34);
+    lights.add(headlight);
+    const taillight = tail.clone();
+    taillight.position.set(side * 0.44, 0.32, -1.34);
+    lights.add(taillight);
+  }
+  lights.visible = false;
+  return lights;
 }
 
 // Náklad na korbu valníku v souřadnicích modelu (korba za kabinou, -1,3 až 0,2 podél Z)
@@ -68,7 +88,7 @@ export class RoadVehiclesView {
   ) {}
 
   // Auta mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
-  update(frustum: THREE.Frustum, cityCars: readonly CityCar[] = []): void {
+  update(frustum: THREE.Frustum, cityCars: readonly CityCar[] = [], night = false): void {
     const alive = new Set([
       ...this.fleet.vehicles.map((vehicle) => `player:${vehicle.id}`),
       ...cityCars.map((car) => `city:${car.id}`),
@@ -90,10 +110,12 @@ export class RoadVehiclesView {
         this.object.add(view.group);
       }
       view.group.visible = vehicle.state !== 'depot' && vehicle.path.length > 0;
+      view.lights.visible = false;
       if (!view.group.visible) continue;
       this.place(vehicle.path, vehicle.pos, view);
       const { x, y, z } = view.group.position;
       view.group.visible = inView(frustum, x, y, z, 0.3);
+      view.lights.visible = night && view.group.visible;
     }
     for (const car of cityCars) {
       const key = `city:${car.id}`;
@@ -108,6 +130,7 @@ export class RoadVehiclesView {
       this.place(car.path, car.pos, view);
       const { x, y, z } = view.group.position;
       view.group.visible = inView(frustum, x, y, z, 0.3);
+      view.lights.visible = night && view.group.visible;
     }
   }
 
@@ -128,8 +151,15 @@ export class RoadVehiclesView {
 
   private createView(key: string, modelId: string, playerId: number | null, vehicle?: RoadVehicle): VehicleView {
     const model = vehicle ? roadVehicleModel(vehicle) : null;
-    const view: VehicleView = { modelId, playerId, group: new THREE.Group(), load: null };
+    const view: VehicleView = {
+      modelId,
+      playerId,
+      group: new THREE.Group(),
+      load: null,
+      lights: vehicleLightMarkers(),
+    };
     view.group.scale.setScalar(SCALE);
+    view.group.add(view.lights);
     void loadModel('car kit', modelId).then((object) => {
       if (this.views.get(key) !== view) return;
       // Popelářský vůz slouží jako cisterna, odpadky na střeše nepatří k ropě
