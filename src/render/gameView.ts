@@ -5,6 +5,7 @@ import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { TrafficLights } from '../game/trafficLights';
 import { AmbientPropsView } from './ambientProps';
+import { AnimalsView } from './animals';
 import { BuildingsView } from './buildings';
 import { IsoCamera } from './camera';
 import { CrossingsView } from './crossings';
@@ -41,6 +42,7 @@ export class GameView {
   private readonly cityTraffic: CityTraffic;
   private readonly pedestrians: PedestriansView;
   private readonly trees: TreesView;
+  private readonly animals: AnimalsView;
   private readonly industries: IndustriesView;
   private readonly ambientProps: AmbientPropsView;
   private readonly crossings: CrossingsView;
@@ -82,6 +84,8 @@ export class GameView {
     void buildings.rebuild(towns);
     this.trees = new TreesView(map);
     void this.trees.refresh();
+    this.animals = new AnimalsView(map);
+    void this.animals.refresh();
     this.industries = new IndustriesView();
     void this.industries.sync(world.industries);
     const railView = new RailView(world.rail);
@@ -104,6 +108,7 @@ export class GameView {
       buildings.object,
       this.industries.object,
       this.trees.object,
+      this.animals.object,
       railView.object,
       this.signals.object,
       this.trains.object,
@@ -155,6 +160,7 @@ export class GameView {
       this.ambientProps.sync();
       game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
       this.trees.sync();
+      this.animals.sync();
       if (this.railDirty) {
         this.railDirty = false;
         railView.rebuild();
@@ -245,6 +251,7 @@ export class GameView {
     this.syncMap();
     const seconds = now / 1000;
     this.trees.update(seconds);
+    this.animals.update(trafficSeconds);
     this.industries.update(seconds);
     this.trains.update(frustum);
     this.vehicles.update(frustum, this.cityTraffic.cars);

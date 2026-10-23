@@ -20,9 +20,9 @@ Volitelná rozšíření mimo hlavní fáze ze [ttd.md](ttd.md).
 - **Hodnota a hodnocení společnosti** – záložka Společnost ve financích
 - **Sdílené jízdní řády a linky** – v okně vlaku, filtr linek v seznamu vlaků
 - **Silniční doprava** – zastávky a garáže, autobusy a nákladní auta z car kitu, ceny a kapacity podle OpenTTD
+- **Provoz městských aut** – autonomní doprava s křižovatkami, semafory a interakcí s hráčskými vozidly
+- **Zvířata v krajině** – dekorativní zvířata v lesích z cube pets kitu
 
 ## Zbývá
-- **Provoz městských aut** – dekorativní auta měst bez vlivu na hru (modely sedan, taxi, police… v `assets/car kit`)
-- **zvířata do lesa** - modely jsou v `assets/cube pets`;
 - **Výška terénu** – teď nedává smysl: koleje, mosty, stavba i generátor počítají s rovinou, šlo by o přestavbu celé mapy
 - **další továrny podle modelů** - zkusit navrhnout další továrny
