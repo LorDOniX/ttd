@@ -1,18 +1,55 @@
 import * as THREE from 'three';
 import { GameMap, MapChanges, TileType } from '../world/map';
 import type { Town } from '../world/town';
+import type { Season } from '../game/seasons';
 import { updateWater, withWater } from './water';
 
-const GRASS = new THREE.Color(0x5f9e3c);
 const WATER = new THREE.Color(0x3a6fb0);
 // Mělčina u břehu, do hloubky přechází plynule přes dlaždici
 const SHALLOW = new THREE.Color(0x5aa3cc);
 const PAVEMENT = new THREE.Color(0xa3a39a);
-const GARDEN = new THREE.Color(0x6aa843);
-const FOREST = new THREE.Color(0x4f8a32);
 const INDUSTRY_GROUND = new THREE.Color(0x857a68);
 const SAND = new THREE.Color(0xd6c38c);
 const BANK = new THREE.Color(0x8a7150);
+const TERRAIN_PALETTES: Record<
+  Season,
+  {
+    grass: THREE.Color;
+    garden: THREE.Color;
+    forest: THREE.Color;
+    detailTint: readonly [number, number, number];
+    detailAlpha: number;
+  }
+> = {
+  spring: {
+    grass: new THREE.Color(0x75b84b),
+    garden: new THREE.Color(0x8cbe62),
+    forest: new THREE.Color(0x568e3b),
+    detailTint: [0.95, 1, 0.84],
+    detailAlpha: 1,
+  },
+  summer: {
+    grass: new THREE.Color(0x5f9e3c),
+    garden: new THREE.Color(0x6aa843),
+    forest: new THREE.Color(0x4f8a32),
+    detailTint: [1, 1, 1],
+    detailAlpha: 1,
+  },
+  autumn: {
+    grass: new THREE.Color(0x9b8b49),
+    garden: new THREE.Color(0xaaa05a),
+    forest: new THREE.Color(0x806037),
+    detailTint: [1, 0.88, 0.62],
+    detailAlpha: 0.9,
+  },
+  winter: {
+    grass: new THREE.Color(0xe8ece5),
+    garden: new THREE.Color(0xf0f1ed),
+    forest: new THREE.Color(0xd5ddd5),
+    detailTint: [1, 1, 1],
+    detailAlpha: 0.06,
+  },
+};
 
 // Hladina leží pod terénem, na rozhraní s pevninou je svislý hliněný břeh a nad ním písčitý lem
 export const WATER_DEPTH = 0.06;
@@ -91,6 +128,7 @@ export class TerrainView {
   private readonly shore: THREE.Mesh;
   private readonly grid: THREE.LineSegments;
   private readonly changes: MapChanges;
+  private season: Season = 'summer';
   // Voda (1) nebo pevnina (0) při posledním vykreslení, při změně se přestaví břehy
   private readonly water: Uint8Array;
 
@@ -129,6 +167,23 @@ export class TerrainView {
 
   setGridVisible(visible: boolean): void {
     this.grid.visible = visible;
+  }
+
+  setSeason(season: Season): void {
+    if (this.season === season) return;
+    this.season = season;
+    const colors = this.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const detailColors = this.greenDetails.getAttribute('color') as THREE.BufferAttribute;
+    for (let y = 0; y < this.map.height; y++) {
+      for (let x = 0; x < this.map.width; x++) {
+        this.writeTileColor(colors.array as Float32Array, x, y);
+        this.writeGreenDetailAlpha(x, y);
+      }
+    }
+    colors.clearUpdateRanges();
+    colors.needsUpdate = true;
+    detailColors.clearUpdateRanges();
+    detailColors.needsUpdate = true;
   }
 
   get gridVisible(): boolean {
@@ -214,8 +269,15 @@ export class TerrainView {
 
   private writeGreenDetailAlpha(x: number, y: number): void {
     const offset = (y * this.map.width + x) * 16;
-    const alpha = this.isGreenTile(x, y) ? 1 : 0;
-    for (let k = 0; k < 4; k++) this.greenDetailColors[offset + k * 4 + 3] = alpha;
+    const { detailTint, detailAlpha } = TERRAIN_PALETTES[this.season];
+    const alpha = this.isGreenTile(x, y) ? detailAlpha : 0;
+    for (let k = 0; k < 4; k++) {
+      const vertex = offset + k * 4;
+      this.greenDetailColors[vertex] = detailTint[0];
+      this.greenDetailColors[vertex + 1] = detailTint[1];
+      this.greenDetailColors[vertex + 2] = detailTint[2];
+      this.greenDetailColors[vertex + 3] = alpha;
+    }
   }
 
   private buildGreenDetails(): THREE.BufferGeometry {
@@ -298,6 +360,7 @@ export class TerrainView {
   }
 
   private tileColor(x: number, y: number): THREE.Color {
+    const palette = TERRAIN_PALETTES[this.season];
     switch (this.map.get(x, y)) {
       case TileType.Water:
       case TileType.Bridge:
@@ -305,13 +368,13 @@ export class TerrainView {
       case TileType.RoadBridgeY:
         return WATER;
       case TileType.Trees:
-        return FOREST;
+        return palette.forest;
       case TileType.Building:
-        return this.towns[this.map.getOwner(x, y)]?.kind === 'city' ? PAVEMENT : GARDEN;
+        return this.towns[this.map.getOwner(x, y)]?.kind === 'city' ? PAVEMENT : palette.garden;
       case TileType.Industry:
         return INDUSTRY_GROUND;
       default:
-        return GRASS;
+        return palette.grass;
     }
   }
 

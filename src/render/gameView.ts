@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { CityTraffic } from '../game/cityTraffic';
+import { seasonForDate, type Season, type SeasonMode } from '../game/seasons';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { TrafficLights } from '../game/trafficLights';
@@ -53,6 +54,8 @@ export class GameView {
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
   private railDirty = false;
+  private seasonMode: SeasonMode = 'auto';
+  private currentSeason: Season | null = null;
 
   constructor(
     container: HTMLElement,
@@ -84,6 +87,7 @@ export class GameView {
     void buildings.rebuild(towns);
     this.trees = new TreesView(map);
     void this.trees.refresh();
+    this.applySeason();
     this.animals = new AnimalsView(map);
     void this.animals.refresh();
     this.industries = new IndustriesView();
@@ -188,6 +192,23 @@ export class GameView {
     );
   }
 
+  get selectedSeasonMode(): SeasonMode {
+    return this.seasonMode;
+  }
+
+  setSeasonMode(mode: SeasonMode): void {
+    this.seasonMode = mode;
+    this.applySeason();
+  }
+
+  private applySeason(): void {
+    const season = seasonForDate(this.game.clock.date, this.seasonMode);
+    if (this.currentSeason === season) return;
+    this.currentSeason = season;
+    this.terrain.setSeason(season);
+    this.trees.setSeason(season);
+  }
+
   // Id vlaku pod kurzorem
   trainAt(clientX: number, clientY: number): number | null {
     return this.trains.pick(this.camera.ray(clientX, clientY));
@@ -249,6 +270,7 @@ export class GameView {
     );
     this.game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
     this.syncMap();
+    this.applySeason();
     const seconds = now / 1000;
     this.trees.update(seconds);
     this.animals.update(trafficSeconds);

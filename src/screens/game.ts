@@ -117,6 +117,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
         { visible: () => cursor.enabled, setVisible: (on: boolean) => cursor.setEnabled(on) },
         seedText,
         shortcuts.help(),
+        { mode: view.selectedSeasonMode, setMode: (mode) => view.setSeasonMode(mode) },
       ),
     openFinance: () => openFinance(windows, game),
     openRailBuild: () => buildTools.openRailWindow(),

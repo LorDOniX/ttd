@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MapChanges, TileType, type GameMap } from '../world/map';
+import type { Season } from '../game/seasons';
 import { loadPrototype } from './buildings';
 
 // Listnaté a jehličnaté stromy z nature kitu; varianty _dark mají tmavší listí
@@ -30,15 +31,33 @@ const TREE_COLORS: Record<string, number> = {
   woodBark: 0x8a5636,
   woodBarkDark: 0x6e4630,
 };
+const SEASON_TREE_COLORS: Record<Season, Record<string, number>> = {
+  spring: { ...TREE_COLORS, leafsGreen: 0x67ad50, leafsDark: 0x438744 },
+  summer: TREE_COLORS,
+  autumn: { ...TREE_COLORS, leafsGreen: 0xc18737, leafsDark: 0x985a2d },
+  winter: { ...TREE_COLORS, leafsGreen: 0xe5ece5, leafsDark: 0xcbd6ce },
+};
 
 const treeTime = { value: 0 };
 type Parts = Awaited<ReturnType<typeof loadPrototype>>;
 const treeMaterials = new Map<string, THREE.Material>();
+let activeSeason: Season = 'summer';
+
+function applyTreeSeason(season: Season): void {
+  activeSeason = season;
+  for (const [name, material] of treeMaterials) {
+    const color = SEASON_TREE_COLORS[season][name];
+    if (color !== undefined) (material as THREE.MeshLambertMaterial).color.setHex(color);
+  }
+}
 
 function treeMaterial(material: THREE.Material): THREE.Material {
   let result = treeMaterials.get(material.name);
   if (!result) {
-    const color = TREE_COLORS[material.name] ?? (material as THREE.MeshStandardMaterial).color?.getHex() ?? 0xffffff;
+    const color =
+      SEASON_TREE_COLORS[activeSeason][material.name] ??
+      (material as THREE.MeshStandardMaterial).color?.getHex() ??
+      0xffffff;
     result = new THREE.MeshLambertMaterial({ color });
     result.onBeforeCompile = (shader) => {
       shader.uniforms.treeTime = treeTime;
@@ -105,6 +124,10 @@ export class TreesView {
 
   update(seconds: number): void {
     treeTime.value = seconds;
+  }
+
+  setSeason(season: Season): void {
+    applyTreeSeason(season);
   }
 
   // Stromy jen ubývají: vykácené dlaždice se skryjí bez přestavby celé vrstvy

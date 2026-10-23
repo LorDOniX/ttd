@@ -1,5 +1,6 @@
 import { AD_CAMPAIGN_COST, AD_RATING_BOOST } from '../game/balance';
 import { formatDate } from '../game/clock';
+import { SEASON_MODES, type SeasonMode } from '../game/seasons';
 import { Game, formatMoney } from '../game/game';
 import { parseSave, serializeGame } from '../game/save';
 import { advertise, fundBuildings, fundBuildingsCost } from '../game/townActions';
@@ -9,10 +10,22 @@ import { loadTheme, saveTheme, type Theme } from './theme';
 import type { WindowManager } from './windows';
 
 const KIND_LABELS: Record<TownKind, string> = { city: 'Město', town: 'Městečko', village: 'Vesnice' };
+const SEASON_LABELS: Record<SeasonMode, string> = {
+  auto: 'Podle kalendáře',
+  spring: 'Jaro',
+  summer: 'Léto',
+  autumn: 'Podzim',
+  winter: 'Zima',
+};
 
 export interface Toggle {
   visible: () => boolean;
   setVisible: (visible: boolean) => void;
+}
+
+export interface SeasonDebugControl {
+  mode: SeasonMode;
+  setMode: (mode: SeasonMode) => void;
 }
 
 export function openSettings(
@@ -22,6 +35,7 @@ export function openSettings(
   highlight: Toggle,
   seed: string,
   shortcutsHelp: HTMLElement,
+  seasonDebug: SeasonDebugControl,
 ): void {
   const gridInput = h('input', { type: 'checkbox', checked: grid.visible() });
   gridInput.addEventListener('change', () => grid.setVisible(gridInput.checked));
@@ -41,6 +55,15 @@ export function openSettings(
   );
   themeSelect.addEventListener('change', () => saveTheme(themeSelect.value as Theme));
 
+  const seasonSelect = h(
+    'select',
+    {},
+    ...SEASON_MODES.map((mode) =>
+      h('option', { value: mode, selected: mode === seasonDebug.mode }, SEASON_LABELS[mode]),
+    ),
+  );
+  seasonSelect.addEventListener('change', () => seasonDebug.setMode(seasonSelect.value as SeasonMode));
+
   const nameInput = h('input', { type: 'text', value: game.companyName, maxLength: 40 });
   const apply = (): void => game.setCompanyName(nameInput.value);
   nameInput.addEventListener('change', apply);
@@ -57,6 +80,8 @@ export function openSettings(
     h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),
     h('div', { className: 'form__hint' }, `Seed mapy: ${seed}`),
+    h('h4', {}, 'Debug'),
+    h('label', { className: 'form__field' }, 'Roční období', seasonSelect),
     h('h4', {}, 'Klávesové zkratky'),
     shortcutsHelp,
   );
@@ -112,7 +137,12 @@ export function openSaveLoad(windows: WindowManager, game: Game, seedText: strin
   });
 
   const load = createLoadButton(actions.load, status, 'Načíst uloženou hru? Neuložený postup se ztratí.');
-  const toTitle = h('button', { className: 'tool-button' }, h('span', {}, 'Hlavní menu'), h('small', {}, 'hra se uloží'));
+  const toTitle = h(
+    'button',
+    { className: 'tool-button' },
+    h('span', {}, 'Hlavní menu'),
+    h('small', {}, 'hra se uloží'),
+  );
   toTitle.addEventListener('click', actions.toTitle);
 
   windows.open('save-load', 'Uložit / načíst', h('div', { className: 'form' }, save, load, toTitle, status), {
@@ -148,12 +178,7 @@ export function openNewsLog(windows: WindowManager, game: Game, focus: (x: numbe
   windows.open('news', 'Zprávy', render(), { width: 420, onClose: off });
 }
 
-export function openTown(
-  windows: WindowManager,
-  game: Game,
-  town: Town,
-  focus: (x: number, z: number) => void,
-): void {
+export function openTown(windows: WindowManager, game: Game, town: Town, focus: (x: number, z: number) => void): void {
   const id = `town-${town.id}`;
   const action = (label: string, run: () => string | null): HTMLButtonElement => {
     const b = h('button', { className: 'small-button', textContent: label });

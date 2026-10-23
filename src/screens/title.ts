@@ -168,6 +168,7 @@ function mainPanel(showNewGame: () => void): HTMLElement {
 export function runTitle(container: HTMLElement): void {
   const game = createDemo();
   const view = new GameView(container, game);
+  view.setSeasonMode('summer');
   view.terrain.setGridVisible(false);
   view.setLabelsInteractive(false);
   // Mezi centrum největšího města s tratí a jeho nádraží, aby bylo vidět město i vlaky;
