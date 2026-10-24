@@ -40,7 +40,7 @@ export function openTrafficOverview(windows: WindowManager, actions: TrafficOver
         h('td', {}, hotspot.townName),
         h('td', { className: 'num' }, String(hotspot.vehicles)),
         h('td', { className: 'num' }, String(hotspot.waiting)),
-        h('td', {}, show, detour),
+        h('td', {}, h('div', { className: 'traffic-table__actions' }, show, detour)),
       );
     });
 
@@ -62,7 +62,7 @@ export function openTrafficOverview(windows: WindowManager, actions: TrafficOver
       rows.length > 0
         ? h(
             'table',
-            { className: 'table' },
+            { className: 'table traffic-table' },
             h('tr', {}, h('th', {}, 'Oblast'), h('th', {}, 'Auta'), h('th', {}, 'Čekají'), h('th', {}, 'Akce')),
             ...rows,
           )

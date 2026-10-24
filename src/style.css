@@ -560,6 +560,35 @@ body {
   text-align: right;
 }
 
+.traffic-table {
+  table-layout: fixed;
+}
+
+.traffic-table th,
+.traffic-table td {
+  padding: 5px 6px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.traffic-table th:first-child,
+.traffic-table td:first-child {
+  width: 34%;
+  overflow-wrap: anywhere;
+}
+
+.traffic-table th:last-child,
+.traffic-table td:last-child {
+  width: 42%;
+}
+
+.traffic-table__actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .table .strong {
   font-weight: 600;
 }
