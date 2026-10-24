@@ -4,6 +4,8 @@ import { loadModel, type Kit } from '../assets';
 import type { Season } from '../game/seasons';
 import { INDUSTRY_SIZE, type Industry, type IndustryKind } from '../world/industry';
 import { createSnowRoofGeometry, SNOW_MATERIAL } from './buildings';
+import { FLOODLIGHT_POOLS, industryFence, industryFloodlights, industryGround, setFloodlightsOn } from './industryYard';
+import { withLampLight } from './nightLights';
 import { treeObject } from './trees';
 
 const COAL = 0x2b2927;
@@ -448,7 +450,7 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
 
 export async function buildIndustryPreview(kind: IndustryKind): Promise<THREE.Group> {
   const area = new THREE.Group();
-  area.add(...(await Promise.all(LAYOUTS[kind]())));
+  area.add(industryGround(kind), industryFence(kind), industryFloodlights(), ...(await Promise.all(LAYOUTS[kind]())));
   return area;
 }
 
@@ -486,9 +488,29 @@ export class IndustriesView {
     number,
     { area: THREE.Object3D; label: CSS2DObject; animations: ((seconds: number) => void)[] }
   >();
+  private lampPositions: THREE.Vector3[] = [];
+
+  // Středy světel reflektorů všech areálů; nové pole při každé změně závodů
+  get lamps(): readonly THREE.Vector3[] {
+    return this.lampPositions;
+  }
+
+  setNightMode(night: boolean): void {
+    setFloodlightsOn(night);
+  }
 
   // Doplní nově založené závody a odebere zaniklé
   async sync(industries: readonly Industry[]): Promise<void> {
+    const half = INDUSTRY_SIZE / 2;
+    const up = new THREE.Vector3(0, 1, 0);
+    this.lampPositions = industries.flatMap((industry) =>
+      FLOODLIGHT_POOLS.map((pool) =>
+        pool
+          .clone()
+          .applyAxisAngle(up, (industry.rotation * Math.PI) / 2)
+          .add(new THREE.Vector3(industry.x + half, 0, industry.y + half)),
+      ),
+    );
     const ids = new Set(industries.map((i) => i.id));
     for (const [id, view] of this.views) {
       if (ids.has(id)) continue;
@@ -542,6 +564,7 @@ export class IndustriesView {
     area.traverse((part) => {
       const update = part.userData.updateAnimation;
       if (typeof update === 'function') view.animations.push(update as (seconds: number) => void);
+      if (part instanceof THREE.Mesh) for (const material of [part.material].flat()) withLampLight(material);
     });
     const half = INDUSTRY_SIZE / 2;
     area.position.set(industry.x + half, 0, industry.y + half);

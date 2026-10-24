@@ -238,6 +238,7 @@ export class GameView {
     this.sun.color.setHex(this.nightMode ? 0x8095c0 : 0xffffff);
     this.sun.intensity = this.nightMode ? 0.12 : 1.5;
     this.roads.setNightMode(this.nightMode);
+    this.industries.setNightMode(this.nightMode);
     return this.nightMode;
   }
 
@@ -315,7 +316,7 @@ export class GameView {
     this.nightLights.update(
       this.nightMode,
       frustum,
-      this.roads.streetLamps,
+      [this.roads.streetLamps, this.industries.lamps],
       this.game.world.towns,
       now,
     );

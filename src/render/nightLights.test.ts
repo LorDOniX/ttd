@@ -42,14 +42,14 @@ describe('noční světla', () => {
     view.light(ground);
     const frustum = new THREE.Frustum();
 
-    view.update(false, frustum, [new THREE.Vector3(4, 0.02, 4)]);
+    view.update(false, frustum, [[new THREE.Vector3(4, 0.02, 4)]]);
     expect(view.object.visible).toBe(false);
     expect(ground.lightMap).toBe(view.lampLight);
     expect(ground.lightMapIntensity).toBe(0);
     expect(texel(view, 4, 4)).toBeGreaterThan(0);
     expect(texel(view, 12, 12)).toBe(0);
 
-    view.update(true, frustum, [new THREE.Vector3(4, 0.02, 4)]);
+    view.update(true, frustum, [[new THREE.Vector3(4, 0.02, 4)]]);
     expect(view.object.visible).toBe(true);
     expect(ground.lightMapIntensity).toBeGreaterThan(0);
   });
@@ -57,16 +57,17 @@ describe('noční světla', () => {
   it('nepoužívá bodová světla a stejné lampy znovu nepřepéká', () => {
     const view = new NightLightsView(16, 16);
     const frustum = new THREE.Frustum();
-    view.update(true, frustum, [new THREE.Vector3(4, 0.02, 4)], [], 0);
+    view.update(true, frustum, [[new THREE.Vector3(4, 0.02, 4)]], [], 0);
     const version = view.lampLight.version;
 
-    view.update(true, frustum, [new THREE.Vector3(4, 0.02, 4)], [], 200);
+    view.update(true, frustum, [[new THREE.Vector3(4, 0.02, 4)]], [], 200);
     expect(view.lampLight.version).toBe(version);
 
-    view.update(true, frustum, [new THREE.Vector3(10, 0.02, 10)], [], 400);
+    view.update(true, frustum, [[new THREE.Vector3(10, 0.02, 10)], [new THREE.Vector3(13, 0, 3)]], [], 400);
     expect(view.lampLight.version).toBeGreaterThan(version);
     expect(texel(view, 4, 4)).toBe(0);
     expect(texel(view, 10, 10)).toBeGreaterThan(0);
+    expect(texel(view, 13, 3)).toBeGreaterThan(0);
 
     let pointLights = 0;
     view.object.traverse((child) => {
@@ -102,18 +103,18 @@ describe('noční světla', () => {
     const lamps = [new THREE.Vector3(0, 0.02, 0)];
     const towns = [{ x: 0, y: 0, radius: 8 }];
 
-    view.update(true, frustum, lamps, towns, 0);
+    view.update(true, frustum, [lamps], towns, 0);
     const firstChecks = checks;
     const townGlows = view.object.children.find((child) => child instanceof THREE.InstancedMesh)!;
     const matrixVersion = townGlows.instanceMatrix.version;
 
-    view.update(true, frustum, lamps, towns, 40);
+    view.update(true, frustum, [lamps], towns, 40);
 
     expect(checks).toBe(firstChecks);
     expect(townGlows.instanceMatrix.version).toBe(matrixVersion);
 
     frustum.planes[0].constant = 1;
-    view.update(true, frustum, lamps, towns, 100);
+    view.update(true, frustum, [lamps], towns, 100);
     expect(checks).toBeGreaterThan(firstChecks);
   });
 });

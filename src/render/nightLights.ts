@@ -23,7 +23,10 @@ const LAMP_LUT = (() => {
   const lut = new Uint8Array(256 * 4);
   const color = new THREE.Color();
   for (let level = 0; level < 256; level++) {
-    const hex = color.copy(LAMP_COLOR).multiplyScalar(level / 255).getHex();
+    const hex = color
+      .copy(LAMP_COLOR)
+      .multiplyScalar(level / 255)
+      .getHex();
     lut.set([(hex >> 16) & 255, (hex >> 8) & 255, hex & 255, 255], level * 4);
   }
   return lut;
@@ -65,7 +68,8 @@ vec3 lampLightIrradiance() {
   vec3 n = normalize(vLampNormal);
   vec2 at = (vLampWorld.xz + n.xz * 0.35) * lampLightScale;
   float fade = 1.0 - smoothstep(0.1, 0.75, vLampWorld.y);
-  float facing = 1.0 - max(n.y, 0.0) * 0.6;
+  // Střechy dostanou méně, zem pod nimi (povrch areálu) plné světlo
+  float facing = 1.0 - max(n.y, 0.0) * 0.6 * smoothstep(0.03, 0.12, vLampWorld.y);
   return texture2D(lampLightMap, at).rgb * lampLightIntensity * fade * facing;
 }
 `;
@@ -175,7 +179,7 @@ export class NightLightsView {
   private readonly frustumSnapshot = new Float64Array(24);
   private hasFrustumSnapshot = false;
   private lastNight: boolean | null = null;
-  private lastStreetLamps: readonly THREE.Vector3[] | null = null;
+  private lastLampGroups: readonly (readonly THREE.Vector3[])[] = [];
   private bakedLamps: readonly THREE.Vector3[] = [];
   private lastTownCount = -1;
   private lastUpdate = -Infinity;
@@ -219,22 +223,26 @@ export class NightLightsView {
     }
   }
 
+  // lampGroups: skupiny lamp (pouliční, reflektory areálů); skupina se přepeče, když dostane nové pole
   update(
     night: boolean,
     frustum: THREE.Frustum,
-    streetLamps: readonly THREE.Vector3[],
+    lampGroups: readonly (readonly THREE.Vector3[])[],
     towns: readonly Pick<Town, 'x' | 'y' | 'radius'>[] = [],
     now = performance.now(),
   ): void {
-    if (this.lastStreetLamps !== streetLamps) this.bakeLamps(streetLamps);
+    const lampsChanged =
+      lampGroups.length !== this.lastLampGroups.length ||
+      lampGroups.some((group, i) => group !== this.lastLampGroups[i]);
+    if (lampsChanged) this.bakeLamps(lampGroups.flat());
     const nightChanged = this.lastNight !== night;
-    const sourcesChanged = this.lastStreetLamps !== streetLamps || this.lastTownCount !== towns.length;
+    const sourcesChanged = lampsChanged || this.lastTownCount !== towns.length;
     const frustumChanged = this.hasFrustumChanged(frustum);
     if (!nightChanged && !sourcesChanged && !frustumChanged && !this.forceRefresh) return;
     if (!nightChanged && !sourcesChanged && !this.forceRefresh && now - this.lastUpdate < MIN_VIEW_UPDATE_MS) return;
 
     this.lastNight = night;
-    this.lastStreetLamps = streetLamps;
+    this.lastLampGroups = [...lampGroups];
     this.lastTownCount = towns.length;
     this.lastUpdate = now;
     this.forceRefresh = false;
