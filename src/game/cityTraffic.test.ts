@@ -3,10 +3,19 @@ import { generateWorld } from '../world/generator';
 import { GameMap, TileType } from '../world/map';
 import { RailNetwork } from '../world/rail';
 import type { Town } from '../world/town';
-import { CityTraffic } from './cityTraffic';
+import { CITY_CAR_MODELS, CityTraffic } from './cityTraffic';
+import { ROAD_VEHICLE_MODELS } from './balance';
 import { vehiclePoint } from './roadVehicles';
 
 describe('městský provoz', () => {
+  it('jezdí jen modely, které si hráč nemůže koupit', () => {
+    const playerModels = new Set(ROAD_VEHICLE_MODELS.map(({ model }) => model));
+    expect(CITY_CAR_MODELS.filter((model) => playerModels.has(model))).toEqual([]);
+    const world = generateWorld(42, 128, 1950, { waterLevel: 0.3, townDensity: 1 });
+    const traffic = new CityTraffic(world.map, world.rail, world.towns, world.seed, 1);
+    expect(traffic.cars.every((car) => CITY_CAR_MODELS.includes(car.model) && car.speed > 0)).toBe(true);
+  });
+
   it('vytvoří auta v městech úměrně jejich populaci', () => {
     const world = generateWorld(42, 128, 1950, { waterLevel: 0.3, townDensity: 1 });
     const traffic = new CityTraffic(world.map, world.rail, world.towns, world.seed, 1);

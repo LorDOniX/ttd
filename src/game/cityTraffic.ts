@@ -9,9 +9,24 @@ import { Rng } from '../world/rng';
 import type { TrafficLights } from './trafficLights';
 
 const CARS_PER_RESIDENT = 1 / 300;
-export const CITY_CAR_MODELS = ['hatchback-sports', 'sedan', 'suv', 'taxi'] as const;
+// Městská auta z car kitu, která si hráč nemůže koupit: osobní vozy, taxi a městské služby;
+// weight je relativní četnost, speed v dlaždicích za den jako u hráčových aut
+const CITY_CAR_TYPES = [
+  { model: 'sedan', weight: 6, speed: 2.8 },
+  { model: 'hatchback-sports', weight: 4, speed: 3.1 },
+  { model: 'suv', weight: 4, speed: 2.8 },
+  { model: 'taxi', weight: 4, speed: 3.1 },
+  { model: 'sedan-sports', weight: 2, speed: 3.4 },
+  { model: 'suv-luxury', weight: 2, speed: 3.1 },
+  { model: 'delivery-flat', weight: 1.5, speed: 2.4 },
+  { model: 'police', weight: 1, speed: 3.4 },
+  { model: 'ambulance', weight: 1, speed: 3.1 },
+  { model: 'firetruck', weight: 0.5, speed: 2.6 },
+] as const;
+export const CITY_CAR_MODELS: readonly string[] = CITY_CAR_TYPES.map(({ model }) => model);
+const CITY_CAR_WEIGHT = CITY_CAR_TYPES.reduce((sum, { weight }) => sum + weight, 0);
 // Ekvivalent rychlostí v herních dnech při běžném tempu hodin (365,25 dne za 15 minut).
-const CAR_SPEEDS = [2.4, 2.8, 3.1, 3.4].map((speed) => (speed * 365.25) / (15 * 60));
+const toGameSpeed = (speed: number): number => (speed * 365.25) / (15 * 60);
 const VEHICLE_GAP = 0.5;
 const LANE_WIDTH = 0.3;
 const STUCK_SECONDS_BEFORE_DETOUR = (1.5 * (15 * 60)) / 365.25;
@@ -172,12 +187,13 @@ export class CityTraffic {
       ) {
         continue;
       }
-      const modelIndex = this.rng.int(0, CITY_CAR_MODELS.length - 1);
+      let roll = this.rng.next() * CITY_CAR_WEIGHT;
+      const type = CITY_CAR_TYPES.find(({ weight }) => (roll -= weight) < 0) ?? CITY_CAR_TYPES[0];
       return {
         id: this.nextId++,
         townId,
-        model: CITY_CAR_MODELS[modelIndex],
-        speed: CAR_SPEEDS[modelIndex],
+        model: type.model,
+        speed: toGameSpeed(type.speed),
         path,
         pos: 1,
         stuckSeconds: 0,
