@@ -368,8 +368,12 @@ export function industryFloodlights(): THREE.Group {
   );
 }
 
-export function setFloodlightsOn(on: boolean): void {
-  FLOODLIGHT_HEAD_MATERIAL.color.setHex(on ? 0xfff1cf : 0x8c8a80);
-  FLOODLIGHT_HEAD_MATERIAL.emissive.setHex(on ? 0xffe2a8 : 0x000000);
-  FLOODLIGHT_HEAD_MATERIAL.emissiveIntensity = on ? 2 : 0;
+const FLOODLIGHT_OFF = new THREE.Color(0x8c8a80);
+const FLOODLIGHT_ON = new THREE.Color(0xfff1cf);
+
+// Jas reflektorů 0 (zhasnuté) až 1 (plně rozsvícené)
+export function setFloodlights(amount: number): void {
+  FLOODLIGHT_HEAD_MATERIAL.color.lerpColors(FLOODLIGHT_OFF, FLOODLIGHT_ON, amount);
+  FLOODLIGHT_HEAD_MATERIAL.emissive.setHex(0xffe2a8);
+  FLOODLIGHT_HEAD_MATERIAL.emissiveIntensity = 2 * amount;
 }

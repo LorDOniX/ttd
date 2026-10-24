@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type IndustryKind } from '../world/industry';
-import { FLOODLIGHT_POOLS, industryFence, industryFloodlights, industryGround, setFloodlightsOn } from './industryYard';
+import { FLOODLIGHT_POOLS, industryFence, industryFloodlights, industryGround, setFloodlights } from './industryYard';
 
 const KINDS = Object.keys(INDUSTRY_TYPES) as IndustryKind[];
 
@@ -46,9 +46,9 @@ describe('povrch a oplocení areálu', () => {
     expect(FLOODLIGHT_POOLS.every((p) => Math.abs(p.x) < half - 0.3 && Math.abs(p.z) < half - 0.3)).toBe(true);
 
     const head = (lights.children[1] as THREE.Mesh).material as THREE.MeshLambertMaterial;
-    setFloodlightsOn(true);
+    setFloodlights(1);
     expect(head.emissiveIntensity).toBeGreaterThan(0);
-    setFloodlightsOn(false);
+    setFloodlights(0);
     expect(head.emissiveIntensity).toBe(0);
   });
 });

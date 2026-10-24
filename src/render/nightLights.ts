@@ -178,7 +178,7 @@ export class NightLightsView {
   private readonly matrix = new THREE.Matrix4();
   private readonly frustumSnapshot = new Float64Array(24);
   private hasFrustumSnapshot = false;
-  private lastNight: boolean | null = null;
+  private lastNight: number | null = null;
   private lastLampGroups: readonly (readonly THREE.Vector3[])[] = [];
   private bakedLamps: readonly THREE.Vector3[] = [];
   private lastTownCount = -1;
@@ -218,14 +218,15 @@ export class NightLightsView {
   light(...materials: THREE.MeshLambertMaterial[]): void {
     for (const material of materials) {
       material.lightMap = this.lampLight;
-      material.lightMapIntensity = this.lastNight ? LAMP_LIGHT_INTENSITY : 0;
+      material.lightMapIntensity = (this.lastNight ?? 0) * LAMP_LIGHT_INTENSITY;
       this.litMaterials.push(material);
     }
   }
 
+  // night: síla nočních světel 0 (den) až 1 (plná noc), během soumraku plynule roste
   // lampGroups: skupiny lamp (pouliční, reflektory areálů); skupina se přepeče, když dostane nové pole
   update(
-    night: boolean,
+    night: number,
     frustum: THREE.Frustum,
     lampGroups: readonly (readonly THREE.Vector3[])[],
     towns: readonly Pick<Town, 'x' | 'y' | 'radius'>[] = [],
@@ -247,10 +248,11 @@ export class NightLightsView {
     this.lastUpdate = now;
     this.forceRefresh = false;
     this.saveFrustum(frustum);
-    this.object.visible = night;
-    for (const material of this.litMaterials) material.lightMapIntensity = night ? LAMP_LIGHT_INTENSITY : 0;
-    LAMP_UNIFORMS.lampLightIntensity.value = night ? LAMP_LIGHT_INTENSITY : 0;
-    if (!night) {
+    this.object.visible = night > 0;
+    for (const material of this.litMaterials) material.lightMapIntensity = night * LAMP_LIGHT_INTENSITY;
+    LAMP_UNIFORMS.lampLightIntensity.value = night * LAMP_LIGHT_INTENSITY;
+    TOWN_GLOW_MATERIAL.opacity = night;
+    if (night <= 0) {
       this.townGlows.count = 0;
       return;
     }

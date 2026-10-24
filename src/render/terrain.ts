@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GameMap, MapChanges, TileType } from '../world/map';
 import type { Town } from '../world/town';
-import type { Season } from '../game/seasons';
+import type { Season, SeasonBlend } from '../game/seasons';
 import { updateWater, withWater } from './water';
 import { withLampLightUv } from './nightLights';
 
@@ -12,16 +12,15 @@ const PAVEMENT = new THREE.Color(0xa3a39a);
 const INDUSTRY_GROUND = new THREE.Color(0x857a68);
 const SAND = new THREE.Color(0xd6c38c);
 const BANK = new THREE.Color(0x8a7150);
-const TERRAIN_PALETTES: Record<
-  Season,
-  {
-    grass: THREE.Color;
-    garden: THREE.Color;
-    forest: THREE.Color;
-    detailTint: readonly [number, number, number];
-    detailAlpha: number;
-  }
-> = {
+interface TerrainPalette {
+  grass: THREE.Color;
+  garden: THREE.Color;
+  forest: THREE.Color;
+  detailTint: readonly [number, number, number];
+  detailAlpha: number;
+}
+
+const TERRAIN_PALETTES: Record<Season, TerrainPalette> = {
   spring: {
     grass: new THREE.Color(0x75b84b),
     garden: new THREE.Color(0x8cbe62),
@@ -130,7 +129,8 @@ export class TerrainView {
   private readonly shore: THREE.Mesh;
   private readonly grid: THREE.LineSegments;
   private readonly changes: MapChanges;
-  private season: Season = 'summer';
+  private palette = TERRAIN_PALETTES.summer;
+  private seasonKey = '';
   // Voda (1) nebo pevnina (0) při posledním vykreslení, při změně se přestaví břehy
   private readonly water: Uint8Array;
 
@@ -168,9 +168,20 @@ export class TerrainView {
     this.grid.visible = visible;
   }
 
-  setSeason(season: Season): void {
-    if (this.season === season) return;
-    this.season = season;
+  setSeason({ from, to, t }: SeasonBlend): void {
+    const key = `${from}>${to}:${t}`;
+    if (this.seasonKey === key) return;
+    this.seasonKey = key;
+    const a = TERRAIN_PALETTES[from];
+    const b = TERRAIN_PALETTES[to];
+    const tint = (k: number): number => a.detailTint[k] + (b.detailTint[k] - a.detailTint[k]) * t;
+    this.palette = {
+      grass: a.grass.clone().lerp(b.grass, t),
+      garden: a.garden.clone().lerp(b.garden, t),
+      forest: a.forest.clone().lerp(b.forest, t),
+      detailTint: [tint(0), tint(1), tint(2)],
+      detailAlpha: a.detailAlpha + (b.detailAlpha - a.detailAlpha) * t,
+    };
     const colors = this.geometry.getAttribute('color') as THREE.BufferAttribute;
     const detailColors = this.greenDetails.getAttribute('color') as THREE.BufferAttribute;
     for (let y = 0; y < this.map.height; y++) {
@@ -268,7 +279,7 @@ export class TerrainView {
 
   private writeGreenDetailAlpha(x: number, y: number): void {
     const offset = (y * this.map.width + x) * 16;
-    const { detailTint, detailAlpha } = TERRAIN_PALETTES[this.season];
+    const { detailTint, detailAlpha } = this.palette;
     const alpha = this.isGreenTile(x, y) ? detailAlpha : 0;
     for (let k = 0; k < 4; k++) {
       const vertex = offset + k * 4;
@@ -359,7 +370,7 @@ export class TerrainView {
   }
 
   private tileColor(x: number, y: number): THREE.Color {
-    const palette = TERRAIN_PALETTES[this.season];
+    const palette = this.palette;
     switch (this.map.get(x, y)) {
       case TileType.Water:
       case TileType.Bridge:

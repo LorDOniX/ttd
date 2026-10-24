@@ -38,6 +38,8 @@ const STREETLIGHT_HEAD = (() => {
 })();
 const STREETLIGHT_POLE_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x454843 });
 const STREETLIGHT_HEAD_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x9a916d });
+const STREETLIGHT_HEAD_DAY = new THREE.Color(0x9a916d);
+const STREETLIGHT_HEAD_NIGHT = new THREE.Color(0xffd58a);
 
 // Zebra přes rameno křižovatky na ose chůze po chodníku
 function drawCrosswalks(ctx: CanvasRenderingContext2D, mask: number, ox: number, oy: number): void {
@@ -255,10 +257,11 @@ export class RoadView {
     return [this.road.material, this.sidewalk.material];
   }
 
-  setNightMode(night: boolean): void {
-    STREETLIGHT_HEAD_MATERIAL.color.setHex(night ? 0xffd58a : 0x9a916d);
-    STREETLIGHT_HEAD_MATERIAL.emissive.setHex(night ? 0xffb74d : 0x000000);
-    STREETLIGHT_HEAD_MATERIAL.emissiveIntensity = night ? 1.8 : 0;
+  // Jas lamp 0 (den) až 1 (noc)
+  setNightMode(amount: number): void {
+    STREETLIGHT_HEAD_MATERIAL.color.lerpColors(STREETLIGHT_HEAD_DAY, STREETLIGHT_HEAD_NIGHT, amount);
+    STREETLIGHT_HEAD_MATERIAL.emissive.setHex(0xffb74d);
+    STREETLIGHT_HEAD_MATERIAL.emissiveIntensity = 1.8 * amount;
   }
 
   private code(x: number, y: number): number {

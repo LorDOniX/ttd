@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { CityTraffic } from '../game/cityTraffic';
-import { seasonForDate, type Season, type SeasonMode } from '../game/seasons';
+import { dominantSeason, seasonBlendForDate, type Season, type SeasonMode } from '../game/seasons';
 import { collectTrafficHotspots, type TrafficHotspot } from '../game/traffic';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
@@ -25,6 +25,18 @@ import { TrafficOverlayView } from './trafficOverlay';
 import { NIGHT_DETAIL_ZOOM, NightLightsView } from './nightLights';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
+
+const NIGHT_TRANSITION_MS = 2500;
+const DAY_SKY = new THREE.Color(0x87b5d8);
+const NIGHT_SKY = new THREE.Color(0x10182a);
+const DAY_HEMISPHERE = new THREE.Color(0xffffff);
+const NIGHT_HEMISPHERE = new THREE.Color(0x536b9a);
+const DAY_GROUND = new THREE.Color(0x556644);
+const NIGHT_GROUND = new THREE.Color(0x171b26);
+const DAY_SUN = new THREE.Color(0xffffff);
+const NIGHT_SUN = new THREE.Color(0x8095c0);
+// Přechod ročního období po krocích: každý krok přebarví celý terén, proto ne každý herní den
+const SEASON_STEPS = 10;
 
 // Klikatelný popisek ve scéně: město, nástupiště nebo závod
 export interface LabelTarget {
@@ -66,7 +78,12 @@ export class GameView {
   private railDirty = false;
   private seasonMode: SeasonMode = 'auto';
   private currentSeason: Season | null = null;
-  private nightMode = false;
+  private seasonKey = '';
+  private nightTarget = false;
+  // Průběh soumraku 0 (den) až 1 (noc), mění se plynule v reálném čase
+  private nightAmount = 0;
+  private lastFrameTime: number | null = null;
+  private readonly sky = new THREE.Color(DAY_SKY);
 
   constructor(
     container: HTMLElement,
@@ -230,24 +247,43 @@ export class GameView {
   }
 
   toggleNightMode(): boolean {
-    this.nightMode = !this.nightMode;
-    this.scene.background = new THREE.Color(this.nightMode ? 0x10182a : 0x87b5d8);
-    this.hemisphere.color.setHex(this.nightMode ? 0x536b9a : 0xffffff);
-    this.hemisphere.groundColor.setHex(this.nightMode ? 0x171b26 : 0x556644);
-    this.hemisphere.intensity = this.nightMode ? 0.28 : 1.2;
-    this.sun.color.setHex(this.nightMode ? 0x8095c0 : 0xffffff);
-    this.sun.intensity = this.nightMode ? 0.12 : 1.5;
-    this.roads.setNightMode(this.nightMode);
-    this.industries.setNightMode(this.nightMode);
-    return this.nightMode;
+    this.nightTarget = !this.nightTarget;
+    return this.nightTarget;
+  }
+
+  // Lampy se rozsvítí až za soumraku, ne hned s prvním ztmavnutím oblohy
+  private get lightsAmount(): number {
+    return THREE.MathUtils.smoothstep(this.nightAmount, 0.35, 0.85);
+  }
+
+  private updateNight(ms: number): void {
+    const target = this.nightTarget ? 1 : 0;
+    if (this.nightAmount === target) return;
+    const step = ms / NIGHT_TRANSITION_MS;
+    this.nightAmount =
+      target > this.nightAmount ? Math.min(target, this.nightAmount + step) : Math.max(target, this.nightAmount - step);
+    const t = THREE.MathUtils.smoothstep(this.nightAmount, 0, 1);
+    this.scene.background = this.sky.lerpColors(DAY_SKY, NIGHT_SKY, t);
+    this.hemisphere.color.lerpColors(DAY_HEMISPHERE, NIGHT_HEMISPHERE, t);
+    this.hemisphere.groundColor.lerpColors(DAY_GROUND, NIGHT_GROUND, t);
+    this.hemisphere.intensity = THREE.MathUtils.lerp(1.2, 0.28, t);
+    this.sun.color.lerpColors(DAY_SUN, NIGHT_SUN, t);
+    this.sun.intensity = THREE.MathUtils.lerp(1.5, 0.12, t);
+    this.roads.setNightMode(this.lightsAmount);
+    this.industries.setNightMode(this.lightsAmount);
   }
 
   private applySeason(): void {
-    const season = seasonForDate(this.game.clock.date, this.seasonMode);
+    const blend = seasonBlendForDate(this.game.clock.date, this.seasonMode);
+    const stepped = { ...blend, t: Math.round(blend.t * SEASON_STEPS) / SEASON_STEPS };
+    const key = `${stepped.from}>${stepped.to}:${stepped.t}`;
+    if (this.seasonKey === key) return;
+    this.seasonKey = key;
+    this.terrain.setSeason(stepped);
+    this.trees.setSeason(stepped);
+    const season = dominantSeason(stepped);
     if (this.currentSeason === season) return;
     this.currentSeason = season;
-    this.terrain.setSeason(season);
-    this.trees.setSeason(season);
     this.fallingLeaves.setSeason(season);
     this.buildings.setSeason(season);
     this.industries.setSeason(season);
@@ -297,6 +333,8 @@ export class GameView {
 
   // Jeden snímek: posun hry o reálný čas dtMs a vykreslení
   frame(now: number, dtMs: number, trafficDtMs = dtMs): void {
+    this.updateNight(this.lastFrameTime === null ? 0 : now - this.lastFrameTime);
+    this.lastFrameTime = now;
     this.syncMap();
     const frustum = this.camera.frustum();
     // Chodci chodí v reálném čase nezávisle na rychlosti hry, při pauze stojí
@@ -314,7 +352,7 @@ export class GameView {
     );
     if (this.trafficOverlay.visible) this.trafficOverlay.update(this.trafficHotspots());
     this.nightLights.update(
-      this.nightMode,
+      this.lightsAmount,
       frustum,
       [this.roads.streetLamps, this.industries.lamps],
       this.game.world.towns,
@@ -329,7 +367,7 @@ export class GameView {
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
     // Světla vozidel jsou při oddálení menší než pixel, jen by přidávala draw cally
-    const vehicleLights = this.nightMode && this.camera.camera.zoom >= NIGHT_DETAIL_ZOOM;
+    const vehicleLights = this.lightsAmount > 0.5 && this.camera.camera.zoom >= NIGHT_DETAIL_ZOOM;
     this.trains.update(frustum, vehicleLights);
     this.vehicles.update(frustum, this.cityTraffic.cars, vehicleLights);
     this.trafficLightView.update(this.trafficLights);

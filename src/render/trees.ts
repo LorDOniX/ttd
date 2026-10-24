@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MapChanges, TileType, type GameMap } from '../world/map';
-import type { Season } from '../game/seasons';
+import type { Season, SeasonBlend } from '../game/seasons';
 import { loadPrototype } from './buildings';
 
 // Listnaté a jehličnaté stromy z nature kitu; varianty _dark mají tmavší listí
@@ -41,23 +41,29 @@ const SEASON_TREE_COLORS: Record<Season, Record<string, number>> = {
 const treeTime = { value: 0 };
 type Parts = Awaited<ReturnType<typeof loadPrototype>>;
 const treeMaterials = new Map<string, THREE.Material>();
-let activeSeason: Season = 'summer';
+let activeBlend: SeasonBlend = { from: 'summer', to: 'summer', t: 1 };
+const blendFrom = new THREE.Color();
 
-function applyTreeSeason(season: Season): void {
-  activeSeason = season;
-  for (const [name, material] of treeMaterials) {
-    const color = SEASON_TREE_COLORS[season][name];
-    if (color !== undefined) (material as THREE.MeshLambertMaterial).color.setHex(color);
-  }
+// Barva materiálu v aktuálním přechodu období; undefined pro materiály, které se nepřebarvují
+function seasonColor(name: string, target: THREE.Color): THREE.Color | undefined {
+  const from = SEASON_TREE_COLORS[activeBlend.from][name];
+  const to = SEASON_TREE_COLORS[activeBlend.to][name];
+  if (from === undefined || to === undefined) return undefined;
+  return target.setHex(to).lerp(blendFrom.setHex(from), 1 - activeBlend.t);
+}
+
+function applyTreeSeason(blend: SeasonBlend): void {
+  activeBlend = blend;
+  for (const [name, material] of treeMaterials) seasonColor(name, (material as THREE.MeshLambertMaterial).color);
 }
 
 function treeMaterial(material: THREE.Material): THREE.Material {
   let result = treeMaterials.get(material.name);
   if (!result) {
     const color =
-      SEASON_TREE_COLORS[activeSeason][material.name] ??
-      (material as THREE.MeshStandardMaterial).color?.getHex() ??
-      0xffffff;
+      seasonColor(material.name, new THREE.Color()) ??
+      (material as THREE.MeshStandardMaterial).color?.clone() ??
+      new THREE.Color(0xffffff);
     result = new THREE.MeshLambertMaterial({ color });
     result.onBeforeCompile = (shader) => {
       shader.uniforms.treeTime = treeTime;
@@ -152,8 +158,8 @@ export class TreesView {
     treeTime.value = seconds;
   }
 
-  setSeason(season: Season): void {
-    applyTreeSeason(season);
+  setSeason(blend: SeasonBlend): void {
+    applyTreeSeason(blend);
   }
 
   // Stromy jen ubývají: vykácené dlaždice se skryjí bez přestavby celé vrstvy

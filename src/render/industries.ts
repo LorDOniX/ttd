@@ -4,7 +4,7 @@ import { loadModel, type Kit } from '../assets';
 import type { Season } from '../game/seasons';
 import { INDUSTRY_SIZE, type Industry, type IndustryKind } from '../world/industry';
 import { createSnowRoofGeometry, SNOW_MATERIAL } from './buildings';
-import { FLOODLIGHT_POOLS, industryFence, industryFloodlights, industryGround, setFloodlightsOn } from './industryYard';
+import { FLOODLIGHT_POOLS, industryFence, industryFloodlights, industryGround, setFloodlights } from './industryYard';
 import { withLampLight } from './nightLights';
 import { treeObject } from './trees';
 
@@ -495,8 +495,9 @@ export class IndustriesView {
     return this.lampPositions;
   }
 
-  setNightMode(night: boolean): void {
-    setFloodlightsOn(night);
+  // Jas reflektorů 0 (den) až 1 (noc)
+  setNightMode(amount: number): void {
+    setFloodlights(amount);
   }
 
   // Doplní nově založené závody a odebere zaniklé
