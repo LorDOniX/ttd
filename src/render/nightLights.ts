@@ -29,6 +29,72 @@ const LAMP_LUT = (() => {
   return lut;
 })();
 
+// Sdílené všemi materiály z withLampLight, nastavuje je NightLightsView
+const LAMP_UNIFORMS = {
+  lampLightMap: { value: null as THREE.Texture | null },
+  lampLightScale: { value: new THREE.Vector2(1, 1) },
+  lampLightIntensity: { value: 0 },
+};
+
+const LAMP_VERTEX = /* glsl */ `
+varying vec3 vLampWorld;
+varying vec3 vLampNormal;
+`;
+
+const LAMP_VERTEX_MAIN = /* glsl */ `
+vec4 lampWorld = vec4(transformed, 1.0);
+vec3 lampNormal = objectNormal;
+#ifdef USE_INSTANCING
+lampWorld = instanceMatrix * lampWorld;
+lampNormal = mat3(instanceMatrix) * lampNormal;
+#endif
+vLampWorld = (modelMatrix * lampWorld).xyz;
+vLampNormal = mat3(modelMatrix) * lampNormal;
+`;
+
+// Stěna čelem k ulici čte světlo kousek před sebou, kde leží skvrna lampy; výš nad lampou světlo slábne
+const LAMP_FRAGMENT = /* glsl */ `
+uniform sampler2D lampLightMap;
+uniform vec2 lampLightScale;
+uniform float lampLightIntensity;
+varying vec3 vLampWorld;
+varying vec3 vLampNormal;
+
+vec3 lampLightIrradiance() {
+  if (lampLightIntensity <= 0.0) return vec3(0.0);
+  vec3 n = normalize(vLampNormal);
+  vec2 at = (vLampWorld.xz + n.xz * 0.35) * lampLightScale;
+  float fade = 1.0 - smoothstep(0.1, 0.75, vLampWorld.y);
+  float facing = 1.0 - max(n.y, 0.0) * 0.6;
+  return texture2D(lampLightMap, at).rgb * lampLightIntensity * fade * facing;
+}
+`;
+
+const lampLit = new WeakSet<THREE.Material>();
+
+// Doplní materiálu světlo zapečených lamp podle světové polohy, nepotřebuje uv1
+export function withLampLight(material: THREE.Material): void {
+  if (lampLit.has(material)) return;
+  lampLit.add(material);
+  const previous = material.onBeforeCompile.bind(material);
+  const previousKey = material.customProgramCacheKey.bind(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    previous(shader, renderer);
+    Object.assign(shader.uniforms, LAMP_UNIFORMS);
+    shader.vertexShader =
+      LAMP_VERTEX +
+      shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>\n${LAMP_VERTEX_MAIN}`);
+    shader.fragmentShader =
+      LAMP_FRAGMENT +
+      shader.fragmentShader.replace(
+        '#include <lights_fragment_maps>',
+        '#include <lights_fragment_maps>\nirradiance += lampLightIrradiance();',
+      );
+  };
+  material.customProgramCacheKey = () => `${previousKey()}|lamp-light`;
+  material.needsUpdate = true;
+}
+
 // Souřadnice do zapečených světel lamp: světové x, z (na mapu je přepočte repeat textury)
 export function withLampLightUv(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   const position = geometry.getAttribute('position');
@@ -139,6 +205,9 @@ export class NightLightsView {
     texture.generateMipmaps = true;
     texture.needsUpdate = true;
     this.lampLight = texture;
+    LAMP_UNIFORMS.lampLightMap.value = texture;
+    LAMP_UNIFORMS.lampLightScale.value.set(1 / mapWidth, 1 / mapHeight);
+    LAMP_UNIFORMS.lampLightIntensity.value = 0;
   }
 
   // Materiály země, na které lampy svítí; jejich geometrie potřebují uv1 z withLampLightUv
@@ -172,6 +241,7 @@ export class NightLightsView {
     this.saveFrustum(frustum);
     this.object.visible = night;
     for (const material of this.litMaterials) material.lightMapIntensity = night ? LAMP_LIGHT_INTENSITY : 0;
+    LAMP_UNIFORMS.lampLightIntensity.value = night ? LAMP_LIGHT_INTENSITY : 0;
     if (!night) {
       this.townGlows.count = 0;
       return;

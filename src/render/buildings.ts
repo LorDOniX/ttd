@@ -3,6 +3,7 @@ import { loadScene, type Kit } from '../assets';
 import type { Season } from '../game/seasons';
 import type { Town } from '../world/town';
 import { Surface, addWindows } from './windows';
+import { withLampLight } from './nightLights';
 
 // Největší půdorysný rozměr budovy vůči dlaždici
 const FOOTPRINT = 0.86;
@@ -276,6 +277,7 @@ export class BuildingsView {
       [...groups.values()].map(async (group) => {
         const parts = await loadFacade(group.kit, group.model, group.facade);
         for (const part of parts) {
+          for (const material of [part.material].flat()) withLampLight(material);
           const mesh = new THREE.InstancedMesh(part.geometry, part.material, group.matrices.length);
           const m = new THREE.Matrix4();
           group.matrices.forEach((placement, i) => {

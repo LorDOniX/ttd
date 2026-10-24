@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { NightLightsView } from './nightLights';
+import { NightLightsView, withLampLight } from './nightLights';
 
 function texel(view: NightLightsView, x: number, z: number): number {
   const { width, data } = view.lampLight.image;
@@ -9,6 +9,33 @@ function texel(view: NightLightsView, x: number, z: number): number {
 }
 
 describe('noční světla', () => {
+  it('nasvítí fasády zapečeným světlem lamp a zachová původní úpravy shaderu', () => {
+    const material = new THREE.MeshStandardMaterial();
+    let previousCalls = 0;
+    material.onBeforeCompile = () => previousCalls++;
+    material.customProgramCacheKey = () => 'facade-windows';
+    withLampLight(material);
+    withLampLight(material);
+    const shader = {
+      uniforms: {},
+      vertexShader: 'void main() {\n#include <project_vertex>\n}',
+      fragmentShader: 'void main() {\n#include <lights_fragment_maps>\n}',
+    } as unknown as THREE.WebGLProgramParametersWithUniforms;
+
+    material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+
+    expect(previousCalls).toBe(1);
+    expect(material.customProgramCacheKey()).toBe('facade-windows|lamp-light');
+    expect(shader.uniforms).toHaveProperty('lampLightMap');
+    expect(shader.vertexShader).toContain('vLampWorld =');
+    expect(shader.fragmentShader).toContain('irradiance += lampLightIrradiance();');
+
+    const view = new NightLightsView(16, 16);
+    view.update(true, new THREE.Frustum(), []);
+    expect(shader.uniforms.lampLightMap.value).toBe(view.lampLight);
+    expect(shader.uniforms.lampLightIntensity.value).toBeGreaterThan(0);
+  });
+
   it('zapeče světlo lamp do textury a rozsvítí ho na zemi jen v noci', () => {
     const view = new NightLightsView(16, 16);
     const ground = new THREE.MeshLambertMaterial();
