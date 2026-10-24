@@ -7,7 +7,99 @@ import { CITY_CAR_MODELS, CityTraffic } from './cityTraffic';
 import { ROAD_VEHICLE_MODELS } from './balance';
 import { vehiclePoint } from './roadVehicles';
 
+// Silnice z dlaždic tiles patřící městu 0
+function townRoads(tiles: readonly [number, number][]): { map: GameMap; town: Town } {
+  const map = new GameMap(16, 16);
+  for (const [x, y] of tiles) {
+    map.set(x, y, TileType.Road);
+    map.setOwner(x, y, 0);
+  }
+  const town: Town = {
+    id: 0,
+    name: 'Město',
+    kind: 'city',
+    x: 8,
+    y: 8,
+    population: 300,
+    radius: 2,
+    shape: Array(12).fill(1),
+    buildings: [],
+    served: false,
+  };
+  return { map, town };
+}
+
 describe('městský provoz', () => {
+  it('na křižovatce nevjede do krátké slepé odbočky, když vede cesta dál', () => {
+    // Hlavní silnice y = 5, na x = 5 a x = 8 jednodílné slepé odbočky na sever i na jih
+    const main = Array.from({ length: 14 }, (_, x): [number, number] => [x + 1, 5]);
+    const { map, town } = townRoads([...main, [5, 4], [5, 6], [8, 4]]);
+    const traffic = new CityTraffic(map, new RailNetwork(map), [town], 3, 1);
+    const car = traffic.cars[0];
+    traffic.cars.splice(1);
+    car.path = [
+      { x: 2, y: 5 },
+      { x: 3, y: 5 },
+      { x: 4, y: 5 },
+    ];
+    car.pos = 1;
+    const visited = new Set<string>();
+    for (let step = 0; step < 200; step++) {
+      traffic.update(0.05, new Set(), [], 1);
+      for (const tile of car.path) visited.add(`${tile.x},${tile.y}`);
+    }
+    expect(visited.has('5,4') || visited.has('5,6') || visited.has('8,4')).toBe(false);
+    expect(visited.has('9,5')).toBe(true);
+  });
+
+  it('ve slepé ulici bez křižovatky se auto na konci otočí', () => {
+    const { map, town } = townRoads(Array.from({ length: 6 }, (_, x): [number, number] => [x + 2, 5]));
+    const traffic = new CityTraffic(map, new RailNetwork(map), [town], 3, 1);
+    const car = traffic.cars[0];
+    traffic.cars.splice(1);
+    car.path = [
+      { x: 3, y: 5 },
+      { x: 4, y: 5 },
+      { x: 5, y: 5 },
+    ];
+    car.pos = 1;
+    const xs: number[] = [];
+    for (let step = 0; step < 200; step++) {
+      traffic.update(0.05, new Set(), [], 1);
+      xs.push(vehiclePoint(car.path, car.pos).x);
+    }
+    expect(Math.max(...xs)).toBeGreaterThan(7);
+    expect(xs.at(-1)!).toBeLessThan(Math.max(...xs));
+    expect(car.stuckSeconds).toBe(0);
+  });
+
+  it('auto otočené ve slepé odbočce nečeká na vozidlo, které do ní míří', () => {
+    // Křižovatka (5, 5) se slepou odbočkou (5, 4); jedno auto se v odbočce otáčí, druhé do ní chce vjet
+    const { map, town } = townRoads([...Array.from({ length: 10 }, (_, x): [number, number] => [x + 1, 5]), [5, 4]]);
+    const traffic = new CityTraffic(map, new RailNetwork(map), [town], 3, 1);
+    const turning = traffic.cars[0];
+    const waiting = { ...turning, id: turning.id + 100 };
+    traffic.cars.splice(0, traffic.cars.length, turning, waiting);
+    turning.path = [
+      { x: 5, y: 5 },
+      { x: 5, y: 4 },
+      { x: 5, y: 5 },
+      { x: 6, y: 5 },
+      { x: 7, y: 5 },
+    ];
+    turning.pos = 1;
+    waiting.path = [
+      { x: 2, y: 5 },
+      { x: 3, y: 5 },
+      { x: 4, y: 5 },
+      { x: 5, y: 5 },
+      { x: 5, y: 4 },
+      { x: 5, y: 5 },
+    ];
+    waiting.pos = 2.1;
+    for (let step = 0; step < 60; step++) traffic.update(0.05, new Set(), [], 1);
+    expect(vehiclePoint(turning.path, turning.pos).x).toBeGreaterThan(6);
+  });
   it('jezdí jen modely, které si hráč nemůže koupit', () => {
     const playerModels = new Set(ROAD_VEHICLE_MODELS.map(({ model }) => model));
     expect(CITY_CAR_MODELS.filter((model) => playerModels.has(model))).toEqual([]);
@@ -88,12 +180,12 @@ describe('městský provoz', () => {
     traffic.update(1, new Set([crossing.y * map.width + crossing.x]), [], 1);
     expect(car.pos).toBeCloseTo(1.25);
 
-    const blockedPath = car.path.map(({ x, y }) => `${x},${y}`);
     traffic.update(4, new Set([crossing.y * map.width + crossing.x]), [], 1);
-    expect(car.path.map(({ x, y }) => `${x},${y}`)).not.toEqual(blockedPath);
+    // Přechod je hned na další dlaždici, objet ho nejde bez skoku; auto počká na místě
+    expect(car.pos).toBeCloseTo(1.25);
 
     traffic.update(1, new Set(), [], 1);
-    expect(car.pos).toBeGreaterThan(0);
+    expect(car.pos).toBeGreaterThan(1.25);
 
     for (let day = 0; day < 20; day++) traffic.update(0.1, new Set(), [], 1);
     const point = vehiclePoint(car.path, car.pos);
@@ -164,7 +256,8 @@ describe('městský provoz', () => {
 
     traffic.update(0.5, new Set(), [], 1);
 
-    expect(waitingCar.pos).toBeCloseTo(0.7);
+    // Už je za stopčárou, tak počká na místě a necouvá
+    expect(waitingCar.pos).toBeCloseTo(1);
     expect(vehiclePoint(waitingCar.path, waitingCar.pos).x).toBeLessThan(6);
   });
 
@@ -209,7 +302,7 @@ describe('městský provoz', () => {
 
     traffic.update(0.6, new Set(), [], 1);
 
-    expect(fartherCar.pos).toBeCloseTo(0.7);
+    expect(fartherCar.pos).toBeCloseTo(1);
     expect(nearerCar.pos).toBeGreaterThan(1.5);
 
     traffic.update(1.4, new Set(), [], 1);
@@ -218,7 +311,7 @@ describe('městský provoz', () => {
 
     traffic.update(0.4, new Set(), [], 1);
 
-    expect(fartherCar.pos).toBeGreaterThan(0.7);
+    expect(fartherCar.pos).toBeGreaterThan(1);
   });
 
   it('dvě auta přijíždějící proti sobě projedou křižovatku postupně bez deadlocku', () => {

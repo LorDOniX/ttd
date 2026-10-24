@@ -260,7 +260,7 @@ describe('silniční vozidla', () => {
     expect(bus.pos).toBeGreaterThan(3.5);
   });
 
-  it('hráčovo auto nečeká uprostřed křižovatky obsazené městským autem', () => {
+  it('hráčovo auto nevjede do křižovatky obsazené městským autem a necouvá', () => {
     const { game, a, b, depot } = buildRoadLine();
     game.world.map.set(20, 9, TileType.Road);
     game.world.map.set(20, 11, TileType.Road);
@@ -286,7 +286,7 @@ describe('silniční vozidla', () => {
 
     runDays(game, 15);
 
-    expect(bus.pos).toBeCloseTo(junctionIndex - 0.5 - 0.8);
+    expect(bus.pos).toBeCloseTo(junctionIndex - 0.5 - 0.2);
     expect(game.roadFleet.tileOf(bus)).toEqual({ x: 19, y: 10 });
   });
 

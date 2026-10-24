@@ -3,6 +3,7 @@ import { GameMap, TileType } from '../world/map';
 import { RailNetwork } from '../world/rail';
 import type { Town } from '../world/town';
 import { CityTraffic } from './cityTraffic';
+import { RED_SIGNAL_STOP_GAP } from './roadJunctions';
 import { selectTrafficLights, TrafficLights } from './trafficLights';
 
 function cityGrid(population = 1200): { map: GameMap; town: Town } {
@@ -84,12 +85,14 @@ describe('městské semafory', () => {
     car.pos = 0;
 
     traffic.update(0.25, new Set(), [], 1);
-    expect(car.pos).toBe(0);
+    expect(car.pos).toBeCloseTo(0.5 - RED_SIGNAL_STOP_GAP);
+    traffic.update(0.25, new Set(), [], 1);
+    expect(car.pos).toBeCloseTo(0.5 - RED_SIGNAL_STOP_GAP);
     expect(car.stuckSeconds).toBe(0);
 
     lights.update(9.5);
     traffic.update(0.25, new Set(), [], 1);
-    expect(car.pos).toBeGreaterThan(0);
+    expect(car.pos).toBeGreaterThan(0.5 - RED_SIGNAL_STOP_GAP);
   });
 
   it('nezastavuje na křižovatce, která semafor nemá', () => {

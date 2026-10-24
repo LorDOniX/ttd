@@ -2,7 +2,13 @@ import type { RoadVehicle } from './roadVehicles';
 import { TileType, type GameMap, type TilePos } from '../world/map';
 import type { RailNetwork } from '../world/rail';
 import { roadMoves } from '../world/roadRoute';
-import { JUNCTION_STOP_GAP, junctionPriorities, reservesJunction } from './roadJunctions';
+import {
+  JUNCTION_CLEARANCE,
+  JUNCTION_STOP_GAP,
+  RED_SIGNAL_STOP_GAP,
+  junctionPriorities,
+  reservesJunction,
+} from './roadJunctions';
 import type { Town } from '../world/town';
 import { safeVehiclePosition, vehiclePoint } from './roadVehicles';
 import { Rng } from '../world/rng';
@@ -31,6 +37,12 @@ const VEHICLE_GAP = 0.5;
 const LANE_WIDTH = 0.3;
 const STUCK_SECONDS_BEFORE_DETOUR = (1.5 * (15 * 60)) / 365.25;
 const DETOUR_LOOKAHEAD = 4;
+// Na křižovatce auto nevjede do slepé odbočky takto krátké (v dlaždicích), pokud vede jiná cesta dál
+const SHORT_DEAD_END = 3;
+// Na křižovatku auto vjede, jen když za ní je místo; jinak by v ní uvízlo a zablokovalo příčný směr
+const EXIT_CLEARANCE = 0.45;
+
+const sameTile = (a: TilePos | undefined, b: TilePos): boolean => a !== undefined && a.x === b.x && a.y === b.y;
 
 export interface CityCar {
   id: number;
@@ -105,8 +117,13 @@ export class CityTraffic {
       .filter((vehicle) => vehicle.state !== 'depot' && vehicle.path.length > 0)
       .map(({ id, path, pos }) => ({ id, path, pos }));
     const traffic = [...this.cars.map(({ id, path, pos }) => ({ id: -id, path, pos })), ...playerObstacles];
-    const priorities = junctionPriorities(traffic, this.rail);
-    for (const car of this.cars) this.move(car, seconds, crossings, playerObstacles, priorities);
+    const priorities = junctionPriorities(
+      traffic,
+      this.rail,
+      this.trafficLights && ((from, to) => this.trafficLights!.allows(from, to)),
+    );
+    const byId = new Map(traffic.map((vehicle) => [vehicle.id, vehicle]));
+    for (const car of this.cars) this.move(car, seconds, crossings, playerObstacles, priorities, byId);
   }
 
   reconcile(roadVersion: number, playerVehicles: readonly RoadVehicle[] = []): void {
@@ -203,15 +220,59 @@ export class CityTraffic {
   }
 
   private nextTile(townId: number, from: TilePos, previous: TilePos | null): TilePos | null {
-    const options = roadMoves(this.rail, from.x, from.y).filter(
-      (tile) =>
-        this.map.getOwner(tile.x, tile.y) === townId && (!previous || tile.x !== previous.x || tile.y !== previous.y),
-    );
-    const candidates =
-      options.length > 0
-        ? options
-        : roadMoves(this.rail, from.x, from.y).filter((tile) => this.map.getOwner(tile.x, tile.y) === townId);
+    const all = this.townMoves(townId, from);
+    const options = all.filter((tile) => !previous || !sameTile(previous, tile));
+    // Na křižovatce se krátké slepé odbočky vynechají, ve slepé ulici se auto na konci otočí
+    const through = options.length > 1 ? options.filter((tile) => !this.shortDeadEnd(townId, from, tile)) : options;
+    const candidates = through.length > 0 ? through : options.length > 0 ? options : all;
     return candidates.length > 0 ? candidates[this.rng.int(0, candidates.length - 1)] : null;
+  }
+
+  private townMoves(townId: number, from: TilePos): TilePos[] {
+    return roadMoves(this.rail, from.x, from.y).filter((tile) => this.map.getOwner(tile.x, tile.y) === townId);
+  }
+
+  // Dlaždice slepé odbočky z from přes to, končí-li do SHORT_DEAD_END dlaždic bez další křižovatky; jinak null
+  private shortDeadEnd(townId: number, from: TilePos, to: TilePos): TilePos[] | null {
+    let previous = from;
+    let current = to;
+    const tiles = [to];
+    for (let step = 0; step < SHORT_DEAD_END; step++) {
+      const onward = this.townMoves(townId, current).filter((tile) => !sameTile(previous, tile));
+      if (onward.length === 0) return tiles;
+      if (onward.length > 1) return null;
+      previous = current;
+      current = onward[0];
+      tiles.push(current);
+    }
+    return null;
+  }
+
+  // Je hned za křižovatkou (na indexu k cesty) v pruhu auta jiné vozidlo, nebo kdokoli v krátké slepé
+  // odbočce, kam auto míří? V odbočce se obě auta otáčejí a navzájem by se zablokovala.
+  private exitBlocked(car: CityCar, k: number, others: readonly RoadTrafficObstacle[]): boolean {
+    if (k + 1 >= car.path.length) return false;
+    const exit = vehiclePoint(car.path, k + 0.75);
+    const stub = this.shortDeadEnd(car.townId, car.path[k], car.path[k + 1]);
+    return others.some((other) => {
+      if (other.path.length === 0) return false;
+      const it = vehiclePoint(other.path, other.pos);
+      if (stub?.some((tile) => tile.x === Math.floor(it.x) && tile.y === Math.floor(it.y))) return true;
+      // Jinak jen vozidlo ve stejném směru; protisměr (třeba čekající na červenou naproti) výjezd neblokuje
+      if (exit.dx * it.dx + exit.dy * it.dy <= 0.5) return false;
+      return Math.hypot(it.x - exit.x, it.y - exit.y) < EXIT_CLEARANCE;
+    });
+  }
+
+  // Míří vozidlo přes křižovatku junction do dlaždice into a ještě do ní nevjelo?
+  private headsInto(vehicle: RoadTrafficObstacle | undefined, junction: TilePos, into: TilePos): boolean {
+    if (!vehicle) return false;
+    for (let i = 1; i < vehicle.path.length - 1; i++) {
+      if (sameTile(vehicle.path[i], junction) && sameTile(vehicle.path[i + 1], into) && vehicle.pos < i - 0.5) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private move(
@@ -220,11 +281,13 @@ export class CityTraffic {
     crossings: ReadonlySet<number>,
     playerVehicles: readonly RoadTrafficObstacle[],
     priorities: ReadonlyMap<number, number>,
+    byId: ReadonlyMap<number, RoadTrafficObstacle>,
   ): void {
     if (seconds <= 0) return;
     const town = this.towns[car.townId];
     const end = car.path.length - 1;
-    const crowdAhead = roomAhead(car.path, car.pos, [...this.cars.filter((other) => other !== car), ...playerVehicles]);
+    const others = [...this.cars.filter((other) => other !== car), ...playerVehicles];
+    const crowdAhead = roomAhead(car.path, car.pos, others);
     let pos = Math.min(end, car.pos + car.speed * seconds, car.pos + crowdAhead);
     let blocked = false;
     let redSignalWaiting = false;
@@ -233,17 +296,32 @@ export class CityTraffic {
       const junction = roadMoves(this.rail, tile.x, tile.y).length >= 3;
       const occupied = junction && this.junctionOccupied(tile, car, playerVehicles);
       const tileIndex = tile.y * this.map.width + tile.x;
-      const mustYield = junction && priorities.get(tileIndex) !== undefined && priorities.get(tileIndex) !== -car.id;
+      const winner = junction ? priorities.get(tileIndex) : undefined;
+      // Auto vyjíždějící ze slepé odbočky nečeká na vozidlo, které do odbočky míří – to čeká na něj
+      const leavingStub = junction && this.shortDeadEnd(car.townId, tile, car.path[k - 1]) !== null;
+      const mustYield =
+        winner !== undefined &&
+        winner !== -car.id &&
+        !(leavingStub && this.headsInto(byId.get(winner), tile, car.path[k - 1]));
       const pedestrian = crossings.has(tile.y * this.map.width + tile.x);
       const redSignal =
         junction && this.trafficLights !== undefined && !this.trafficLights.allows(car.path[k - 1], tile);
       redSignalWaiting ||= redSignal;
-      const junctionBlocked = occupied || mustYield || pedestrian || redSignal;
-      const gap = junction && (occupied || mustYield || redSignal) ? JUNCTION_STOP_GAP : VEHICLE_GAP / 2;
+      const exitBlocked = junction && car.pos < k - 0.5 && this.exitBlocked(car, k, others);
+      const junctionBlocked = occupied || mustYield || pedestrian || redSignal || exitBlocked;
+      const gap =
+        junction && redSignal
+          ? RED_SIGNAL_STOP_GAP
+          : junction && (occupied || mustYield || exitBlocked)
+            ? JUNCTION_STOP_GAP
+            : VEHICLE_GAP / 2;
       if (k - 0.5 - gap > pos) break;
-      if (junctionBlocked && car.pos < k - 0.5) {
-        const stopPos = k - 0.5 - gap;
-        pos = Math.min(pos, redSignal ? Math.max(car.pos, stopPos) : stopPos);
+      // Kdo už zasahuje do křižovatky, toho ostatní vidí jako obsazeného; přednost by vedla k zablokování
+      const holdsJunction = car.pos >= k - 0.5 - JUNCTION_CLEARANCE;
+      const onlyYield = mustYield && !occupied && !pedestrian && !redSignal && !exitBlocked;
+      if (junctionBlocked && car.pos < k - 0.5 && !(holdsJunction && onlyYield)) {
+        // Auto, které už je za stopčárou (třeba stálo blíž na červenou), počká na místě, necouvá
+        pos = Math.min(pos, Math.max(car.pos, k - 0.5 - gap));
         blocked = true;
         break;
       }
@@ -266,13 +344,10 @@ export class CityTraffic {
     if (blocked) {
       car.pos = pos;
       car.stuckSeconds = redSignalWaiting ? 0 : car.stuckSeconds + seconds;
-      if (
-        !redSignalWaiting &&
-        car.stuckSeconds >= STUCK_SECONDS_BEFORE_DETOUR &&
-        town &&
-        !this.detour(car, crossings, playerVehicles)
-      ) {
-        this.backOutOfJunction(car, playerVehicles);
+      // Objížďku zkusí po každých STUCK_SECONDS_BEFORE_DETOUR čekání; bez jiné cesty počká
+      const attempts = (stuck: number): number => Math.floor(stuck / STUCK_SECONDS_BEFORE_DETOUR);
+      if (!redSignalWaiting && town && attempts(car.stuckSeconds) > attempts(car.stuckSeconds - seconds)) {
+        this.detour(car, crossings, playerVehicles);
       }
       return;
     }
@@ -307,38 +382,37 @@ export class CityTraffic {
     }
   }
 
+  // Objede překážku jinou cestou k dlaždici DETOUR_LOOKAHEAD před sebou; začátek cesty až po zatáčku,
+  // kterou auto právě projíždí, zůstane stejný, aby auto neposkočilo ani necouvlo
   private detour(
     car: CityCar,
     crossings: ReadonlySet<number>,
     playerVehicles: readonly RoadTrafficObstacle[],
   ): boolean {
-    const current = car.path[Math.floor(car.pos)];
-    const target = car.path[Math.min(car.path.length - 1, Math.floor(car.pos) + DETOUR_LOOKAHEAD)];
-    if (!current || !target) return false;
+    const keep = Math.round(car.pos) + 2;
+    const goalIndex = Math.floor(car.pos) + DETOUR_LOOKAHEAD;
+    if (goalIndex < keep || goalIndex >= car.path.length) return false;
+    const prefix = car.path.slice(0, keep);
+    const width = this.map.width;
+    const indexOf = (tile: TilePos): number => tile.y * width + tile.x;
     const blockedTiles = new Set(
-      [
-        ...this.cars
-          .filter((other) => other !== car)
-          .map((other) => {
-            const tile = other.path[Math.round(other.pos)];
-            return tile && tile.y * this.map.width + tile.x;
-          }),
-        ...playerVehicles.map((other) => {
-          const tile = other.path[Math.round(other.pos)];
-          return tile && tile.y * this.map.width + tile.x;
-        }),
-      ].filter((index): index is number => index !== undefined),
+      [...this.cars.filter((other) => other !== car), ...playerVehicles]
+        .map((other) => other.path[Math.round(other.pos)])
+        .filter((tile): tile is TilePos => tile !== undefined)
+        .map(indexOf),
     );
-    const start = current.y * this.map.width + current.x;
-    const goal = target.y * this.map.width + target.x;
-    const parents = new Map<number, number>([[start, -1]]);
+    const start = indexOf(prefix[keep - 1]);
+    const goal = indexOf(car.path[goalIndex]);
+    // Předchozí dlaždice je předem „navštívená“, aby objížďka nezačínala otočkou
+    const parents = new Map<number, number>([
+      [start, -1],
+      [indexOf(prefix[keep - 2]), -1],
+    ]);
     const queue = [start];
     for (let head = 0; head < queue.length && !parents.has(goal); head++) {
       const index = queue[head];
-      const x = index % this.map.width;
-      const y = Math.floor(index / this.map.width);
-      for (const next of roadMoves(this.rail, x, y)) {
-        const nextIndex = next.y * this.map.width + next.x;
+      for (const next of roadMoves(this.rail, index % width, Math.floor(index / width))) {
+        const nextIndex = indexOf(next);
         if (
           parents.has(nextIndex) ||
           this.map.getOwner(next.x, next.y) !== car.townId ||
@@ -351,34 +425,16 @@ export class CityTraffic {
         queue.push(nextIndex);
       }
     }
+    if (!parents.has(goal) || goal === start) return false;
     const route: TilePos[] = [];
-    if (parents.has(goal)) {
-      for (let index = goal; index !== -1; index = parents.get(index)!) {
-        route.push({ x: index % this.map.width, y: Math.floor(index / this.map.width) });
-      }
-      route.reverse();
+    for (let index = goal; index !== start; index = parents.get(index)!) {
+      route.push({ x: index % width, y: Math.floor(index / width) });
     }
-    if (!route || route.length < 3) return false;
-    car.path = route;
-    car.pos = 0;
+    route.reverse();
+    // Stejná cesta jako dosud by nic nevyřešila
+    if (sameTile(car.path[keep], route[0])) return false;
+    car.path = [...prefix, ...route];
     car.stuckSeconds = 0;
     return true;
-  }
-
-  private backOutOfJunction(car: CityCar, playerVehicles: readonly RoadTrafficObstacle[]): void {
-    const nextJunction = car.path.findIndex(
-      (tile, index) => index > Math.floor(car.pos) && roadMoves(this.rail, tile.x, tile.y).length >= 3,
-    );
-    if (nextJunction < 1) return;
-    const stopPos = nextJunction - 0.5 - JUNCTION_STOP_GAP;
-    if (stopPos >= car.pos) return;
-    const obstacles = [
-      ...this.cars.filter((other) => other !== car).map(({ id, path, pos }) => ({ id: -id, path, pos })),
-      ...playerVehicles,
-    ];
-    const position = safeVehiclePosition(car.path, car.pos, stopPos, obstacles, -car.id);
-    if (position >= car.pos) return;
-    car.pos = position;
-    car.stuckSeconds = 0;
   }
 }

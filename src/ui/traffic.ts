@@ -24,8 +24,11 @@ export function openTrafficOverview(windows: WindowManager, actions: TrafficOver
       show.addEventListener('click', () => actions.focus(hotspot.x + 0.5, hotspot.y + 0.5));
       const detour = h(
         'button',
-        { className: 'small-button', title: 'Zaměřit místo a zapnout stavbu silnice' },
-        'Objížďka',
+        {
+          className: 'small-button',
+          title: 'Zaměří místo a zapne stavbu silnice, abyste kolem zácpy mohli postavit objízdnou trasu',
+        },
+        'Postavit objížďku',
       );
       detour.addEventListener('click', () => {
         actions.focus(hotspot.x + 0.5, hotspot.y + 0.5);
@@ -71,6 +74,12 @@ export function openTrafficOverview(windows: WindowManager, actions: TrafficOver
       h('label', { className: 'form__row' }, overlay, ' Zobrazit vytížení na mapě'),
       legend,
       table,
+      h(
+        'div',
+        { className: 'form__hint' },
+        'Místa, kde vozidla nejvíc stojí. „Postavit objížďku“ zaměří místo a zapne stavbu silnice: ' +
+          'novou silnicí vedle zácpy dostanou auta jinou cestu.',
+      ),
     );
   };
 
