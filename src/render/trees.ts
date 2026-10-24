@@ -101,6 +101,32 @@ async function loadTree(model: string): Promise<Parts> {
 
 // Vykácený strom: nulové měřítko instanci schová
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+const UP = new THREE.Vector3(0, 1, 0);
+
+// Samostatný strom stejný jako v lesích (sezónní barvy i vítr), např. pro průmyslové areály
+export async function treeObject(
+  model: string,
+  scale: number,
+  x: number,
+  z: number,
+  rotation = 0,
+): Promise<THREE.Object3D> {
+  const parts = await loadTree(model);
+  const placement = new THREE.Matrix4().compose(
+    new THREE.Vector3(x, 0, z),
+    new THREE.Quaternion().setFromAxisAngle(UP, rotation),
+    new THREE.Vector3(scale, scale, scale),
+  );
+  const group = new THREE.Group();
+  for (const part of parts) {
+    // Instancovaný mesh, protože vítr ve stromovém shaderu působí jen na instance
+    const mesh = new THREE.InstancedMesh(part.geometry, part.material, 1);
+    mesh.setMatrixAt(0, placement.clone().multiply(part.matrix));
+    mesh.computeBoundingSphere();
+    group.add(mesh);
+  }
+  return group;
+}
 
 function tileHash(x: number, y: number, salt: number): number {
   let h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(salt, 83492791);

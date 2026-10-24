@@ -182,7 +182,6 @@ export class GameView {
       this.ambientProps.sync();
       game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
       this.trees.sync();
-      this.fallingLeaves.sync();
       this.animals.sync();
       if (this.railDirty) {
         this.railDirty = false;
@@ -325,7 +324,7 @@ export class GameView {
     this.applySeason();
     const seconds = now / 1000;
     this.trees.update(seconds);
-    this.fallingLeaves.update(seconds, frustum);
+    this.fallingLeaves.update(seconds, this.camera.camera, frustum);
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
     // Světla vozidel jsou při oddálení menší než pixel, jen by přidávala draw cally

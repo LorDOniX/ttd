@@ -4,6 +4,7 @@ import { loadModel, type Kit } from '../assets';
 import type { Season } from '../game/seasons';
 import { INDUSTRY_SIZE, type Industry, type IndustryKind } from '../world/industry';
 import { createSnowRoofGeometry, SNOW_MATERIAL } from './buildings';
+import { treeObject } from './trees';
 
 const COAL = 0x2b2927;
 const ORE = 0x8a4a32;
@@ -330,8 +331,8 @@ function conveyor(from: THREE.Vector3, to: THREE.Vector3): THREE.Object3D {
 
 // Rozvržení areálu 3×3 kolem jeho středu
 const now = (object: THREE.Object3D): Promise<THREE.Object3D> => Promise.resolve(object);
-const tree = (name: string, size: number, x: number, z: number): Promise<THREE.Object3D> =>
-  kenney(name, size, x, z, x * 7 + z, 'city kit suburban');
+const tree = (model: string, scale: number, x: number, z: number): Promise<THREE.Object3D> =>
+  treeObject(model, scale, x, z, x * 7 + z);
 const crop = (name: string, size: number, x: number, z: number): Promise<THREE.Object3D> =>
   kenney(name, size, x, z, 0, 'nature kit');
 
@@ -353,11 +354,20 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
     now(pile(0.35, 0.3, -0.15, 1.05)),
   ],
   forest: () => [
-    ...[
-      [-1.05, -1.05, 0.6],
-      [-0.2, -1.15, 0.5],
-      [0.8, -1.0, 0.65],
-    ].map(([x, z, size], i) => tree(i === 1 ? 'tree-small' : 'tree-large', size, x, z)),
+    // Dvě prostřídané řady stromů v zadní části areálu, od každého druhu tři
+    ...(
+      [
+        ['tree_pineDefaultA', -1.2, -1.25, 0.6],
+        ['tree_oak', -0.6, -1.3, 0.45],
+        ['tree_pineRoundA', 0.0, -1.2, 0.55],
+        ['tree_pineDefaultA', 0.6, -1.3, 0.5],
+        ['tree_oak', 1.2, -1.2, 0.5],
+        ['tree_pineRoundA', -0.9, -0.8, 0.5],
+        ['tree_oak', -0.3, -0.85, 0.4],
+        ['tree_pineDefaultA', 0.3, -0.9, 0.55],
+        ['tree_pineRoundA', 0.9, -0.8, 0.45],
+      ] as const
+    ).map(([model, x, z, scale]) => tree(model, scale, x, z)),
     ...[
       [-0.6, -0.4],
       [0.3, -0.55],
@@ -462,7 +472,7 @@ export const INDUSTRY_ASSET_MODELS: readonly { kit: Kit; name: string }[] = [
     'water-tower',
     'windmill',
   ].map((name) => ({ kit: 'city kit industrial' as Kit, name })),
-  ...['tree-small', 'tree-large', 'building-type-f', 'planter'].map((name) => ({
+  ...['building-type-f', 'planter'].map((name) => ({
     kit: 'city kit suburban' as Kit,
     name,
   })),
