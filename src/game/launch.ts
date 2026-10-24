@@ -8,12 +8,14 @@ const AUTOSAVE_KEY = 'ttd-autosave';
 
 export type WaterAmount = 'low' | 'normal' | 'high';
 export type TownAmount = 'few' | 'normal' | 'many';
+export type IndustryAmount = 'few' | 'normal' | 'many';
 
 export interface NewGameOptions {
   seedText: string;
   size: 128 | 256 | 512;
   water: WaterAmount;
   towns: TownAmount;
+  industries: IndustryAmount;
 }
 
 export type LaunchIntent = { mode: 'new'; options: NewGameOptions } | { mode: 'load'; save: string };

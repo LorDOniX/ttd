@@ -38,6 +38,14 @@ describe('generátor světa', () => {
     expect(many.towns.length).toBeGreaterThan(few.towns.length);
   });
 
+  it('hustota průmyslu mění počet závodů a uloží se do světa', () => {
+    const few = generateWorld(3, 256, 1950, { waterLevel: 0.34, townDensity: 1, industryDensity: 0.5 });
+    const many = generateWorld(3, 256, 1950, { waterLevel: 0.34, townDensity: 1, industryDensity: 2 });
+    expect(many.industries.length).toBeGreaterThan(few.industries.length);
+    expect(many.industryDensity).toBe(2);
+    expect(generateWorld(3, 128, 1950).industryDensity).toBe(1);
+  });
+
   it('města mají kapacitu budov alespoň na svou populaci', () => {
     for (const town of generateWorld(42, 256, 1950).towns) {
       expect(townCapacity(town)).toBeGreaterThanOrEqual(town.population);

@@ -1,6 +1,7 @@
 import {
   INDUSTRY_CHANGE_CHANCE,
   INDUSTRY_CHANGE_FACTOR,
+  INDUSTRY_FUND_COST,
   INDUSTRY_GROWTH_CHANCE,
   INDUSTRY_IDLE_CLOSE_CHANCE,
   INDUSTRY_IDLE_YEARS,
@@ -9,10 +10,13 @@ import {
   NEW_INDUSTRY_CHANCE_PER_TILE,
 } from './balance';
 import type { Game } from './game';
+import { formatMoney } from './game';
 import {
   INDUSTRY_SIZE,
   INDUSTRY_TYPES,
+  industrySiteProblem,
   industryTiles,
+  placeIndustryAt,
   tryPlaceIndustry,
   type Industry,
   type IndustryKind,
@@ -83,7 +87,8 @@ export class IndustryLife {
   private found(): void {
     const { game } = this;
     const { map, towns, industries } = game.world;
-    if (!game.rng.chance(map.width * map.height * NEW_INDUSTRY_CHANCE_PER_TILE)) return;
+    const density = game.world.industryDensity ?? 1;
+    if (!game.rng.chance(map.width * map.height * NEW_INDUSTRY_CHANCE_PER_TILE * density)) return;
     const kinds = Object.keys(INDUSTRY_TYPES) as IndustryKind[];
     const weights = kinds.map((kind) => 1 / INDUSTRY_TYPES[kind].tilesPerIndustry);
     let r = game.rng.next() * weights.reduce((a, b) => a + b, 0);
@@ -97,5 +102,24 @@ export class IndustryLife {
       game.events.emit('stationsChanged');
       return;
     }
+  }
+
+  // Hráčem založený závod s levým horním rohem (x, y); vrátí důvod, proč to nešlo
+  fund(kind: IndustryKind, x: number, y: number, rotation: number): string | null {
+    const { game } = this;
+    const { map, towns, industries } = game.world;
+    const problem = industrySiteProblem(map, towns, industries, kind, x, y);
+    if (problem) return `${problem}.`;
+    const cost = INDUSTRY_FUND_COST[kind];
+    if (game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+    const range = INDUSTRY_TYPES[kind].production;
+    const production = range ? game.rng.int(range.min, range.max) : 0;
+    const industry = placeIndustryAt(map, towns, industries, kind, x, y, rotation, production, game.clock.day);
+    industries.push(industry);
+    game.spend(cost, 'construction');
+    game.news(`Firma založila závod: ${industry.name}.`, centre(industry));
+    game.events.emit('industriesChanged');
+    game.events.emit('stationsChanged');
+    return null;
   }
 }

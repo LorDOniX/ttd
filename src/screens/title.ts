@@ -5,6 +5,7 @@ import {
   describeSave,
   launch,
   readAutosave,
+  type IndustryAmount,
   type NewGameOptions,
   type TownAmount,
   type WaterAmount,
@@ -122,12 +123,21 @@ function newGamePanel(back: () => void): HTMLElement {
     ],
     DEFAULT_OPTIONS.towns,
   );
+  const industries = select<IndustryAmount>(
+    [
+      ['few', 'Málo'],
+      ['normal', 'Středně'],
+      ['many', 'Hodně'],
+    ],
+    DEFAULT_OPTIONS.industries,
+  );
   const start = menuButton('Začít', '', () => {
     const options: NewGameOptions = {
       seedText: seed.value.trim() || String(Date.now()),
       size: Number(size.value) as NewGameOptions['size'],
       water: water.value as WaterAmount,
       towns: towns.value as TownAmount,
+      industries: industries.value as IndustryAmount,
     };
     launch({ mode: 'new', options });
   });
@@ -142,6 +152,7 @@ function newGamePanel(back: () => void): HTMLElement {
     field('Velikost mapy', size),
     field('Voda', water),
     field('Města a vesnice', towns),
+    field('Průmysl', industries),
     start,
     cancel,
   );
@@ -160,7 +171,7 @@ function mainPanel(showNewGame: () => void): HTMLElement {
       // Nečitelné automatické uložení se nenabízí
     }
   }
-  items.push(menuButton('Nová hra', 'seed, velikost, voda, města', showNewGame));
+  items.push(menuButton('Nová hra', 'seed, velikost, voda, města, průmysl', showNewGame));
   items.push(createLoadButton((save) => launch({ mode: 'load', save }), status, null));
   return h('div', { className: 'form' }, ...items, status);
 }

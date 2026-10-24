@@ -33,6 +33,8 @@ export interface SaveData {
   map: { width: number; height: number; tiles: string; owner: string };
   towns: Town[];
   industries?: Industry[];
+  // Hustota průmyslu z volby nové hry; starší uložení ji nemají
+  industryDensity?: number;
   rail: {
     pieces: string;
     stations: Station[];
@@ -110,6 +112,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
     },
     towns: world.towns,
     industries: world.industries,
+    industryDensity: world.industryDensity ?? 1,
     rail: {
       pieces: encode(rail.pieces),
       stations: rail.stations,
@@ -286,6 +289,7 @@ export function restoreGame(data: SaveData): Game {
     industries: (data.industries ?? [])
       .filter((i) => validIndustry(i, width, height))
       .map((i) => restoreIndustry(i, data.clock.day)),
+    industryDensity: Math.min(4, Math.max(0.1, finiteOr(data.industryDensity, 1))),
   };
   const game = new Game(world);
   game.companyName = data.game.companyName;

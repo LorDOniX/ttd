@@ -1,6 +1,7 @@
 // Vyvážení hry: ceny, výdělky, cestující a růst měst na jednom místě
 
 import type { Cargo } from './cargo';
+import type { IndustryKind } from '../world/industry';
 
 export const START_MONEY = 1_000_000;
 
@@ -595,8 +596,22 @@ export const INDUSTRY_MAX_GROWTH = 4;
 // Zpracovatel bez dodávek tolik let může každý měsíc s touto šancí zaniknout
 export const INDUSTRY_IDLE_YEARS = 5;
 export const INDUSTRY_IDLE_CLOSE_CHANCE = 0.05;
-// Měsíční šance na založení nového závodu na dlaždici mapy (256×256 ≈ jednou za půl roku)
+// Měsíční šance na založení nového závodu na dlaždici mapy (256×256 ≈ jednou za půl roku), násobí se hustotou průmyslu
 export const NEW_INDUSTRY_CHANCE_PER_TILE = 1 / 400_000;
+// Cena závodu, který založí hráč; zpracovatelé jsou dražší než těžba
+export const INDUSTRY_FUND_COST: Record<IndustryKind, number> = {
+  forest: 300_000,
+  farm: 350_000,
+  'coal-mine': 500_000,
+  'iron-mine': 550_000,
+  'oil-wells': 550_000,
+  sawmill: 600_000,
+  'power-station': 700_000,
+  'food-factory': 750_000,
+  factory: 900_000,
+  'steel-mill': 1_000_000,
+  refinery: 1_100_000,
+};
 
 // Hodnocení nástupiště 0–1 se denně posouvá k cílové hodnotě složené ze tří částí
 export const RATING_START = 0.5;

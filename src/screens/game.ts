@@ -31,16 +31,24 @@ import type { Town } from '../world/town';
 
 const WATER_LEVELS = { low: 0.28, normal: 0.34, high: 0.42 } as const;
 const TOWN_DENSITY = { few: 0.6, normal: 1, many: 1.5 } as const;
+const INDUSTRY_DENSITY = { few: 0.5, normal: 1, many: 2 } as const;
 // Posun šipkami ve výškách obrazovky za sekundu
 const KEY_PAN_SPEED = 0.8;
 
-export const DEFAULT_OPTIONS: Omit<NewGameOptions, 'seedText'> = { size: 256, water: 'normal', towns: 'normal' };
+export const DEFAULT_OPTIONS: Omit<NewGameOptions, 'seedText'> = {
+  size: 256,
+  water: 'normal',
+  towns: 'normal',
+  industries: 'normal',
+};
 
 function newGame(options: NewGameOptions): Game {
   return new Game(
     generateWorld(hashSeed(options.seedText), options.size, START_YEAR, {
       waterLevel: WATER_LEVELS[options.water],
       townDensity: TOWN_DENSITY[options.towns],
+      // Volba chybí v záměru uloženém před jejím zavedením
+      industryDensity: INDUSTRY_DENSITY[options.industries] ?? 1,
     }),
   );
 }
@@ -123,6 +131,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openFinance: () => openFinance(windows, game),
     openRailBuild: () => buildTools.openRailWindow(),
     openRoadBuild: () => buildTools.openRoadWindow(),
+    openIndustryFund: () => buildTools.openIndustryWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
     openTraffic: () =>
@@ -173,7 +182,8 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     { codes: ['KeyU'], key: 'U', label: 'Garáž aut', run: () => buildTools.toggleTool('road-depot') },
     { codes: ['KeyB'], key: 'B', label: 'Návěstidlo', run: () => buildTools.toggleTool('signal') },
     { codes: ['KeyX'], key: 'X', label: 'Demolice', run: () => buildTools.toggleTool('demolish') },
-    { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště nebo depo', run: () => buildTools.rotate() },
+    { codes: ['KeyP'], key: 'P', label: 'Založit průmysl', run: actions.openIndustryFund },
+    { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště, depo nebo závod', run: () => buildTools.rotate() },
     { codes: ['KeyI'], key: 'I', label: 'Informace o dlaždici („?“)', run: actions.toggleInfo },
     { codes: ['KeyF'], key: 'F', label: 'Finance', run: actions.openFinance },
     { codes: ['KeyV'], key: 'V', label: 'Seznam vlaků', run: actions.openTrainList },

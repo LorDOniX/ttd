@@ -650,6 +650,20 @@ body {
   gap: 4px;
 }
 
+.build-tools--grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.build-tool__price {
+  color: var(--button-muted);
+  font-size: 11px;
+}
+
+.build-tool--active .build-tool__price {
+  color: inherit;
+}
+
 .build-tool {
   display: flex;
   flex-direction: column;

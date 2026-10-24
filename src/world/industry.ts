@@ -152,7 +152,7 @@ const MIN_INDUSTRY_DISTANCE = 12;
 const TOWN_CLEARANCE = 4;
 const EDGE_MARGIN = 4;
 
-export function industryTiles(industry: Industry): { x: number; y: number }[] {
+export function industryTiles(industry: Pick<Industry, 'x' | 'y'>): { x: number; y: number }[] {
   const tiles: { x: number; y: number }[] = [];
   for (let dy = 0; dy < INDUSTRY_SIZE; dy++) {
     for (let dx = 0; dx < INDUSTRY_SIZE; dx++) tiles.push({ x: industry.x + dx, y: industry.y + dy });
@@ -164,7 +164,7 @@ export function industryTiles(industry: Industry): { x: number; y: number }[] {
 const CLEARING = 3;
 
 // Dlaždice pásu kolem areálu závodu
-export function clearingTiles(industry: Industry): { x: number; y: number }[] {
+export function clearingTiles(industry: Pick<Industry, 'x' | 'y'>): { x: number; y: number }[] {
   const tiles: { x: number; y: number }[] = [];
   for (let dy = -CLEARING; dy < INDUSTRY_SIZE + CLEARING; dy++) {
     for (let dx = -CLEARING; dx < INDUSTRY_SIZE + CLEARING; dx++) {
@@ -180,11 +180,12 @@ export function industryAt(industries: readonly Industry[], x: number, y: number
 }
 
 // Rozmístí závody na volnou zem mimo města; les na místě areálu a v pásu kolem něj se vykácí
-export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng): Industry[] {
+// density násobí počet závodů (hustota průmyslu z volby nové hry)
+export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng, density = 1): Industry[] {
   const industries: Industry[] = [];
   const area = map.width * map.height;
   for (const kind of Object.keys(INDUSTRY_TYPES) as IndustryKind[]) {
-    const count = Math.max(1, Math.round(area / INDUSTRY_TYPES[kind].tilesPerIndustry));
+    const count = Math.max(1, Math.round((area / INDUSTRY_TYPES[kind].tilesPerIndustry) * density));
     let placed = 0;
     for (let attempt = 0; attempt < count * 80 && placed < count; attempt++) {
       const industry = tryPlaceIndustry(map, towns, industries, kind, rng);
@@ -208,35 +209,75 @@ export function tryPlaceIndustry(
   const type = INDUSTRY_TYPES[kind];
   const x = rng.int(EDGE_MARGIN, map.width - EDGE_MARGIN - INDUSTRY_SIZE);
   const y = rng.int(EDGE_MARGIN, map.height - EDGE_MARGIN - INDUSTRY_SIZE);
-  const candidate: Industry = {
+  const rotation = rng.int(0, 3);
+  if (industrySiteProblem(map, towns, industries, kind, x, y)) return null;
+  const production = type.production ? rng.int(type.production.min, type.production.max) : 0;
+  return placeIndustryAt(map, towns, industries, kind, x, y, rotation, production, day);
+}
+
+// Proč na místě s levým horním rohem (x, y) nejde založit závod; null = jde
+export function industrySiteProblem(
+  map: GameMap,
+  towns: readonly Town[],
+  industries: readonly Industry[],
+  kind: IndustryKind,
+  x: number,
+  y: number,
+): string | null {
+  if (
+    x < EDGE_MARGIN ||
+    y < EDGE_MARGIN ||
+    x + INDUSTRY_SIZE > map.width - EDGE_MARGIN ||
+    y + INDUSTRY_SIZE > map.height - EDGE_MARGIN
+  ) {
+    return 'Příliš blízko okraje mapy';
+  }
+  const site = { x, y };
+  if (!industryTiles(site).every((t) => map.isFree(t.x, t.y))) return 'Areál potřebuje volnou zem 3×3';
+  // Okolí musí jít vykácet na trávu, takže v něm nesmí být voda ani stavby
+  if (kind !== 'forest' && !clearingTiles(site).every((t) => map.inBounds(t.x, t.y) && map.isFree(t.x, t.y))) {
+    return 'Kolem areálu musí být pás volné země bez vody a staveb';
+  }
+  const cx = x + INDUSTRY_SIZE / 2;
+  const cy = y + INDUSTRY_SIZE / 2;
+  if (towns.some((t) => Math.hypot(t.x - cx, t.y - cy) < KIND_RULES[t.kind].maxRadius + TOWN_CLEARANCE)) {
+    return 'Příliš blízko města';
+  }
+  if (industries.some((i) => Math.hypot(i.x - x, i.y - y) < MIN_INDUSTRY_DISTANCE)) {
+    return 'Příliš blízko jiného závodu';
+  }
+  return null;
+}
+
+// Založí závod na prověřeném místě: zabere dlaždice a vykácí okolí, do seznamu ho nepřidá
+export function placeIndustryAt(
+  map: GameMap,
+  towns: readonly Town[],
+  industries: readonly Industry[],
+  kind: IndustryKind,
+  x: number,
+  y: number,
+  rotation: number,
+  production: number,
+  day: number,
+): Industry {
+  const industry: Industry = {
     id: industries.reduce((max, i) => Math.max(max, i.id + 1), 0),
     kind,
-    name: '',
+    name: industryName(kind, towns, industries, x + INDUSTRY_SIZE / 2, y + INDUSTRY_SIZE / 2),
     x,
     y,
-    rotation: rng.int(0, 3),
-    production: 0,
+    rotation,
+    production,
     transported: 0,
     lastTransported: 0,
     received: 0,
     lastReceived: 0,
     lastDelivery: day,
   };
-  const tiles = industryTiles(candidate);
-  // Okolí musí jít vykácet na trávu, takže v něm nesmí být voda ani stavby
-  const clearing = kind === 'forest' ? [] : clearingTiles(candidate);
-  if (![...tiles, ...clearing].every((t) => map.inBounds(t.x, t.y) && map.isFree(t.x, t.y))) return null;
-  const cx = x + INDUSTRY_SIZE / 2;
-  const cy = y + INDUSTRY_SIZE / 2;
-  const nearTown = towns.some((t) => Math.hypot(t.x - cx, t.y - cy) < KIND_RULES[t.kind].maxRadius + TOWN_CLEARANCE);
-  const nearIndustry = industries.some((i) => Math.hypot(i.x - x, i.y - y) < MIN_INDUSTRY_DISTANCE);
-  if (nearTown || nearIndustry) return null;
-
-  candidate.name = industryName(kind, towns, industries, cx, cy);
-  if (type.production) candidate.production = rng.int(type.production.min, type.production.max);
-  for (const t of tiles) map.set(t.x, t.y, TileType.Industry);
-  for (const t of clearing) map.set(t.x, t.y, TileType.Grass);
-  return candidate;
+  for (const t of industryTiles(industry)) map.set(t.x, t.y, TileType.Industry);
+  if (kind !== 'forest') for (const t of clearingTiles(industry)) map.set(t.x, t.y, TileType.Grass);
+  return industry;
 }
 
 // Podle nejbližšího města, další stejného druhu u téhož města dostane první volné číslo

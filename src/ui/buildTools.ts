@@ -2,6 +2,7 @@ import {
   BRIDGE_PIECE_COST,
   DEMOLISH_REFUND,
   DEPOT_COST,
+  INDUSTRY_FUND_COST,
   MAX_STATION_LENGTH,
   MAX_STATION_TRACKS,
   PLATFORM_TILE_COST,
@@ -15,9 +16,10 @@ import { CARGOS } from '../game/cargo';
 import { roadPieceCost, stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoneyShort } from '../game/game';
 import { catchmentArea } from '../game/passengers';
-import { iconElement, sceneIcon, type SceneIcon } from '../render/icons';
+import { iconElement, industryIcon, sceneIcon, type SceneIcon } from '../render/icons';
 import type { BuildPreview } from '../render/preview';
 import { roadConnects } from '../render/roads';
+import { INDUSTRY_TYPES, industrySiteProblem, industryTiles, type IndustryKind } from '../world/industry';
 import { TileType, type TilePos } from '../world/map';
 import {
   EDGE_DELTA,
@@ -35,7 +37,7 @@ import { h } from './dom';
 import type { WindowManager } from './windows';
 
 export type BuildTool =
-  'track' | 'station' | 'depot' | 'signal' | 'road' | 'road-stop' | 'road-depot' | 'demolish' | 'info';
+  'track' | 'station' | 'depot' | 'signal' | 'road' | 'road-stop' | 'road-depot' | 'demolish' | 'industry' | 'info';
 
 // Dlaždice pod kurzorem a poloha kurzoru uvnitř ní (0..1)
 export interface PointerTile extends TilePos {
@@ -45,6 +47,20 @@ export interface PointerTile extends TilePos {
 
 // Největší strana obdélníku pro demolici
 const MAX_DEMOLISH_SIZE = 64;
+
+// Areál 3×3 se středem pod kurzorem, vrací levý horní roh
+function industrySite(tile: TilePos): TilePos {
+  return { x: tile.x - 1, y: tile.y - 1 };
+}
+
+// Co závod těží nebo vykupuje, do popisku tlačítka
+function industryRole(kind: IndustryKind): string {
+  const { produces, accepts } = INDUSTRY_TYPES[kind];
+  const parts: string[] = [];
+  if (accepts.length > 0) parts.push(`vykupuje ${accepts.map((t) => CARGOS[t].genitive).join(', ')}`);
+  if (produces) parts.push(`${accepts.length > 0 ? 'vyrábí' : 'těží'} ${CARGOS[produces].noun}`);
+  return parts.join(', ');
+}
 
 // Nástroje pro stavbu a demolici včetně náhledu a ceny u kurzoru; „?“ jen zobrazuje informace
 export class BuildTools {
@@ -59,6 +75,9 @@ export class BuildTools {
   private hover: PointerTile | null = null;
   private readonly tooltip = h('div', { className: 'tooltip' });
   private readonly buttons = new Map<string, Map<BuildTool, HTMLButtonElement>>();
+  private industryKind: IndustryKind = 'coal-mine';
+  private industryRotation = 0;
+  private industryButtons: Map<IndustryKind, HTMLButtonElement> | null = null;
 
   constructor(
     private readonly game: Game,
@@ -110,6 +129,47 @@ export class BuildTools {
       'Silnice a demolice: táhněte levým tlačítkem. Zastávka aut jde na rovnou silnici bez křižovatky, ' +
         'garáž se natočí vjezdem k silnici. R – otočit garáž, Esc – zrušit nástroj.',
     );
+  }
+
+  // Okno s druhy závodů; výběr druhu zapne nástroj pro umístění areálu na mapě
+  openIndustryWindow(): void {
+    const buttons = new Map<IndustryKind, HTMLButtonElement>();
+    const grid = h('div', { className: 'build-tools build-tools--grid' });
+    for (const kind of Object.keys(INDUSTRY_TYPES) as IndustryKind[]) {
+      const cost = formatMoneyShort(INDUSTRY_FUND_COST[kind]);
+      const b = h(
+        'button',
+        { className: 'build-tool', title: `${INDUSTRY_TYPES[kind].name} – ${cost} · ${industryRole(kind)}` },
+        iconElement(industryIcon(kind), '🏭', 'build-tool__icon'),
+        h('span', {}, INDUSTRY_TYPES[kind].name),
+        h('span', { className: 'build-tool__price' }, cost),
+      );
+      b.addEventListener('click', () => {
+        const same = this.tool === 'industry' && this.industryKind === kind;
+        this.industryKind = kind;
+        this.setTool(same ? null : 'industry');
+      });
+      buttons.set(kind, b);
+      grid.append(b);
+    }
+    const hint = h(
+      'div',
+      { className: 'build-text' },
+      h(
+        'div',
+        { className: 'form__hint' },
+        'Vyberte druh závodu a klikněte na mapu, kam se má postavit areál 3×3. Musí stát na volné zemi ' +
+          'mimo města, dál od jiných závodů a kromě lesa s pásem volné země kolem. R – otočit, Esc – zrušit nástroj.',
+      ),
+    );
+    this.windows.open('industry-fund', 'Založit průmysl', h('div', { className: 'form' }, grid, hint), {
+      onClose: () => {
+        this.industryButtons = null;
+        if (this.tool === 'industry') this.setTool(null);
+      },
+    });
+    this.industryButtons = buttons;
+    this.renderButtons();
   }
 
   // Tlačítka vedle sebe (ikona, pod ní popisek), pod nimi ceny a nápověda na šířku tlačítek
@@ -179,6 +239,7 @@ export class BuildTools {
   rotate(): void {
     if (this.tool === 'station') this.axis = this.axis === 'x' ? 'y' : 'x';
     if (this.tool === 'depot' || this.tool === 'road-depot') this.entrance = (this.entrance + 1) % 4;
+    if (this.tool === 'industry') this.industryRotation = (this.industryRotation + 1) % 4;
     this.refresh();
   }
 
@@ -198,6 +259,9 @@ export class BuildTools {
       this.report(this.game.construction.buildRoadStop(tile.x, tile.y));
     } else if (this.tool === 'road-depot') {
       this.report(this.game.construction.buildRoadDepot(tile.x, tile.y, this.roadDepotEntrance(tile)));
+    } else if (this.tool === 'industry') {
+      const site = industrySite(tile);
+      this.report(this.game.industryLife.fund(this.industryKind, site.x, site.y, this.industryRotation));
     } else {
       this.report(this.game.construction.buildDepot(tile.x, tile.y, this.depotEntrance(tile)));
     }
@@ -377,6 +441,9 @@ export class BuildTools {
     for (const buttons of this.buttons.values()) {
       for (const [tool, b] of buttons) b.classList.toggle('build-tool--active', tool === this.tool);
     }
+    for (const [kind, b] of this.industryButtons ?? []) {
+      b.classList.toggle('build-tool--active', this.tool === 'industry' && kind === this.industryKind);
+    }
   }
 
   // Náhled kolejí, vrací text s počtem nových dílků a cenou
@@ -469,6 +536,17 @@ export class BuildTools {
         this.preview.showArea([tile], 'invalid');
         text = 'Návěstidlo jen na rovnou kolej bez výhybky';
       }
+    } else if (this.tool === 'industry' && tile) {
+      const { map, towns, industries } = this.game.world;
+      const site = industrySite(tile);
+      const problem = industrySiteProblem(map, towns, industries, this.industryKind, site.x, site.y);
+      const cost = INDUSTRY_FUND_COST[this.industryKind];
+      const affordable = this.game.money >= cost;
+      const area = industryTiles(site).filter((t) => map.inBounds(t.x, t.y));
+      this.preview.showArea(area, !problem && affordable ? 'valid' : 'invalid');
+      text =
+        problem ??
+        `${INDUSTRY_TYPES[this.industryKind].name} · ${formatMoneyShort(cost)}${affordable ? '' : ' · nedostatek peněz'}`;
     } else if (this.tool === 'demolish' && tile) {
       const plan = this.game.construction.demolishPlan(this.demolishArea());
       this.preview.showArea(plan.tiles, 'demolish');

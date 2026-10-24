@@ -1,6 +1,6 @@
 import { GAME_SPEEDS, formatDate, type GameSpeed } from '../game/clock';
 import { Game, formatMoney } from '../game/game';
-import { iconElement, modelIcon, sceneIcon } from '../render/icons';
+import { iconElement, industryIcon, modelIcon, sceneIcon } from '../render/icons';
 import { h } from './dom';
 
 const NEWS_VISIBLE_MS = 30_000;
@@ -13,6 +13,7 @@ export interface ToolbarActions {
   toggleNight: () => boolean;
   openRailBuild: () => void;
   openRoadBuild: () => void;
+  openIndustryFund: () => void;
   rotateView: (direction: 1 | -1) => void;
   openMinimap: () => void;
   openTrainList: () => void;
@@ -129,6 +130,7 @@ export class Hud {
           sceneIcon('road-depot'),
         ),
         windowButton('rail-build', '🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild, sceneIcon('depot')),
+        windowButton('industry-fund', '🏭', 'Založit průmysl (P)', actions.openIndustryFund, industryIcon('factory')),
       ],
       [windowButton('news', '📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
     ];

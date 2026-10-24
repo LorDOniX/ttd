@@ -153,6 +153,17 @@ describe('uložení a načtení', () => {
     expect(copy.world.industries).toEqual(game.world.industries);
   });
 
+  it('hustota průmyslu se uloží, starší uložení dostane výchozí', () => {
+    const { game } = buildLine();
+    game.world.industryDensity = 2;
+    const data = JSON.parse(JSON.stringify(serializeGame(game, 'test')));
+    expect(restoreGame(parseSave(JSON.stringify(data))).world.industryDensity).toBe(2);
+    delete data.industryDensity;
+    expect(restoreGame(parseSave(JSON.stringify(data))).world.industryDensity).toBe(1);
+    data.industryDensity = 1e9;
+    expect(restoreGame(parseSave(JSON.stringify(data))).world.industryDensity).toBe(4);
+  });
+
   it('pohled kamery se uloží, neplatný se zahodí', () => {
     const { game } = buildLine();
     game.view = { x: 12.5, z: 30, zoom: 2, rotation: 3 };

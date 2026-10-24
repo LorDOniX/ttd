@@ -13,6 +13,8 @@ export interface World {
   towns: Town[];
   rail: RailNetwork;
   industries: Industry[];
+  // Násobek počtu závodů při tvorbě mapy i četnosti nových závodů; starší uložení ho nemají (= 1)
+  industryDensity?: number;
 }
 
 export interface GenerateOptions {
@@ -20,6 +22,8 @@ export interface GenerateOptions {
   waterLevel: number;
   // Násobek počtu měst a vesnic
   townDensity: number;
+  // Násobek počtu průmyslových závodů
+  industryDensity?: number;
 }
 
 const DEFAULT_OPTIONS: GenerateOptions = { waterLevel: 0.34, townDensity: 1 };
@@ -167,7 +171,8 @@ export function generateWorld(
   placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year, options.townDensity);
   generateTrees(map, seed);
   // Vlastní proud náhody, aby přidání průmyslu nezměnilo města na existujících seedech
-  const industries = placeIndustries(map, towns, new Rng(seed ^ 0x1d872b41));
+  const industryDensity = options.industryDensity ?? 1;
+  const industries = placeIndustries(map, towns, new Rng(seed ^ 0x1d872b41), industryDensity);
 
-  return { seed, map, towns, rail: new RailNetwork(map), industries };
+  return { seed, map, towns, rail: new RailNetwork(map), industries, industryDensity };
 }

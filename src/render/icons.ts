@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { loadModel, type Kit } from '../assets';
 import { Edge, PIECES, type Axis } from '../world/rail';
+import type { IndustryKind } from '../world/industry';
+import { buildIndustryPreview } from './industries';
 import {
   TrackView,
   createDepotMesh,
@@ -147,6 +149,11 @@ export function sceneIcon(icon: SceneIcon): Promise<string> {
 // Obrázek modelu z kitu (např. lokomotivy nebo auta) bez podkladu
 export function modelIcon(kit: Kit, model: string): Promise<string> {
   return cached(`${kit}/${model}`, async () => [await loadModel(kit, model)]);
+}
+
+// Celý areál závodu i s povrchem a plotem
+export function industryIcon(kind: IndustryKind): Promise<string> {
+  return cached(`industry/${kind}`, async () => [await buildIndustryPreview(kind)]);
 }
 
 // Prvek ikony: do vykreslení (nebo když WebGL selže) ukazuje náhradní znak

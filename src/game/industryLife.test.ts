@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   INDUSTRY_CHANGE_CHANCE,
+  INDUSTRY_FUND_COST,
   INDUSTRY_IDLE_CLOSE_CHANCE,
   INDUSTRY_IDLE_YEARS,
   NEW_INDUSTRY_CHANCE_PER_TILE,
 } from './balance';
 import { addIndustry, emptyGame, runDays } from '../test/fixtures';
-import { industryTiles } from '../world/industry';
+import { INDUSTRY_TYPES, industryTiles } from '../world/industry';
 import { TileType } from '../world/map';
 import type { Game } from './game';
 
@@ -20,6 +21,37 @@ function newsOf(game: Game): string[] {
   game.events.on('news', (text) => news.push(text));
   return news;
 }
+
+describe('založení závodu hráčem', () => {
+  it('postaví areál na volném místě a stráhne cenu', () => {
+    const game = emptyGame();
+    game.money = 5_000_000;
+    let changed = 0;
+    game.events.on('industriesChanged', () => changed++);
+
+    expect(game.industryLife.fund('coal-mine', 20, 20, 2)).toBeNull();
+
+    const [mine] = game.world.industries;
+    expect(mine).toMatchObject({ kind: 'coal-mine', x: 20, y: 20, rotation: 2, lastDelivery: game.clock.day });
+    const range = INDUSTRY_TYPES['coal-mine'].production!;
+    expect(mine.production).toBeGreaterThanOrEqual(range.min);
+    expect(mine.production).toBeLessThanOrEqual(range.max);
+    expect(industryTiles(mine).every((t) => game.world.map.get(t.x, t.y) === TileType.Industry)).toBe(true);
+    expect(game.money).toBe(5_000_000 - INDUSTRY_FUND_COST['coal-mine']);
+    expect(changed).toBe(1);
+  });
+
+  it('odmítne místo u jiného závodu, u okraje i bez peněz', () => {
+    const game = emptyGame();
+    game.money = 5_000_000;
+    addIndustry(game, 'farm', 20, 20);
+    expect(game.industryLife.fund('sawmill', 30, 20, 0)).toContain('jiného závodu');
+    expect(game.industryLife.fund('sawmill', 0, 0, 0)).toContain('okraje');
+    game.money = INDUSTRY_FUND_COST.refinery - 1;
+    expect(game.industryLife.fund('refinery', 40, 40, 0)).toContain('Nedostatek peněz');
+    expect(game.world.industries).toHaveLength(1);
+  });
+});
 
 describe('živý průmysl', () => {
   it('dobře obsloužený důl zvýší těžbu', () => {
