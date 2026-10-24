@@ -2,20 +2,49 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Town } from '../world/town';
 
-// Pod tímto zoomem jsou lampy i světla vozidel menší než pixel, svítí jen záře měst
+// Pod tímto zoomem jsou světla vozidel menší než pixel
 export const NIGHT_DETAIL_ZOOM = 0.7;
-const MAX_STREET_LAMPS = 32;
-const LAMP_INTENSITY = 2.5;
-const LAMP_HEIGHT = 0.35;
+const LAMP_COLOR = new THREE.Color(0xffcf83);
+const LAMP_LIGHT_INTENSITY = 1.6;
+// Poloměr světelné skvrny lampy na zemi v dlaždicích
+const LAMP_RADIUS = 1.4;
+// Jas středu skvrny 0..255, rezerva na překryv sousedních lamp
+const LAMP_PEAK = 200;
+const LIGHT_MAP_MAX_SIZE = 2048;
+const LIGHT_MAP_MAX_TEXELS_PER_TILE = 4;
 const MAX_TOWN_GLOWS = 1024;
 const MIN_VIEW_UPDATE_MS = 80;
 const FRUSTUM_NORMAL_EPSILON = 0.002;
 const FRUSTUM_DISTANCE_EPSILON = 0.3;
-const LAMP_BULB = new THREE.Mesh(
-  new THREE.SphereGeometry(0.045, 8, 6),
-  new THREE.MeshBasicMaterial({ color: 0xffd58a }),
-);
 const VIEW_SPHERE = new THREE.Sphere(new THREE.Vector3(), 0.2);
+
+// Barva texelu (sRGB bajty) pro každou úroveň jasu lampy
+const LAMP_LUT = (() => {
+  const lut = new Uint8Array(256 * 4);
+  const color = new THREE.Color();
+  for (let level = 0; level < 256; level++) {
+    const hex = color.copy(LAMP_COLOR).multiplyScalar(level / 255).getHex();
+    lut.set([(hex >> 16) & 255, (hex >> 8) & 255, hex & 255, 255], level * 4);
+  }
+  return lut;
+})();
+
+// Souřadnice do zapečených světel lamp: světové x, z (na mapu je přepočte repeat textury)
+export function withLampLightUv(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  const position = geometry.getAttribute('position');
+  if (!position) return geometry;
+  const uv = new Float32Array(position.count * 2);
+  for (let i = 0; i < position.count; i++) {
+    uv[i * 2] = position.getX(i);
+    uv[i * 2 + 1] = position.getZ(i);
+  }
+  geometry.setAttribute('uv1', new THREE.BufferAttribute(uv, 2));
+  return geometry;
+}
+
+function sameLamps(a: readonly THREE.Vector3[], b: readonly THREE.Vector3[]): boolean {
+  return a.length === b.length && a.every((lamp, i) => lamp.x === b[i].x && lamp.z === b[i].z);
+}
 
 function createTownGlowTexture(): THREE.DataTexture {
   const size = 64;
@@ -67,62 +96,82 @@ const TOWN_GLOW_MATERIAL = new THREE.MeshBasicMaterial({
   toneMapped: false,
 });
 
+// Světlo všech lamp je zapečené do textury přes celou mapu, kterou zem používá jako lightMap:
+// shadery nepočítají žádná bodová světla a cena nezávisí na počtu lamp
 export class NightLightsView {
   readonly object = new THREE.Group();
-  private readonly lamps: { bulb: THREE.Mesh; light: THREE.PointLight }[] = [];
-  private readonly lampLayer = new THREE.Group();
+  readonly lampLight: THREE.DataTexture;
+  private readonly texelsPerTile: number;
+  private readonly lampLevels: Uint8Array;
+  private readonly litMaterials: THREE.MeshLambertMaterial[] = [];
   private readonly townGlows: THREE.InstancedMesh;
   private readonly matrix = new THREE.Matrix4();
-  private lastDetailed: boolean | null = null;
   private readonly frustumSnapshot = new Float64Array(24);
   private hasFrustumSnapshot = false;
   private lastNight: boolean | null = null;
   private lastStreetLamps: readonly THREE.Vector3[] | null = null;
+  private bakedLamps: readonly THREE.Vector3[] = [];
   private lastTownCount = -1;
   private lastUpdate = -Infinity;
   private forceRefresh = true;
 
-  constructor() {
+  constructor(mapWidth: number, mapHeight: number) {
     this.townGlows = new THREE.InstancedMesh(TOWN_GLOW_GEOMETRY, TOWN_GLOW_MATERIAL, MAX_TOWN_GLOWS);
     this.townGlows.count = 0;
     this.townGlows.frustumCulled = false;
     this.townGlows.renderOrder = 1;
-    this.object.add(this.townGlows, this.lampLayer);
-    // Nevyužitá světla zůstávají ve scéně s nulovou intenzitou: změna jejich počtu by přeložila shadery všech materiálů
-    for (let index = 0; index < MAX_STREET_LAMPS; index++) {
-      const bulb = LAMP_BULB.clone();
-      bulb.visible = false;
-      const light = new THREE.PointLight(0xffcf83, 0, 5, 2);
-      this.lamps.push({ bulb, light });
-      this.lampLayer.add(bulb, light);
-    }
+    this.object.add(this.townGlows);
     this.object.visible = false;
+
+    this.texelsPerTile = Math.max(
+      1,
+      Math.min(LIGHT_MAP_MAX_TEXELS_PER_TILE, Math.floor(LIGHT_MAP_MAX_SIZE / Math.max(mapWidth, mapHeight))),
+    );
+    const width = mapWidth * this.texelsPerTile;
+    const height = mapHeight * this.texelsPerTile;
+    this.lampLevels = new Uint8Array(width * height);
+    const texture = new THREE.DataTexture(new Uint8Array(width * height * 4), width, height, THREE.RGBAFormat);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.channel = 1;
+    texture.repeat.set(1 / mapWidth, 1 / mapHeight);
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.generateMipmaps = true;
+    texture.needsUpdate = true;
+    this.lampLight = texture;
+  }
+
+  // Materiály země, na které lampy svítí; jejich geometrie potřebují uv1 z withLampLightUv
+  light(...materials: THREE.MeshLambertMaterial[]): void {
+    for (const material of materials) {
+      material.lightMap = this.lampLight;
+      material.lightMapIntensity = this.lastNight ? LAMP_LIGHT_INTENSITY : 0;
+      this.litMaterials.push(material);
+    }
   }
 
   update(
     night: boolean,
     frustum: THREE.Frustum,
-    cameraPosition: THREE.Vector3,
-    zoom: number,
     streetLamps: readonly THREE.Vector3[],
     towns: readonly Pick<Town, 'x' | 'y' | 'radius'>[] = [],
     now = performance.now(),
   ): void {
-    const detailed = zoom >= NIGHT_DETAIL_ZOOM;
-    const nightChanged = this.lastNight !== night || this.lastDetailed !== detailed;
+    if (this.lastStreetLamps !== streetLamps) this.bakeLamps(streetLamps);
+    const nightChanged = this.lastNight !== night;
     const sourcesChanged = this.lastStreetLamps !== streetLamps || this.lastTownCount !== towns.length;
     const frustumChanged = this.hasFrustumChanged(frustum);
     if (!nightChanged && !sourcesChanged && !frustumChanged && !this.forceRefresh) return;
     if (!nightChanged && !sourcesChanged && !this.forceRefresh && now - this.lastUpdate < MIN_VIEW_UPDATE_MS) return;
 
     this.lastNight = night;
-    this.lastDetailed = detailed;
     this.lastStreetLamps = streetLamps;
     this.lastTownCount = towns.length;
     this.lastUpdate = now;
     this.forceRefresh = false;
     this.saveFrustum(frustum);
     this.object.visible = night;
+    for (const material of this.litMaterials) material.lightMapIntensity = night ? LAMP_LIGHT_INTENSITY : 0;
     if (!night) {
       this.townGlows.count = 0;
       return;
@@ -140,28 +189,42 @@ export class NightLightsView {
     }
     this.townGlows.count = glows;
     this.townGlows.instanceMatrix.needsUpdate = true;
+  }
 
-    // Při oddálení světla ze scény zmizí úplně, shadery pak počítají bez nich (jen dvě varianty, žádné další překlady)
-    this.lampLayer.visible = detailed;
-    if (!detailed) return;
-
-    VIEW_SPHERE.radius = 0.2;
-    const visible = streetLamps
-      .filter((position) => {
-        VIEW_SPHERE.center.set(position.x, LAMP_HEIGHT, position.z);
-        return frustum.intersectsSphere(VIEW_SPHERE);
-      })
-      .sort((a, b) => a.distanceToSquared(cameraPosition) - b.distanceToSquared(cameraPosition))
-      .slice(0, MAX_STREET_LAMPS);
-
-    this.lamps.forEach(({ bulb, light }, index) => {
-      const position = visible[index];
-      bulb.visible = position !== undefined;
-      light.intensity = position ? LAMP_INTENSITY : 0;
-      if (!position) return;
-      bulb.position.set(position.x, position.y + LAMP_HEIGHT, position.z);
-      light.position.copy(bulb.position);
-    });
+  // Přepeče světla jen při skutečné změně poloh lamp, ne při každé přestavbě silnic
+  private bakeLamps(lamps: readonly THREE.Vector3[]): void {
+    if (sameLamps(this.bakedLamps, lamps)) return;
+    this.bakedLamps = lamps;
+    const { image } = this.lampLight;
+    const width = image.width;
+    const height = image.height;
+    const pixels = image.data as Uint8Array;
+    const levels = this.lampLevels;
+    levels.fill(0);
+    pixels.fill(0);
+    const scale = this.texelsPerTile;
+    const radius = LAMP_RADIUS * scale;
+    for (const lamp of lamps) {
+      const cx = lamp.x * scale;
+      const cz = lamp.z * scale;
+      const x0 = Math.max(0, Math.floor(cx - radius));
+      const x1 = Math.min(width - 1, Math.ceil(cx + radius));
+      const z0 = Math.max(0, Math.floor(cz - radius));
+      const z1 = Math.min(height - 1, Math.ceil(cz + radius));
+      for (let tz = z0; tz <= z1; tz++) {
+        for (let tx = x0; tx <= x1; tx++) {
+          const dx = tx + 0.5 - cx;
+          const dz = tz + 0.5 - cz;
+          const d2 = (dx * dx + dz * dz) / (radius * radius);
+          if (d2 >= 1) continue;
+          const i = tz * width + tx;
+          const level = Math.min(255, levels[i] + Math.round((1 - d2) * (1 - d2) * LAMP_PEAK));
+          levels[i] = level;
+          pixels.set(LAMP_LUT.subarray(level * 4, level * 4 + 4), i * 4);
+        }
+      }
+    }
+    this.lampLight.needsUpdate = true;
   }
 
   invalidate(): void {

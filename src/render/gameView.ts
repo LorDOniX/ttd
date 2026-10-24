@@ -59,7 +59,7 @@ export class GameView {
   private readonly hemisphere: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
   private readonly trafficLightView = new TrafficLightsView();
-  private readonly nightLights = new NightLightsView();
+  private readonly nightLights: NightLightsView;
   readonly trafficOverlay = new TrafficOverlayView();
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
@@ -89,6 +89,8 @@ export class GameView {
 
     this.terrain = new TerrainView(map, towns);
     const roads = (this.roads = new RoadView(map, world.rail));
+    this.nightLights = new NightLightsView(map.width, map.height);
+    this.nightLights.light(this.terrain.groundMaterial, ...roads.groundMaterials);
     this.ambientProps = new AmbientPropsView(map, world.rail, roads);
     this.trafficLights = new TrafficLights(map, world.rail, towns);
     this.cityTraffic = new CityTraffic(map, world.rail, towns, world.seed, roads.version, game.roadFleet.vehicles);
@@ -314,8 +316,6 @@ export class GameView {
     this.nightLights.update(
       this.nightMode,
       frustum,
-      this.camera.camera.position,
-      this.camera.camera.zoom,
       this.roads.streetLamps,
       this.game.world.towns,
       now,

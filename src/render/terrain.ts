@@ -3,6 +3,7 @@ import { GameMap, MapChanges, TileType } from '../world/map';
 import type { Town } from '../world/town';
 import type { Season } from '../game/seasons';
 import { updateWater, withWater } from './water';
+import { withLampLightUv } from './nightLights';
 
 const WATER = new THREE.Color(0x3a6fb0);
 // Mělčina u břehu, do hloubky přechází plynule přes dlaždici
@@ -122,6 +123,7 @@ function tileNoise(x: number, y: number): number {
 
 export class TerrainView {
   readonly object = new THREE.Group();
+  readonly groundMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
   private readonly geometry: THREE.BufferGeometry;
   private readonly greenDetails: THREE.BufferGeometry;
   private readonly greenDetailColors: Float32Array;
@@ -143,10 +145,7 @@ export class TerrainView {
     this.greenDetailColors = this.greenDetails.getAttribute('color').array as Float32Array;
     // Hladina (dlaždice vody i mělčina) má animované vlnky
     const surface = -WATER_DEPTH + 0.005;
-    const mesh = new THREE.Mesh(
-      this.geometry,
-      withWater(new THREE.MeshLambertMaterial({ vertexColors: true }), surface),
-    );
+    const mesh = new THREE.Mesh(this.geometry, withWater(this.groundMaterial, surface));
     mesh.onBeforeRender = () => updateWater(performance.now() / 1000);
     const details = new THREE.Mesh(
       this.greenDetails,
@@ -351,7 +350,7 @@ export class TerrainView {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
-    return geometry;
+    return withLampLightUv(geometry);
   }
 
   private writeTileHeight(positions: Float32Array, x: number, y: number): void {

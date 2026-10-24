@@ -4,6 +4,7 @@ import { EDGE_DELTA, Edge, RailNetwork, opposite } from '../world/rail';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BRIDGE_DECK, ROAD_BRIDGE, axisRotation } from './rail';
 import { SIDEWALK_WIDTH, WALK_INSET, hasCrosswalks, sidewalkTown, type RoadConnects } from '../world/sidewalks';
+import { withLampLightUv } from './nightLights';
 
 export type { RoadConnects } from '../world/sidewalks';
 
@@ -222,8 +223,8 @@ export class RoadView {
   // Dlaždice s chodníky podle města
   readonly sidewalks = new Map<number, number[]>();
   private streetLampPositions: THREE.Vector3[] = [];
-  private readonly road: THREE.Mesh;
-  private readonly sidewalk: THREE.Mesh;
+  private readonly road: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
+  private readonly sidewalk: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   private readonly bridges: THREE.Mesh;
   private readonly streetLights = new THREE.Group();
   // Kód dlaždice při poslední přestavbě: silnice, garáž a město vlastnící chodník
@@ -248,6 +249,10 @@ export class RoadView {
 
   get streetLamps(): readonly THREE.Vector3[] {
     return this.streetLampPositions;
+  }
+
+  get groundMaterials(): THREE.MeshLambertMaterial[] {
+    return [this.road.material, this.sidewalk.material];
   }
 
   setNightMode(night: boolean): void {
@@ -295,10 +300,11 @@ export class RoadView {
     const crosswalks = (x: number, y: number): boolean => hasCrosswalks(map, connects, x, y);
     const land = roadGeometry(tiles, connects, 0.005, crosswalks);
     this.road.geometry.dispose();
-    this.road.geometry =
+    this.road.geometry = withLampLightUv(
       bridgeTiles.length > 0
         ? mergeGeometries([land, roadGeometry(bridgeTiles, connects, BRIDGE_DECK + 0.005)])!
-        : land;
+        : land,
+    );
     this.bridges.geometry.dispose();
     this.bridges.geometry =
       bridgeTiles.length > 0
@@ -313,7 +319,7 @@ export class RoadView {
           )!
         : new THREE.BufferGeometry();
     this.sidewalk.geometry.dispose();
-    this.sidewalk.geometry = sidewalkGeometry(sidewalkTiles, connects);
+    this.sidewalk.geometry = withLampLightUv(sidewalkGeometry(sidewalkTiles, connects));
     this.rebuildStreetLights(sidewalkTiles, connects);
     this.version++;
   }
