@@ -47,6 +47,10 @@ varying vec3 vLampNormal;
 const LAMP_VERTEX_MAIN = /* glsl */ `
 vec4 lampWorld = vec4(transformed, 1.0);
 vec3 lampNormal = objectNormal;
+#ifdef USE_BATCHING
+lampWorld = batchingMatrix * lampWorld;
+lampNormal = mat3(batchingMatrix) * lampNormal;
+#endif
 #ifdef USE_INSTANCING
 lampWorld = instanceMatrix * lampWorld;
 lampNormal = mat3(instanceMatrix) * lampNormal;

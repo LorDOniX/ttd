@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { freezeStatic } from './staticObjects';
 import type { TrafficLightJunction, TrafficLights } from '../game/trafficLights';
 
 const BASE_Y = 0.025;
@@ -78,7 +79,10 @@ export class TrafficLightsView {
       if (this.models.has(key)) continue;
       const models = this.makeJunction(junction);
       this.models.set(key, models);
-      for (const model of models) this.object.add(model.group);
+      for (const model of models) {
+        freezeStatic(model.group);
+        this.object.add(model.group);
+      }
     }
   }
 

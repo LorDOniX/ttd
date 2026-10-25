@@ -52,6 +52,8 @@ export interface LabelTarget {
 export class GameView {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
   readonly scene = new THREE.Scene();
+  // Jen HTML popisky, aby je CSS2DRenderer nehledal mezi tisíci objekty hlavní scény
+  private readonly labelScene = new THREE.Scene();
   readonly camera: IsoCamera;
   readonly terrain: TerrainView;
   onLabelClick: (target: LabelTarget) => void = () => {};
@@ -161,10 +163,8 @@ export class GameView {
       this.vehicles.object,
       this.pedestrians.object,
       this.crossings.object,
-      this.labels.object,
-      stationLabels.object,
-      this.floatingTexts.object,
     );
+    this.labelScene.add(this.labels.object, stationLabels.object, this.floatingTexts.object, this.industries.labels);
 
     this.camera = new IsoCamera(
       this.renderer.domElement,
@@ -396,7 +396,7 @@ export class GameView {
     this.crossings.update(seconds * 1000, (x, y) => reservations.ownerAt(x, y) !== undefined);
     this.floatingTexts.update(now);
     this.renderer.render(this.scene, this.camera.camera);
-    this.labels.render(this.scene, this.camera.camera);
+    this.labels.render(this.labelScene, this.camera.camera);
     // Pohled se ukládá s hrou
     this.game.view = this.camera.view;
   }

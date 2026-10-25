@@ -237,16 +237,118 @@ function recolor(parts: Part[], scheme: Facade): Part[] {
   });
 }
 
-// Budovy všech měst jako instancované meshe, jeden na každou část modelu
+// Kapacita dávky roste s rezervou, aby se buffery při růstu měst nepřestavovaly často
+const GROWTH = 1.5;
+
+interface BatchItem {
+  geometry: THREE.BufferGeometry;
+  matrix: THREE.Matrix4;
+}
+
+// Jeden BatchedMesh pro díly se stejným materiálem a atributy, kreslí se jedním voláním. Geometrie se do
+// dávky nahrají jen jednou, při přestavbě měst se přepisují jen instance.
+export class GeometryBatch {
+  readonly mesh: THREE.BatchedMesh;
+  private readonly geometryIds = new Map<THREE.BufferGeometry, number>();
+  private instanceIds: number[] = [];
+  private vertexCapacity: number;
+  private indexCapacity: number;
+  private vertexCount = 0;
+  private indexCount = 0;
+
+  constructor(material: THREE.Material, items: readonly BatchItem[]) {
+    const fresh = this.freshGeometries(items);
+    this.vertexCapacity = Math.ceil(Math.max(1, sumVertices(fresh)) * GROWTH);
+    this.indexCapacity = Math.ceil(Math.max(1, sumIndices(fresh)) * GROWTH);
+    this.mesh = new THREE.BatchedMesh(
+      Math.ceil(Math.max(1, items.length) * GROWTH),
+      this.vertexCapacity,
+      this.indexCapacity,
+      material,
+    );
+    // Neprůhledné budovy řadit netřeba, za snímek se jen vyřadí ty mimo záběr
+    this.mesh.sortObjects = false;
+    this.set(items);
+  }
+
+  set(items: readonly BatchItem[]): void {
+    const { mesh } = this;
+    const fresh = this.freshGeometries(items);
+    const vertices = this.vertexCount + sumVertices(fresh);
+    const indices = this.indexCount + sumIndices(fresh);
+    if (vertices > this.vertexCapacity || indices > this.indexCapacity) {
+      this.vertexCapacity = Math.max(this.vertexCapacity, Math.ceil(vertices * GROWTH));
+      this.indexCapacity = Math.max(this.indexCapacity, Math.ceil(indices * GROWTH));
+      mesh.setGeometrySize(this.vertexCapacity, this.indexCapacity);
+    }
+    for (const geometry of fresh) {
+      this.geometryIds.set(geometry, mesh.addGeometry(geometry));
+      this.vertexCount += geometry.getAttribute('position').count;
+      this.indexCount += geometry.index?.count ?? 0;
+    }
+
+    if (items.length > mesh.maxInstanceCount) mesh.setInstanceCount(Math.ceil(items.length * GROWTH));
+    items.forEach(({ geometry, matrix }, i) => {
+      const geometryId = this.geometryIds.get(geometry)!;
+      let id = this.instanceIds[i];
+      if (id === undefined) {
+        id = mesh.addInstance(geometryId);
+        this.instanceIds.push(id);
+      } else {
+        mesh.setGeometryIdAt(id, geometryId);
+      }
+      mesh.setMatrixAt(id, matrix);
+    });
+    for (const id of this.instanceIds.splice(items.length)) mesh.deleteInstance(id);
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+  }
+
+  private freshGeometries(items: readonly BatchItem[]): THREE.BufferGeometry[] {
+    const fresh = new Set<THREE.BufferGeometry>();
+    for (const { geometry } of items) if (!this.geometryIds.has(geometry)) fresh.add(geometry);
+    return [...fresh];
+  }
+}
+
+function sumVertices(geometries: readonly THREE.BufferGeometry[]): number {
+  return geometries.reduce((sum, geometry) => sum + geometry.getAttribute('position').count, 0);
+}
+
+function sumIndices(geometries: readonly THREE.BufferGeometry[]): number {
+  return geometries.reduce((sum, geometry) => sum + (geometry.index?.count ?? 0), 0);
+}
+
+// Atributy a index geometrie; do jedné dávky smějí jen geometrie se stejnými
+function attributeSignature(geometry: THREE.BufferGeometry): string {
+  const attributes = Object.entries(geometry.attributes)
+    .map(([name, attribute]) => `${name}:${attribute.itemSize}:${attribute.normalized}`)
+    .sort();
+  return `${attributes.join(',')}|${geometry.index ? 'indexed' : 'flat'}`;
+}
+
+// Sníh na střeše dílu; díly jsou v cache načtených fasád, takže se spočte jen jednou
+const snowRoofs = new WeakMap<Part, THREE.BufferGeometry | null>();
+function snowRoofOf(part: Part): THREE.BufferGeometry | null {
+  let snow = snowRoofs.get(part);
+  if (snow === undefined) {
+    snow = createSnowRoofGeometry(part.geometry, part.matrix);
+    snowRoofs.set(part, snow);
+  }
+  return snow;
+}
+
+// Budovy všech měst v dávkách BatchedMesh: jedna na materiál a sadu atributů a jedna se sněhem
 export class BuildingsView {
   readonly object = new THREE.Group();
   private generation = 0;
   private season: Season = 'summer';
-  private snowMeshes: THREE.InstancedMesh[] = [];
+  private readonly batches = new Map<string, GeometryBatch>();
+  private snow: GeometryBatch | null = null;
 
   setSeason(season: Season): void {
     this.season = season;
-    for (const mesh of this.snowMeshes) mesh.visible = season === 'winter';
+    if (this.snow) this.snow.mesh.visible = season === 'winter';
   }
 
   async rebuild(towns: readonly Town[]): Promise<void> {
@@ -271,46 +373,55 @@ export class BuildingsView {
       }
     }
 
-    const meshes: THREE.InstancedMesh[] = [];
-    const snowMeshes: THREE.InstancedMesh[] = [];
-    await Promise.all(
-      [...groups.values()].map(async (group) => {
-        const parts = await loadFacade(group.kit, group.model, group.facade);
-        for (const part of parts) {
-          for (const material of [part.material].flat()) withLampLight(material);
-          const mesh = new THREE.InstancedMesh(part.geometry, part.material, group.matrices.length);
-          const m = new THREE.Matrix4();
-          group.matrices.forEach((placement, i) => {
-            mesh.setMatrixAt(i, m.multiplyMatrices(placement, part.matrix));
-          });
-          mesh.computeBoundingSphere();
-          meshes.push(mesh);
-
-          const snowGeometry = createSnowRoofGeometry(part.geometry, part.matrix);
-          if (!snowGeometry) continue;
-          const snowMesh = new THREE.InstancedMesh(snowGeometry, SNOW_MATERIAL, group.matrices.length);
-          group.matrices.forEach((placement, i) => snowMesh.setMatrixAt(i, placement));
-          snowMesh.instanceMatrix.needsUpdate = true;
-          snowMesh.visible = this.season === 'winter';
-          snowMesh.computeBoundingSphere();
-          snowMeshes.push(snowMesh);
-        }
-      }),
+    const loaded = await Promise.all(
+      [...groups.values()].map(async (group) => ({
+        group,
+        parts: await loadFacade(group.kit, group.model, group.facade),
+      })),
     );
-
     // Mezitím mohl začít novější rebuild
-    if (generation !== this.generation) {
-      for (const mesh of meshes) mesh.dispose();
-      for (const mesh of snowMeshes) {
-        mesh.dispose();
-        mesh.geometry.dispose();
+    if (generation !== this.generation) return;
+
+    // Všechny modely jednoho kitu sdílejí paletu colormap, každý soubor má ale vlastní kopii materiálu;
+    // díly se proto řadí podle kitu, názvu materiálu a atributů a kreslí se prvním materiálem skupiny
+    const items = new Map<string, { material: THREE.Material; items: BatchItem[] }>();
+    const snowItems: BatchItem[] = [];
+    for (const { group, parts } of loaded) {
+      for (const part of parts) {
+        // Kenney city kity mají u každého dílu jediný materiál
+        if (Array.isArray(part.material)) continue;
+        const key = `${group.kit}|${part.material.type}|${part.material.name}|${attributeSignature(part.geometry)}`;
+        let bucket = items.get(key);
+        if (!bucket) {
+          bucket = { material: this.batches.get(key)?.mesh.material ?? part.material, items: [] };
+          items.set(key, bucket);
+        }
+        const snow = snowRoofOf(part);
+        for (const placement of group.matrices) {
+          bucket.items.push({ geometry: part.geometry, matrix: placement.clone().multiply(part.matrix) });
+          if (snow) snowItems.push({ geometry: snow, matrix: placement });
+        }
       }
-      return;
     }
-    for (const old of this.object.children as THREE.InstancedMesh[]) old.dispose();
-    for (const mesh of this.snowMeshes) mesh.geometry.dispose();
-    this.object.clear();
-    if (meshes.length > 0 || snowMeshes.length > 0) this.object.add(...meshes, ...snowMeshes);
-    this.snowMeshes = snowMeshes;
+
+    for (const [key, { material, items: batchItems }] of items) {
+      const batch = this.batches.get(key);
+      if (batch) {
+        batch.set(batchItems);
+        continue;
+      }
+      withLampLight(material);
+      const created = new GeometryBatch(material, batchItems);
+      this.batches.set(key, created);
+      this.object.add(created.mesh);
+    }
+    for (const [key, batch] of this.batches) if (!items.has(key)) batch.set([]);
+
+    if (this.snow) this.snow.set(snowItems);
+    else if (snowItems.length > 0) {
+      this.snow = new GeometryBatch(SNOW_MATERIAL, snowItems);
+      this.snow.mesh.visible = this.season === 'winter';
+      this.object.add(this.snow.mesh);
+    }
   }
 }

@@ -6,6 +6,7 @@ import { INDUSTRY_SIZE, type Industry, type IndustryKind } from '../world/indust
 import { createSnowRoofGeometry, SNOW_MATERIAL } from './buildings';
 import { FLOODLIGHT_POOLS, industryFence, industryFloodlights, industryGround, setFloodlights } from './industryYard';
 import { withLampLight } from './nightLights';
+import { freezeStatic } from './staticObjects';
 import { treeObject } from './trees';
 
 const COAL = 0x2b2927;
@@ -484,6 +485,8 @@ export const INDUSTRY_ASSET_MODELS: readonly { kit: Kit; name: string }[] = [
 // Průmyslové areály složené z modelů Kenney a jednoduchých těles, s popiskem názvu
 export class IndustriesView {
   readonly object = new THREE.Group();
+  // Popisky závodů; vykresluje je CSS2DRenderer ve vlastní scéně
+  readonly labels = new THREE.Group();
   private readonly views = new Map<
     number,
     { area: THREE.Object3D; label: CSS2DObject; animations: ((seconds: number) => void)[] }
@@ -516,7 +519,8 @@ export class IndustriesView {
     for (const [id, view] of this.views) {
       if (ids.has(id)) continue;
       // Popisek musí odejít sám, jinak jeho element zůstane v DOM
-      this.object.remove(view.area, view.label);
+      this.object.remove(view.area);
+      this.labels.remove(view.label);
       disposeSnow(view.area);
       this.views.delete(id);
     }
@@ -570,6 +574,9 @@ export class IndustriesView {
     const half = INDUSTRY_SIZE / 2;
     area.position.set(industry.x + half, 0, industry.y + half);
     area.rotation.y = (industry.rotation * Math.PI) / 2;
-    this.object.add(area, label);
+    freezeStatic(area);
+    freezeStatic(label);
+    this.object.add(area);
+    this.labels.add(label);
   }
 }

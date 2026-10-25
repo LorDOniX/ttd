@@ -105,8 +105,29 @@ export function vehicleRunningCost(vehicle: RoadVehicle, today: number): number 
   return isOldVehicle(vehicle, today) ? base * OLD_TRAIN_COST_FACTOR : base;
 }
 
+type VehiclePoint = Readonly<{ x: number; y: number; dx: number; dy: number }>;
+
+// Poslední spočtený bod pro každou cestu: vyhýbání se ptá na polohu téhož vozidla mnohokrát za snímek.
+// Konce a délka cesty poznají přidání i odebrání dlaždic.
+const pointCache = new WeakMap<
+  TilePos[],
+  { pos: number; length: number; first: TilePos; last: TilePos; point: VehiclePoint }
+>();
+
 // Bod na cestě a směr jízdy (jednotkový vektor) ve vzdálenosti pos
-export function vehiclePoint(path: TilePos[], pos: number): { x: number; y: number; dx: number; dy: number } {
+export function vehiclePoint(path: TilePos[], pos: number): VehiclePoint {
+  const cached = pointCache.get(path);
+  const first = path[0];
+  const last = path[path.length - 1];
+  if (cached && cached.pos === pos && cached.length === path.length && cached.first === first && cached.last === last) {
+    return cached.point;
+  }
+  const point = computeVehiclePoint(path, pos);
+  pointCache.set(path, { pos, length: path.length, first, last, point });
+  return point;
+}
+
+function computeVehiclePoint(path: TilePos[], pos: number): VehiclePoint {
   if (path.length === 0) return { x: 0, y: 0, dx: 1, dy: 0 };
   if (path.length === 1) return { x: path[0].x + 0.5, y: path[0].y + 0.5, dx: 1, dy: 0 };
   const turn = Math.round(pos);
