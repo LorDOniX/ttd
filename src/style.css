@@ -448,6 +448,13 @@ body {
   font-weight: 600;
 }
 
+.statusbar__fps {
+  min-width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
 .statusbar__money--negative {
   color: var(--negative);
 }

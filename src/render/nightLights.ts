@@ -78,6 +78,8 @@ const lampLit = new WeakSet<THREE.Material>();
 
 // Doplní materiálu světlo zapečených lamp podle světové polohy, nepotřebuje uv1
 export function withLampLight(material: THREE.Material): void {
+  // Neosvětlený materiál (např. kouř) nemá ve shaderu normálu ani irradiance
+  if (material instanceof THREE.MeshBasicMaterial) return;
   if (lampLit.has(material)) return;
   lampLit.add(material);
   const previous = material.onBeforeCompile.bind(material);

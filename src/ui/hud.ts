@@ -28,10 +28,13 @@ export class Hud {
   private readonly companyEl = h('strong');
   private readonly newsEl = h('span', { className: 'statusbar__news' });
   private readonly moneyEl = h('span', { className: 'statusbar__money' });
+  private readonly fpsEl = h('span', { className: 'statusbar__fps', title: 'Snímky za sekundu' });
   private readonly infoButton: HTMLButtonElement;
   // Ikony podle id okna, které otevírají; okno se zobrazí pod nimi
   readonly windowButtons = new Map<string, HTMLButtonElement>();
   private newsTimer = 0;
+  private fpsFrames = 0;
+  private fpsStart: number | null = null;
 
   constructor(root: HTMLElement, game: Game, actions: ToolbarActions) {
     const pause = h('button', { className: 'toolbar__button', title: 'Pozastavit (mezerník)' });
@@ -142,7 +145,8 @@ export class Hud {
 
     const center = h('span', { className: 'statusbar__center', title: 'Historie zpráv' }, this.companyEl, this.newsEl);
     center.addEventListener('click', actions.openNews);
-    const statusbar = h('div', { className: 'statusbar' }, this.dateEl, center, this.moneyEl);
+    const statusbar = h('div', { className: 'statusbar' }, this.dateEl, center, this.moneyEl, this.fpsEl);
+    this.fpsEl.hidden = true;
     root.append(toolbar, statusbar);
 
     game.clock.events.on('day', (date) => (this.dateEl.textContent = formatDate(date)));
@@ -157,6 +161,31 @@ export class Hud {
 
   setInfoActive(active: boolean): void {
     this.infoButton.classList.toggle('toolbar__button--active', active);
+  }
+
+  get fpsVisible(): boolean {
+    return !this.fpsEl.hidden;
+  }
+
+  setFpsVisible(visible: boolean): void {
+    this.fpsEl.hidden = !visible;
+    this.fpsFrames = 0;
+    this.fpsStart = null;
+  }
+
+  // Volá se každý snímek; údaj se obnoví jednou za sekundu
+  countFrame(now: number): void {
+    if (this.fpsEl.hidden) return;
+    if (this.fpsStart === null) {
+      this.fpsStart = now;
+      return;
+    }
+    this.fpsFrames++;
+    const elapsed = now - this.fpsStart;
+    if (elapsed < 1000) return;
+    this.fpsEl.textContent = `${Math.round((this.fpsFrames * 1000) / elapsed)} FPS`;
+    this.fpsFrames = 0;
+    this.fpsStart = now;
   }
 
   private renderMoney(money: number): void {

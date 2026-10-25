@@ -125,6 +125,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
         grid,
         { visible: () => cursor.enabled, setVisible: (on: boolean) => cursor.setEnabled(on) },
         { visible: () => view.forestMistEnabled, setVisible: (on: boolean) => view.setForestMistEnabled(on) },
+        { visible: () => hud.fpsVisible, setVisible: (on: boolean) => hud.setFpsVisible(on) },
         seedText,
         shortcuts.help(),
         { mode: view.selectedSeasonMode, setMode: (mode) => view.setSeasonMode(mode) },
@@ -303,6 +304,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
       isoCamera.pan(panX * step, panY * step);
     }
     view.frame(now, dt);
+    hud.countFrame(now);
     lastFrame = now;
   });
 }
