@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { GameMap, MapChanges, TileType } from '../world/map';
 import type { Town } from '../world/town';
-import type { Season, SeasonBlend } from '../game/seasons';
-import { updateWater, withWater } from './water';
+import { seasonWeight, type Season, type SeasonBlend } from '../game/seasons';
+import { setWaterIce, withWater } from './water';
 import { withLampLightUv } from './nightLights';
 
 const WATER = new THREE.Color(0x3a6fb0);
@@ -146,7 +146,6 @@ export class TerrainView {
     // Hladina (dlaždice vody i mělčina) má animované vlnky
     const surface = -WATER_DEPTH + 0.005;
     const mesh = new THREE.Mesh(this.geometry, withWater(this.groundMaterial, surface));
-    mesh.onBeforeRender = () => updateWater(performance.now() / 1000);
     const details = new THREE.Mesh(
       this.greenDetails,
       new THREE.MeshBasicMaterial({
@@ -168,10 +167,12 @@ export class TerrainView {
     this.grid.visible = visible;
   }
 
-  setSeason({ from, to, t }: SeasonBlend): void {
+  setSeason(blend: SeasonBlend): void {
+    const { from, to, t } = blend;
     const key = `${from}>${to}:${t}`;
     if (this.seasonKey === key) return;
     this.seasonKey = key;
+    setWaterIce(seasonWeight(blend, 'winter'));
     const a = TERRAIN_PALETTES[from];
     const b = TERRAIN_PALETTES[to];
     const tint = (k: number): number => a.detailTint[k] + (b.detailTint[k] - a.detailTint[k]) * t;

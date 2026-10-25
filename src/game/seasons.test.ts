@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dominantSeason, seasonBlendForDate, seasonForDate, type Season } from './seasons';
+import { dominantSeason, seasonWeight, seasonBlendForDate, seasonForDate, type Season } from './seasons';
 
 describe('roční období', () => {
   it.each([
@@ -32,5 +32,12 @@ describe('roční období', () => {
     expect(seasonBlendForDate({ month: 8, day: 1 }, 'summer')).toEqual({ from: 'summer', to: 'summer', t: 1 });
     expect(dominantSeason({ from: 'summer', to: 'autumn', t: 0.4 })).toBe('summer');
     expect(dominantSeason({ from: 'summer', to: 'autumn', t: 0.6 })).toBe('autumn');
+  });
+
+  it('podíl období roste s přechodem', () => {
+    expect(seasonWeight({ from: 'autumn', to: 'winter', t: 0.25 }, 'winter')).toBeCloseTo(0.25);
+    expect(seasonWeight({ from: 'winter', to: 'spring', t: 0.25 }, 'winter')).toBeCloseTo(0.75);
+    expect(seasonWeight({ from: 'winter', to: 'winter', t: 1 }, 'winter')).toBe(1);
+    expect(seasonWeight({ from: 'summer', to: 'autumn', t: 0.5 }, 'winter')).toBe(0);
   });
 });

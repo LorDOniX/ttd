@@ -73,7 +73,7 @@ export class CrossingsView {
   readonly object = new THREE.Group();
   private readonly views = new Map<number, CrossingView>();
   private readonly changes: MapChanges;
-  private lastFrame = performance.now();
+  private lastFrame = 0;
 
   constructor(
     private readonly map: GameMap,

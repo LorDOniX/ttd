@@ -21,6 +21,7 @@ import { RoadVehiclesView } from './roadVehicles';
 import { RoadView } from './roads';
 import { SignalsView } from './signals';
 import { TerrainView } from './terrain';
+import { updateWater } from './water';
 import { TrafficLightsView } from './trafficLights';
 import { TrafficOverlayView } from './trafficOverlay';
 import { NIGHT_DETAIL_ZOOM, NightLightsView } from './nightLights';
@@ -85,6 +86,8 @@ export class GameView {
   // Průběh soumraku 0 (den) až 1 (noc), mění se plynule v reálném čase
   private nightAmount = 0;
   private lastFrameTime: number | null = null;
+  // Čas animací scény (kouř, listí, vlnky…) v sekundách; při pauze stojí
+  private effectsSeconds = 0;
   private readonly sky = new THREE.Color(DAY_SKY);
 
   constructor(
@@ -348,6 +351,7 @@ export class GameView {
   frame(now: number, dtMs: number, trafficDtMs = dtMs): void {
     this.updateNight(this.lastFrameTime === null ? 0 : now - this.lastFrameTime);
     this.lastFrameTime = now;
+    if (!this.game.clock.paused) this.effectsSeconds += Math.min(dtMs, 100) / 1000;
     this.syncMap();
     const frustum = this.camera.frustum();
     // Chodci chodí v reálném čase nezávisle na rychlosti hry, při pauze stojí
@@ -374,7 +378,8 @@ export class GameView {
     this.game.roadFleet.setTrafficObstacles(this.cityTraffic.obstacles());
     this.syncMap();
     this.applySeason();
-    const seconds = now / 1000;
+    const seconds = this.effectsSeconds;
+    updateWater(seconds);
     this.trees.update(seconds);
     this.forestMist.update(seconds, this.camera.camera, frustum);
     this.fallingLeaves.update(seconds, this.camera.camera, frustum);
@@ -387,7 +392,7 @@ export class GameView {
     this.trafficLightView.update(this.trafficLights);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
-    this.crossings.update(now, (x, y) => reservations.ownerAt(x, y) !== undefined);
+    this.crossings.update(seconds * 1000, (x, y) => reservations.ownerAt(x, y) !== undefined);
     this.floatingTexts.update(now);
     this.renderer.render(this.scene, this.camera.camera);
     this.labels.render(this.scene, this.camera.camera);

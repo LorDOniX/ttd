@@ -34,3 +34,8 @@ export function seasonBlendForDate(date: Pick<GameDate, 'month' | 'day'>, mode: 
 export function dominantSeason(blend: SeasonBlend): Season {
   return blend.t < 0.5 ? blend.from : blend.to;
 }
+
+// Podíl daného období ve vzhledu 0 až 1
+export function seasonWeight({ from, to, t }: SeasonBlend, season: Season): number {
+  return (from === season ? 1 - t : 0) + (to === season ? t : 0);
+}

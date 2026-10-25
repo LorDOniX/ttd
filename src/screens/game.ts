@@ -174,6 +174,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     { codes: ['Digit1', 'Numpad1'], key: '1', label: 'Rychlost ×1', run: () => (clock.speed = 1) },
     { codes: ['Digit2', 'Numpad2'], key: '2', label: 'Rychlost ×2', run: () => (clock.speed = 2) },
     { codes: ['Digit3', 'Numpad3'], key: '3', label: 'Rychlost ×4', run: () => (clock.speed = 4) },
+    { codes: ['Digit4', 'Numpad4'], key: '4', label: 'Rychlost ×8', run: () => (clock.speed = 8) },
     { codes: ['KeyQ'], key: 'Q', label: 'Otočit pohled doleva', run: () => isoCamera.rotate(-1) },
     { codes: ['KeyE'], key: 'E', label: 'Otočit pohled doprava', run: () => isoCamera.rotate(1) },
     { codes: ['KeyK'], key: 'K', label: 'Koleje', run: () => buildTools.toggleTool('track') },
