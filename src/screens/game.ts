@@ -124,6 +124,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
         game,
         grid,
         { visible: () => cursor.enabled, setVisible: (on: boolean) => cursor.setEnabled(on) },
+        { visible: () => view.forestMistEnabled, setVisible: (on: boolean) => view.setForestMistEnabled(on) },
         seedText,
         shortcuts.help(),
         { mode: view.selectedSeasonMode, setMode: (mode) => view.setSeasonMode(mode) },

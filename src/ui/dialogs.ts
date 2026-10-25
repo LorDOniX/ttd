@@ -33,6 +33,7 @@ export function openSettings(
   game: Game,
   grid: Toggle,
   highlight: Toggle,
+  mist: Toggle,
   seed: string,
   shortcutsHelp: HTMLElement,
   seasonDebug: SeasonDebugControl,
@@ -42,6 +43,9 @@ export function openSettings(
 
   const highlightInput = h('input', { type: 'checkbox', checked: highlight.visible() });
   highlightInput.addEventListener('change', () => highlight.setVisible(highlightInput.checked));
+
+  const mistInput = h('input', { type: 'checkbox', checked: mist.visible() });
+  mistInput.addEventListener('change', () => mist.setVisible(mistInput.checked));
 
   const renewInput = h('input', { type: 'checkbox', checked: game.autoRenew });
   renewInput.addEventListener('change', () => (game.autoRenew = renewInput.checked));
@@ -76,6 +80,7 @@ export function openSettings(
     { className: 'form' },
     h('label', { className: 'form__row' }, gridInput, ' Zobrazit mřížku'),
     h('label', { className: 'form__row' }, highlightInput, ' Zvýraznit dlaždici pod kurzorem'),
+    h('label', { className: 'form__row' }, mistInput, ' Mlha'),
     h('label', { className: 'form__row' }, renewInput, ' Automaticky obnovovat staré vlaky'),
     h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),

@@ -14,6 +14,7 @@ import { CrossingsView } from './crossings';
 import { IndustriesView } from './industries';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
 import { FallingLeavesView } from './fallingLeaves';
+import { ForestMistView } from './forestMist';
 import { PedestriansView } from './pedestrians';
 import { RailView } from './rail';
 import { RoadVehiclesView } from './roadVehicles';
@@ -60,6 +61,7 @@ export class GameView {
   private readonly pedestrians: PedestriansView;
   private readonly trees: TreesView;
   private readonly fallingLeaves: FallingLeavesView;
+  private readonly forestMist: ForestMistView;
   private readonly animals: AnimalsView;
   private readonly buildings: BuildingsView;
   private readonly industries: IndustriesView;
@@ -119,6 +121,7 @@ export class GameView {
     this.trees = new TreesView(map);
     void this.trees.refresh();
     this.fallingLeaves = new FallingLeavesView(map);
+    this.forestMist = new ForestMistView(map);
     this.animals = new AnimalsView(map);
     void this.animals.refresh();
     this.industries = new IndustriesView();
@@ -146,6 +149,7 @@ export class GameView {
       this.buildings.object,
       this.industries.object,
       this.trees.object,
+      this.forestMist.object,
       this.fallingLeaves.object,
       this.animals.object,
       railView.object,
@@ -237,6 +241,14 @@ export class GameView {
     this.applySeason();
   }
 
+  setForestMistEnabled(enabled: boolean): void {
+    this.forestMist.setEnabled(enabled);
+  }
+
+  get forestMistEnabled(): boolean {
+    return this.forestMist.isEnabled;
+  }
+
   trafficHotspots(): TrafficHotspot[] {
     return collectTrafficHotspots(
       this.game.world.map,
@@ -281,6 +293,7 @@ export class GameView {
     this.seasonKey = key;
     this.terrain.setSeason(stepped);
     this.trees.setSeason(stepped);
+    this.forestMist.setSeason(dominantSeason(stepped));
     const season = dominantSeason(stepped);
     if (this.currentSeason === season) return;
     this.currentSeason = season;
@@ -363,6 +376,7 @@ export class GameView {
     this.applySeason();
     const seconds = now / 1000;
     this.trees.update(seconds);
+    this.forestMist.update(seconds, this.camera.camera, frustum);
     this.fallingLeaves.update(seconds, this.camera.camera, frustum);
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
