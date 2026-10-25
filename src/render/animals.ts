@@ -1,10 +1,20 @@
 import * as THREE from 'three';
+import type { Season } from '../game/seasons';
 import { loadPrototype } from './buildings';
 import { MapChanges, TileType, type GameMap } from '../world/map';
 
-export const ANIMAL_MODELS = ['animal-deer', 'animal-fox', 'animal-hog', 'animal-bunny', 'animal-beaver'] as const;
+export const ANIMAL_MODELS = [
+  'animal-deer',
+  'animal-fox',
+  'animal-hog',
+  'animal-bunny',
+  'animal-beaver',
+  'animal-bee',
+] as const;
 const SPAWN_CHANCE = 0.012;
+const BEE_CHANCE = 0.008;
 const BUNNY_SCALE = 0.55;
+const BEE_SCALE = 0.07;
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
 export interface AnimalPlacement {
@@ -14,6 +24,8 @@ export interface AnimalPlacement {
   z: number;
   rotation: number;
   scale: number;
+  // Výška letu nad zemí, chodící zvířata 0
+  altitude: number;
 }
 
 interface RoamingAnimal extends AnimalPlacement {
@@ -30,6 +42,8 @@ interface RoamingAnimal extends AnimalPlacement {
   step: number;
   speed: number;
   visible: boolean;
+  // Fáze kmitání letu, aby včely nebzučely v zákrytu
+  phase: number;
 }
 
 function tileHash(x: number, y: number, salt: number): number {
@@ -82,7 +96,20 @@ export function animalPlacements(map: GameMap): AnimalPlacement[] {
       Number(map.isType(x + 1, y, TileType.Trees)) +
       Number(map.isType(x, y + 1, TileType.Trees)) +
       Number(map.isType(x - 1, y, TileType.Trees));
-    if (neighbors < 2 || tileHash(x, y, 100) >= SPAWN_CHANCE) continue;
+    if (neighbors < 2) continue;
+    // Včely létají nezávisle na ostatní zvěři, mohou sdílet dlaždici
+    if (tileHash(x, y, 108) < BEE_CHANCE) {
+      placements.push({
+        tile,
+        model: 'animal-bee',
+        x: x + 0.25 + tileHash(x, y, 109) * 0.5,
+        z: y + 0.25 + tileHash(x, y, 110) * 0.5,
+        rotation: tileHash(x, y, 111) * Math.PI * 2,
+        scale: BEE_SCALE * (0.85 + tileHash(x, y, 112) * 0.3),
+        altitude: 0.3 + tileHash(x, y, 113) * 0.25,
+      });
+    }
+    if (tileHash(x, y, 100) >= SPAWN_CHANCE) continue;
 
     const species = tileHash(x, y, 101);
     const model = isNearWater(map, x, y) && species > 0.82 ? ANIMAL_MODELS[4] : ANIMAL_MODELS[Math.floor(species * 4)];
@@ -93,6 +120,7 @@ export function animalPlacements(map: GameMap): AnimalPlacement[] {
       z: y + 0.25 + tileHash(x, y, 103) * 0.5,
       rotation: tileHash(x, y, 104) * Math.PI * 2,
       scale: (0.32 + tileHash(x, y, 105) * 0.12) * (model === 'animal-bunny' ? BUNNY_SCALE : 1),
+      altitude: 0,
     });
   }
   return placements;
@@ -108,6 +136,10 @@ export class AnimalsView {
   private prototypesByModel: Prototype[][] = [];
   private roamers: RoamingAnimal[] = [];
   private readonly changes: MapChanges;
+  // Čas kmitání letu; stojí, když stojí hra
+  private time = 0;
+  // V zimě včely nelétají
+  private beesHidden = false;
 
   constructor(private readonly map: GameMap) {
     this.changes = new MapChanges(map);
@@ -152,9 +184,12 @@ export class AnimalsView {
 
   update(seconds: number): void {
     if (!this.built || seconds <= 0) return;
+    this.time += seconds;
     const touched = new Set<THREE.InstancedMesh>();
     for (const animal of this.roamers) {
       if (!animal.visible) continue;
+      const flying = animal.altitude > 0;
+      if (flying && this.beesHidden) continue;
       animal.wait = Math.max(0, animal.wait - seconds);
       if (animal.targetTile === null && animal.wait === 0) {
         const target = nextForestTile(this.map, animal.tile, animal.previousTile, animal.step++);
@@ -171,7 +206,11 @@ export class AnimalsView {
         animal.rotation = Math.atan2(animal.targetX - animal.x, animal.targetZ - animal.z);
       }
 
-      if (animal.targetTile === null) continue;
+      if (animal.targetTile === null) {
+        // Včela i při zastávce poletuje na místě
+        if (flying) this.writeAnimal(animal, touched);
+        continue;
+      }
       animal.progress = Math.min(1, animal.progress + seconds * animal.speed);
       animal.x = animal.startX + (animal.targetX - animal.startX) * animal.progress;
       animal.z = animal.startZ + (animal.targetZ - animal.startZ) * animal.progress;
@@ -179,11 +218,21 @@ export class AnimalsView {
         animal.previousTile = animal.tile;
         animal.tile = animal.targetTile;
         animal.targetTile = null;
-        animal.wait =
-          0.5 + tileHash(animal.tile % this.map.width, Math.floor(animal.tile / this.map.width), animal.step) * 1.5;
+        const pause = tileHash(animal.tile % this.map.width, Math.floor(animal.tile / this.map.width), animal.step);
+        animal.wait = flying ? 0.3 + pause * 1.2 : 0.5 + pause * 1.5;
       }
       this.writeAnimal(animal, touched);
     }
+    for (const mesh of touched) mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  setSeason(season: Season): void {
+    const hidden = season === 'winter';
+    if (hidden === this.beesHidden) return;
+    this.beesHidden = hidden;
+    if (!this.built) return;
+    const touched = new Set<THREE.InstancedMesh>();
+    for (const animal of this.roamers) if (animal.altitude > 0) this.writeAnimal(animal, touched);
     for (const mesh of touched) mesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -192,7 +241,6 @@ export class AnimalsView {
     const placements = animalPlacements(this.map);
     const matrices: THREE.Matrix4[][] = ANIMAL_MODELS.map(() => []);
     const roamers: RoamingAnimal[] = [];
-    const up = new THREE.Vector3(0, 1, 0);
 
     for (const placement of placements) {
       const model = ANIMAL_MODELS.indexOf(placement.model);
@@ -212,13 +260,13 @@ export class AnimalsView {
         progress: 0,
         wait: 0.5 + tileHash(tileX, tileY, 106) * 1.5,
         step: 0,
-        speed: 0.1 + tileHash(tileX, tileY, 107) * 0.06,
+        speed:
+          placement.altitude > 0 ? 0.25 + tileHash(tileX, tileY, 107) * 0.15 : 0.1 + tileHash(tileX, tileY, 107) * 0.06,
         visible: true,
+        phase: tileHash(tileX, tileY, 114) * Math.PI * 2,
       };
       roamers.push(animal);
-      const rotation = new THREE.Quaternion().setFromAxisAngle(up, placement.rotation);
-      const scale = new THREE.Vector3(placement.scale, placement.scale, placement.scale);
-      matrices[model].push(new THREE.Matrix4().compose(new THREE.Vector3(animal.x, 0, animal.z), rotation, scale));
+      matrices[model].push(this.transform(animal));
     }
 
     const loadedModels = ANIMAL_MODELS.filter((_, index) => matrices[index].length > 0);
@@ -252,13 +300,7 @@ export class AnimalsView {
   }
 
   private writeAnimal(animal: RoamingAnimal, touched: Set<THREE.InstancedMesh>): void {
-    const transform = animal.visible
-      ? new THREE.Matrix4().compose(
-          new THREE.Vector3(animal.x, 0, animal.z),
-          new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), animal.rotation),
-          new THREE.Vector3(animal.scale, animal.scale, animal.scale),
-        )
-      : HIDDEN;
+    const transform = this.transform(animal);
     const matrix = new THREE.Matrix4();
     const meshes = this.meshesByModel[animal.modelIndex];
     const parts = this.prototypesByModel[animal.modelIndex];
@@ -268,5 +310,26 @@ export class AnimalsView {
       mesh.instanceMatrix.addUpdateRange(animal.instanceIndex * 16, 16);
       touched.add(mesh);
     }
+  }
+
+  private transform(animal: RoamingAnimal): THREE.Matrix4 {
+    const hidden = !animal.visible || (animal.altitude > 0 && this.beesHidden);
+    return hidden ? HIDDEN : this.animalMatrix(animal);
+  }
+
+  // Včela ve vzduchu kmitá nahoru a dolů a kličkuje do stran
+  private animalMatrix(animal: RoamingAnimal): THREE.Matrix4 {
+    const position = new THREE.Vector3(animal.x, 0, animal.z);
+    if (animal.altitude > 0) {
+      const t = this.time + animal.phase;
+      position.x += Math.sin(t * 1.5) * 0.06;
+      position.z += Math.cos(t * 1.2 + animal.phase) * 0.06;
+      position.y = animal.altitude + Math.sin(t * 5) * 0.025 + Math.sin(t * 1.3) * 0.05;
+    }
+    return new THREE.Matrix4().compose(
+      position,
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), animal.rotation),
+      new THREE.Vector3(animal.scale, animal.scale, animal.scale),
+    );
   }
 }

@@ -150,6 +150,8 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     toggleInfo: () => buildTools.toggleTool('info'),
   };
   const hud = new Hud(container, game, actions);
+  // Při vývoji na localhostu je FPS vidět hned, v nastavení jde vypnout
+  if (['localhost', '127.0.0.1'].includes(location.hostname)) hud.setFpsVisible(true);
   for (const [id, button] of hud.windowButtons) windows.setAnchor(id, button);
   let infoCursorActive = false;
   buildTools.onToolChange = (tool) => {

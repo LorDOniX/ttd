@@ -15,6 +15,10 @@ describe('zvířata v krajině', () => {
     const bunnies = placements.filter(({ model }) => model === 'animal-bunny');
     expect(bunnies.length).toBeGreaterThan(0);
     expect(bunnies.every(({ scale }) => scale >= 0.176 && scale <= 0.242)).toBe(true);
+    const bees = placements.filter(({ model }) => model === 'animal-bee');
+    expect(bees.length).toBeGreaterThan(0);
+    expect(bees.every(({ altitude }) => altitude >= 0.3 && altitude <= 0.55)).toBe(true);
+    expect(placements.filter(({ model }) => model !== 'animal-bee').every(({ altitude }) => altitude === 0)).toBe(true);
   });
 
   it('nevytváří zvířata u solitérních stromů', () => {

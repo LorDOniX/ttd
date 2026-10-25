@@ -301,6 +301,7 @@ export class GameView {
     if (this.currentSeason === season) return;
     this.currentSeason = season;
     this.fallingLeaves.setSeason(season);
+    this.animals.setSeason(season);
     this.buildings.setSeason(season);
     this.industries.setSeason(season);
   }
