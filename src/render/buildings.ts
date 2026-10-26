@@ -43,6 +43,10 @@ export const SNOW_MATERIAL = new THREE.MeshLambertMaterial({
   polygonOffsetFactor: -1,
 });
 
+// Nejnižší střecha se sněhem; nižší jsou jen chodníky a podesty modelů na zemi (do ~0,05), přízemní
+// přístavky a verandy domků mají střechy už od ~0,17
+const SNOW_MIN_HEIGHT = 0.06;
+
 export function createSnowRoofGeometry(
   geometry: THREE.BufferGeometry,
   matrix: THREE.Matrix4,
@@ -62,7 +66,7 @@ export function createSnowRoofGeometry(
     b.fromBufferAttribute(position, i + 1).applyMatrix4(matrix);
     c.fromBufferAttribute(position, i + 2).applyMatrix4(matrix);
     normal.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
-    if (normal.y < 0.3 || (a.y + b.y + c.y) / 3 < 0.25) continue;
+    if (normal.y < 0.3 || (a.y + b.y + c.y) / 3 < SNOW_MIN_HEIGHT) continue;
 
     for (const point of [a, b, c]) {
       const snowPoint = point.clone().addScaledVector(normal, 0.002);

@@ -9,7 +9,8 @@ export type Kit =
   | 'car kit'
   | 'blocky characters'
   | 'nature kit'
-  | 'cube pets';
+  | 'cube pets'
+  | 'watercraft kit';
 
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<THREE.Group>>();

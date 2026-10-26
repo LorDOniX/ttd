@@ -3,3 +3,5 @@ dist/
 .DS_Store
 # pristup na FTP (npm run upload)
 /conf
+# vystup scripts/zbase (stovky MB)
+/build-data/zbase
