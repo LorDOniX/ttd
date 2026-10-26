@@ -16,6 +16,7 @@ const ROAD_TOP = 0.01;
 interface VehicleView {
   modelId: string;
   playerId: number | null;
+  cityCarId: number | null;
   group: THREE.Group;
   // Náklad na korbě, viditelný jen naložený
   load: THREE.Object3D | null;
@@ -118,6 +119,7 @@ export class RoadVehiclesView {
       if (!view || view.modelId !== car.model) {
         if (view) this.object.remove(view.group);
         view = this.createView(key, car.model, null);
+        view.cityCarId = car.id;
         this.views.set(key, view);
         this.object.add(view.group);
       }
@@ -129,16 +131,16 @@ export class RoadVehiclesView {
     }
   }
 
-  // Id auta, které paprsek zasáhne jako první
-  pick(raycaster: THREE.Raycaster): number | null {
+  // Auto (hráčovo, nebo městské), které paprsek zasáhne jako první
+  pick(raycaster: THREE.Raycaster): { playerId: number } | { cityCarId: number } | null {
     for (const hit of raycaster.intersectObject(this.object, true)) {
       for (const view of this.views.values()) {
-        const id = view.playerId;
-        if (id === null) continue;
         if (!view.group.visible) continue;
         let o: THREE.Object3D | null = hit.object;
         while (o && o !== view.group) o = o.parent;
-        if (o) return id;
+        if (!o) continue;
+        if (view.playerId !== null) return { playerId: view.playerId };
+        if (view.cityCarId !== null) return { cityCarId: view.cityCarId };
       }
     }
     return null;
@@ -149,6 +151,7 @@ export class RoadVehiclesView {
     const view: VehicleView = {
       modelId,
       playerId,
+      cityCarId: null,
       group: new THREE.Group(),
       load: null,
       lights: vehicleLightMarkers(),

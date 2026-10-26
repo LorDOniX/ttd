@@ -46,10 +46,7 @@ export class Hud {
     game.clock.events.on('pause', renderPause);
     renderPause(game.clock.paused);
 
-    const speed = h('button', {
-      className: 'toolbar__button toolbar__button--text',
-      title: 'Rychlost hry (1, 2, 3, 4)',
-    });
+    const speed = h('button', { className: 'toolbar__button toolbar__button--text', title: 'Rychlost hry (1, 2, 3)' });
     const renderSpeed = (value: GameSpeed): void => {
       speed.textContent = `×${value}`;
       speed.classList.toggle('toolbar__button--active', value > 1);

@@ -39,7 +39,7 @@ type ClockEvents = {
   speed: [GameSpeed];
 };
 
-export const GAME_SPEEDS = [1, 2, 4, 8] as const;
+export const GAME_SPEEDS = [1, 2, 4] as const;
 export type GameSpeed = (typeof GAME_SPEEDS)[number];
 
 // Herní kalendář: 1 rok = 15 minut reálného času

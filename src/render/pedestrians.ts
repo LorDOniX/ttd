@@ -63,6 +63,17 @@ interface Pedestrian {
   phase: number;
 }
 
+// Postavy mají v GLB neosvětlený materiál (KHR_materials_unlit), v noci by svítily; stínují se jako auta
+function litMaterial(material: THREE.Material, cache: Map<THREE.Material, THREE.Material>): THREE.Material {
+  if (!(material instanceof THREE.MeshBasicMaterial)) return material;
+  let lit = cache.get(material);
+  if (!lit) {
+    lit = new THREE.MeshLambertMaterial({ map: material.map, color: material.color, side: material.side });
+    cache.set(material, lit);
+  }
+  return lit;
+}
+
 async function loadCharacter(name: string): Promise<CharacterPart[]> {
   const scene = await loadScene('blocky characters', name);
   scene.updateMatrixWorld(true);
@@ -72,11 +83,15 @@ async function loadCharacter(name: string): Promise<CharacterPart[]> {
     .makeScale(s, s, s)
     .multiply(new THREE.Matrix4().makeTranslation(0, -box.min.y, 0));
   const parts: CharacterPart[] = [];
+  const materials = new Map<THREE.Material, THREE.Material>();
   scene.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
+    const material = child.material as THREE.Material | THREE.Material[];
     parts.push({
       geometry: child.geometry,
-      material: child.material,
+      material: Array.isArray(material)
+        ? material.map((m) => litMaterial(m, materials))
+        : litMaterial(material, materials),
       rest: normalize.clone().multiply(child.matrixWorld),
       swing: LIMB_SWING[child.name] ?? 0,
     });

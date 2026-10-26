@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CARGOS, type Cargo } from '../game/cargo';
-import { CityTraffic } from '../game/cityTraffic';
+import { CityTraffic, type CityCar } from '../game/cityTraffic';
 import { dominantSeason, seasonBlendForDate, type Season, type SeasonMode } from '../game/seasons';
 import { collectTrafficHotspots, type TrafficHotspot } from '../game/traffic';
 import type { Game } from '../game/game';
@@ -311,9 +311,25 @@ export class GameView {
     return this.trains.pick(this.camera.ray(clientX, clientY));
   }
 
-  // Id auta pod kurzorem
+  // Id hráčova auta pod kurzorem
   vehicleAt(clientX: number, clientY: number): number | null {
-    return this.vehicles.pick(this.camera.ray(clientX, clientY));
+    const hit = this.vehicles.pick(this.camera.ray(clientX, clientY));
+    return hit && 'playerId' in hit ? hit.playerId : null;
+  }
+
+  // Městské auto pod kurzorem
+  cityCarAt(clientX: number, clientY: number): CityCar | null {
+    const hit = this.vehicles.pick(this.camera.ray(clientX, clientY));
+    return (hit && 'cityCarId' in hit && this.cityCar(hit.cityCarId)) || null;
+  }
+
+  cityCar(id: number): CityCar | null {
+    return this.cityTraffic.cars.find((car) => car.id === id) ?? null;
+  }
+
+  // Zaseknuté městské auto zmizí a objeví se jinde v témže městě
+  relocateCityCar(id: number): boolean {
+    return this.cityTraffic.relocate(id, this.game.roadFleet.vehicles);
   }
 
   // Se stavebním nástrojem popisky kliknutí nechytá, aby šlo stavět i pod nimi

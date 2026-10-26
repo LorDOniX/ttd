@@ -30,6 +30,28 @@ function townRoads(tiles: readonly [number, number][]): { map: GameMap; town: To
 }
 
 describe('městský provoz', () => {
+  it('odstraněné auto se objeví jinde v témže městě', () => {
+    const { map, town } = townRoads(Array.from({ length: 14 }, (_, x): [number, number] => [x + 1, 5]));
+    const traffic = new CityTraffic(map, new RailNetwork(map), [town], 3, 1);
+    const car = traffic.cars[0];
+    traffic.cars.splice(1);
+    car.path = [
+      { x: 1, y: 5 },
+      { x: 2, y: 5 },
+      { x: 3, y: 5 },
+    ];
+    car.pos = 1;
+    car.stuckSeconds = 10;
+    const before = vehiclePoint(car.path, car.pos);
+    expect(traffic.relocate(car.id)).toBe(true);
+    const after = vehiclePoint(car.path, car.pos);
+    expect(traffic.cars).toEqual([car]);
+    expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThanOrEqual(3);
+    expect(car.path.every((tile) => tile.y === 5 && tile.x >= 1 && tile.x <= 14)).toBe(true);
+    expect(car.stuckSeconds).toBe(0);
+    expect(traffic.relocate(-1)).toBe(false);
+  });
+
   it('na křižovatce nevjede do krátké slepé odbočky, když vede cesta dál', () => {
     // Hlavní silnice y = 5, na x = 5 a x = 8 jednodílné slepé odbočky na sever i na jih
     const main = Array.from({ length: 14 }, (_, x): [number, number] => [x + 1, 5]);

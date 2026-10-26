@@ -18,18 +18,20 @@ const CARS_PER_RESIDENT = 1 / 300;
 // Městská auta z car kitu, která si hráč nemůže koupit: osobní vozy, taxi a městské služby;
 // weight je relativní četnost, speed v dlaždicích za den jako u hráčových aut
 const CITY_CAR_TYPES = [
-  { model: 'sedan', weight: 6, speed: 2.8 },
-  { model: 'hatchback-sports', weight: 4, speed: 3.1 },
-  { model: 'suv', weight: 4, speed: 2.8 },
-  { model: 'taxi', weight: 4, speed: 3.1 },
-  { model: 'sedan-sports', weight: 2, speed: 3.4 },
-  { model: 'suv-luxury', weight: 2, speed: 3.1 },
-  { model: 'delivery-flat', weight: 1.5, speed: 2.4 },
-  { model: 'police', weight: 1, speed: 3.4 },
-  { model: 'ambulance', weight: 1, speed: 3.1 },
-  { model: 'firetruck', weight: 0.5, speed: 2.6 },
+  { model: 'sedan', name: 'Osobní auto', weight: 6, speed: 2.8 },
+  { model: 'hatchback-sports', name: 'Hatchback', weight: 4, speed: 3.1 },
+  { model: 'suv', name: 'SUV', weight: 4, speed: 2.8 },
+  { model: 'taxi', name: 'Taxi', weight: 4, speed: 3.1 },
+  { model: 'sedan-sports', name: 'Sportovní auto', weight: 2, speed: 3.4 },
+  { model: 'suv-luxury', name: 'Luxusní SUV', weight: 2, speed: 3.1 },
+  { model: 'delivery-flat', name: 'Dodávka', weight: 1.5, speed: 2.4 },
+  { model: 'police', name: 'Policie', weight: 1, speed: 3.4 },
+  { model: 'ambulance', name: 'Sanitka', weight: 1, speed: 3.1 },
+  { model: 'firetruck', name: 'Hasiči', weight: 0.5, speed: 2.6 },
 ] as const;
 export const CITY_CAR_MODELS: readonly string[] = CITY_CAR_TYPES.map(({ model }) => model);
+export const cityCarName = (model: string): string =>
+  CITY_CAR_TYPES.find((type) => type.model === model)?.name ?? 'Auto';
 const CITY_CAR_WEIGHT = CITY_CAR_TYPES.reduce((sum, { weight }) => sum + weight, 0);
 // Ekvivalent rychlostí v herních dnech při běžném tempu hodin (365,25 dne za 15 minut).
 const toGameSpeed = (speed: number): number => (speed * 365.25) / (15 * 60);
@@ -41,6 +43,11 @@ const DETOUR_LOOKAHEAD = 4;
 const SHORT_DEAD_END = 3;
 // Na křižovatku auto vjede, jen když za ní je místo; jinak by v ní uvízlo a zablokovalo příčný směr
 const EXIT_CLEARANCE = 0.45;
+// Odstraněné auto se objeví aspoň takto daleko (v dlaždicích), pokud má město dost silnic
+const RELOCATE_DISTANCE = 4;
+
+// Doba v herních dnech odpovídající sekundám městského provozu
+export const trafficDays = (seconds: number): number => (seconds * 365.25) / (15 * 60);
 
 const sameTile = (a: TilePos | undefined, b: TilePos): boolean => a !== undefined && a.x === b.x && a.y === b.y;
 
@@ -173,7 +180,56 @@ export class CityTraffic {
     }
   }
 
+  // Odstraní (zaseknuté) auto a stejné auto vypustí na jiném místě téhož města; false, když se nevejde jinam
+  relocate(id: number, playerVehicles: readonly RoadVehicle[] = []): boolean {
+    const car = this.cars.find((candidate) => candidate.id === id);
+    const roads = car && this.townRoads.get(car.townId);
+    if (!car || !roads?.length) return false;
+    const old = vehiclePoint(car.path, car.pos);
+    const far = roads.filter((tile) => Math.hypot(tile.x + 0.5 - old.x, tile.y + 0.5 - old.y) >= RELOCATE_DISTANCE);
+    const others = playerVehicles.filter((vehicle) => vehicle.state !== 'depot');
+    const path =
+      this.startPath(car.townId, far, others, car) ??
+      this.startPath(
+        car.townId,
+        roads.filter((tile) => Math.hypot(tile.x + 0.5 - old.x, tile.y + 0.5 - old.y) >= 1),
+        others,
+        car,
+      );
+    if (!path) return false;
+    car.path = path;
+    car.pos = 1;
+    car.stuckSeconds = 0;
+    return true;
+  }
+
   private createCar(townId: number, roads: TilePos[], playerVehicles: readonly RoadVehicle[]): CityCar | null {
+    const path = this.startPath(
+      townId,
+      roads,
+      playerVehicles.filter((vehicle) => vehicle.state !== 'depot'),
+    );
+    if (!path) return null;
+    let roll = this.rng.next() * CITY_CAR_WEIGHT;
+    const type = CITY_CAR_TYPES.find(({ weight }) => (roll -= weight) < 0) ?? CITY_CAR_TYPES[0];
+    return {
+      id: this.nextId++,
+      townId,
+      model: type.model,
+      speed: toGameSpeed(type.speed),
+      path,
+      pos: 1,
+      stuckSeconds: 0,
+    };
+  }
+
+  // Cesta pro auto vypuštěné na náhodné dlaždici z roads, kde nestojí jiné vozidlo (kromě ignored)
+  private startPath(
+    townId: number,
+    roads: TilePos[],
+    playerVehicles: readonly RoadTrafficObstacle[],
+    ignored?: CityCar,
+  ): TilePos[] | null {
     for (let attempt = 0; attempt < roads.length * 2; attempt++) {
       const start = roads[this.rng.int(0, roads.length - 1)];
       const next = this.nextTile(townId, start, null);
@@ -188,33 +244,12 @@ export class CityTraffic {
         if (!nextTile) break;
         path.push(nextTile);
       }
-      if (
-        this.cars.some(
-          (car) =>
-            Math.hypot(
-              vehiclePoint(car.path, car.pos).x - start.x - 0.5,
-              vehiclePoint(car.path, car.pos).y - start.y - 0.5,
-            ) < VEHICLE_GAP,
-        ) ||
-        playerVehicles.some((vehicle) => {
-          if (vehicle.state === 'depot' || vehicle.path.length === 0) return false;
-          const point = vehiclePoint(vehicle.path, vehicle.pos);
-          return Math.hypot(point.x - start.x - 0.5, point.y - start.y - 0.5) < VEHICLE_GAP;
-        })
-      ) {
-        continue;
-      }
-      let roll = this.rng.next() * CITY_CAR_WEIGHT;
-      const type = CITY_CAR_TYPES.find(({ weight }) => (roll -= weight) < 0) ?? CITY_CAR_TYPES[0];
-      return {
-        id: this.nextId++,
-        townId,
-        model: type.model,
-        speed: toGameSpeed(type.speed),
-        path,
-        pos: 1,
-        stuckSeconds: 0,
-      };
+      const occupied = [...this.cars.filter((car) => car !== ignored), ...playerVehicles].some((vehicle) => {
+        if (vehicle.path.length === 0) return false;
+        const point = vehiclePoint(vehicle.path, vehicle.pos);
+        return Math.hypot(point.x - start.x - 0.5, point.y - start.y - 0.5) < VEHICLE_GAP;
+      });
+      if (!occupied) return path;
     }
     return null;
   }
