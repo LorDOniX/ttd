@@ -9,7 +9,8 @@ import { applyTheme, loadTheme } from './ui/theme';
 applyTheme(loadTheme());
 
 const container = document.getElementById('app')!;
-const route = location.pathname.replace(/\/$/, '');
+// cesta bez base (/ttd/all-models -> /all-models)
+const route = location.pathname.slice(import.meta.env.BASE_URL.length - 1).replace(/\/$/, '');
 if (route === '/all-models') {
   runAllModels(container);
 } else if (route === '/game-assets') {

@@ -39,8 +39,10 @@ function assetModelCatalog(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // build (a vite preview) pro https://app.makuderovi.cz/ttd/ (npm run upload), dev server zůstává na http://localhost:5173/
+  base: mode === 'production' ? '/ttd/' : '/',
   // GLB modely a textury se servírují přímo ze složky assets
   publicDir: 'assets',
   plugins: [assetModelCatalog()],
-});
+}));

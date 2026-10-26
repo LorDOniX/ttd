@@ -16,7 +16,8 @@ const cache = new Map<string, Promise<THREE.Group>>();
 
 // Načte GLB z kitu (s cache), vrácená scéna je sdílená a nesmí se měnit
 export function loadScene(kit: Kit, name: string): Promise<THREE.Group> {
-  const url = `/${encodeURIComponent(kit)}/${encodeURIComponent(name)}.glb`;
+  // BASE_URL - na serveru /ttd/ (hra neběží v rootu domény), lokálně /
+  const url = `${import.meta.env.BASE_URL}${encodeURIComponent(kit)}/${encodeURIComponent(name)}.glb`;
   let pending = cache.get(url);
   if (!pending) {
     pending = loader.loadAsync(url).then((gltf) => gltf.scene);
