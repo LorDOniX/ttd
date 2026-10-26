@@ -4,6 +4,7 @@ import type { Season } from '../game/seasons';
 import type { Town } from '../world/town';
 import { Surface, addWindows } from './windows';
 import { withLampLight } from './nightLights';
+import { createLodGeometry } from './buildingLod';
 
 // Největší půdorysný rozměr budovy vůči dlaždici
 const FOOTPRINT = 0.86;
@@ -342,17 +343,113 @@ function snowRoofOf(part: Part): THREE.BufferGeometry | null {
   return snow;
 }
 
-// Budovy všech měst v dávkách BatchedMesh: jedna na materiál a sadu atributů a jedna se sněhem
+// Při oddálení pod tento zoom se místo modelů kreslí jejich zjednodušené výškové mapy
+export const BUILDING_LOD_ZOOM = 0.5;
+// Modely s méně trojúhelníky (low-detail budovy s okny ze shaderu) se nezjednodušují
+const LOD_MIN_TRIANGLES = 600;
+
+// Zjednodušený model; díly jsou v cache načtených fasád, takže se spočte jen jednou
+const lods = new WeakMap<Part[], Part[]>();
+function lodOf(parts: Part[]): Part[] {
+  let lod = lods.get(parts);
+  if (!lod) {
+    const solid = parts.filter((part) => !Array.isArray(part.material));
+    const triangles = solid.reduce(
+      (sum, { geometry }) => sum + (geometry.index?.count ?? geometry.getAttribute('position').count) / 3,
+      0,
+    );
+    const geometry = triangles >= LOD_MIN_TRIANGLES ? createLodGeometry(solid) : null;
+    lod = geometry ? [{ geometry, material: solid[0].material, matrix: new THREE.Matrix4() }] : parts;
+    lods.set(parts, lod);
+  }
+  return lod;
+}
+
+interface PlacedGroup {
+  kit: Kit;
+  matrices: THREE.Matrix4[];
+  parts: Part[];
+}
+
+// Jedna úroveň detailu budov: dávka na materiál a sadu atributů a jedna se sněhem
+class BuildingBatches {
+  readonly object = new THREE.Group();
+  private readonly batches = new Map<string, GeometryBatch>();
+  private snow: GeometryBatch | null = null;
+  private winter = false;
+
+  setWinter(winter: boolean): void {
+    this.winter = winter;
+    if (this.snow) this.snow.mesh.visible = winter;
+  }
+
+  set(groups: readonly PlacedGroup[]): void {
+    // Všechny modely jednoho kitu sdílejí paletu colormap, každý soubor má ale vlastní kopii materiálu;
+    // díly se proto řadí podle kitu, názvu materiálu a atributů a kreslí se prvním materiálem skupiny
+    const items = new Map<string, { material: THREE.Material; items: BatchItem[] }>();
+    const snowItems: BatchItem[] = [];
+    for (const { kit, matrices, parts } of groups) {
+      for (const part of parts) {
+        // Kenney city kity mají u každého dílu jediný materiál
+        if (Array.isArray(part.material)) continue;
+        const key = `${kit}|${part.material.type}|${part.material.name}|${attributeSignature(part.geometry)}`;
+        let bucket = items.get(key);
+        if (!bucket) {
+          bucket = { material: this.batches.get(key)?.mesh.material ?? part.material, items: [] };
+          items.set(key, bucket);
+        }
+        const snow = snowRoofOf(part);
+        for (const placement of matrices) {
+          bucket.items.push({ geometry: part.geometry, matrix: placement.clone().multiply(part.matrix) });
+          if (snow) snowItems.push({ geometry: snow, matrix: placement });
+        }
+      }
+    }
+
+    for (const [key, { material, items: batchItems }] of items) {
+      const batch = this.batches.get(key);
+      if (batch) {
+        batch.set(batchItems);
+        continue;
+      }
+      withLampLight(material);
+      const created = new GeometryBatch(material, batchItems);
+      this.batches.set(key, created);
+      this.object.add(created.mesh);
+    }
+    for (const [key, batch] of this.batches) if (!items.has(key)) batch.set([]);
+
+    if (this.snow) this.snow.set(snowItems);
+    else if (snowItems.length > 0) {
+      this.snow = new GeometryBatch(SNOW_MATERIAL, snowItems);
+      this.snow.mesh.visible = this.winter;
+      this.object.add(this.snow.mesh);
+    }
+  }
+}
+
+// Budovy všech měst v dávkách BatchedMesh, zvlášť plné modely a zjednodušené pro oddálený pohled
 export class BuildingsView {
   readonly object = new THREE.Group();
   private generation = 0;
-  private season: Season = 'summer';
-  private readonly batches = new Map<string, GeometryBatch>();
-  private snow: GeometryBatch | null = null;
+  private readonly detailed = new BuildingBatches();
+  private readonly simplified = new BuildingBatches();
+
+  constructor() {
+    this.simplified.object.visible = false;
+    this.object.add(this.detailed.object, this.simplified.object);
+  }
 
   setSeason(season: Season): void {
-    this.season = season;
-    if (this.snow) this.snow.mesh.visible = season === 'winter';
+    this.detailed.setWinter(season === 'winter');
+    this.simplified.setWinter(season === 'winter');
+  }
+
+  // Přepnutí úrovně detailu podle zoomu kamery
+  setZoom(zoom: number): void {
+    const simplified = zoom < BUILDING_LOD_ZOOM;
+    this.detailed.object.visible = !simplified;
+    this.simplified.object.visible = simplified;
   }
 
   async rebuild(towns: readonly Town[]): Promise<void> {
@@ -378,54 +475,16 @@ export class BuildingsView {
     }
 
     const loaded = await Promise.all(
-      [...groups.values()].map(async (group) => ({
-        group,
-        parts: await loadFacade(group.kit, group.model, group.facade),
+      [...groups.values()].map(async ({ kit, model, facade, matrices }) => ({
+        kit,
+        matrices,
+        parts: await loadFacade(kit, model, facade),
       })),
     );
     // Mezitím mohl začít novější rebuild
     if (generation !== this.generation) return;
 
-    // Všechny modely jednoho kitu sdílejí paletu colormap, každý soubor má ale vlastní kopii materiálu;
-    // díly se proto řadí podle kitu, názvu materiálu a atributů a kreslí se prvním materiálem skupiny
-    const items = new Map<string, { material: THREE.Material; items: BatchItem[] }>();
-    const snowItems: BatchItem[] = [];
-    for (const { group, parts } of loaded) {
-      for (const part of parts) {
-        // Kenney city kity mají u každého dílu jediný materiál
-        if (Array.isArray(part.material)) continue;
-        const key = `${group.kit}|${part.material.type}|${part.material.name}|${attributeSignature(part.geometry)}`;
-        let bucket = items.get(key);
-        if (!bucket) {
-          bucket = { material: this.batches.get(key)?.mesh.material ?? part.material, items: [] };
-          items.set(key, bucket);
-        }
-        const snow = snowRoofOf(part);
-        for (const placement of group.matrices) {
-          bucket.items.push({ geometry: part.geometry, matrix: placement.clone().multiply(part.matrix) });
-          if (snow) snowItems.push({ geometry: snow, matrix: placement });
-        }
-      }
-    }
-
-    for (const [key, { material, items: batchItems }] of items) {
-      const batch = this.batches.get(key);
-      if (batch) {
-        batch.set(batchItems);
-        continue;
-      }
-      withLampLight(material);
-      const created = new GeometryBatch(material, batchItems);
-      this.batches.set(key, created);
-      this.object.add(created.mesh);
-    }
-    for (const [key, batch] of this.batches) if (!items.has(key)) batch.set([]);
-
-    if (this.snow) this.snow.set(snowItems);
-    else if (snowItems.length > 0) {
-      this.snow = new GeometryBatch(SNOW_MATERIAL, snowItems);
-      this.snow.mesh.visible = this.season === 'winter';
-      this.object.add(this.snow.mesh);
-    }
+    this.detailed.set(loaded);
+    this.simplified.set(loaded.map((group) => ({ ...group, parts: lodOf(group.parts) })));
   }
 }

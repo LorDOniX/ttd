@@ -25,4 +25,6 @@ Volitelná rozšíření mimo hlavní fáze ze [ttd.md](ttd.md).
 - **Zemědělský řetězec** – farma produkuje obilí, potravinářský závod z něj vyrábí potraviny pro města
 
 ## Zbývá
+- **Letecká doprava** – letiště a letadla z `assets/airplanes/` (pořadí generací v [airplanes.md](airplanes.md), autoři v `assets/credits.md`); chybí návrh letiště (velikost, ranveje, hangár, kapacita) a parametry letadel jako u vlaků. Modely mají různé měřítko (délka 8,6–1676 jednotek), takže je potřeba je při načtení sjednotit na délku; airplane-1 má předek na +X (otočit `rotation.y = -π/2`), ostatní na +Z; airplane-2 má kola pod y = 0; airplane-3 má 11 tis. trojúhelníků. Ve hře je zobrazit credits (CC BY)
+- **Lodní doprava** – přístavy a lodě z `assets/watercraft kit/` (nákladní `ship-cargo-*`, osobní `ship-ocean-liner*`, remorkéry, kontejnery a bóje do přístavu); chybí hledání cesty po vodě a návrh přístavu
 - **Výška terénu** – teď nedává smysl: koleje, mosty, stavba i generátor počítají s rovinou, šlo by o přestavbu celé mapy

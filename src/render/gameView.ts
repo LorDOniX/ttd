@@ -397,13 +397,16 @@ export class GameView {
     this.applySeason();
     const seconds = this.effectsSeconds;
     updateWater(seconds);
+    this.trees.setZoom(this.camera.camera.zoom);
     this.trees.update(seconds);
     this.forestMist.update(seconds, this.camera.camera, frustum);
     this.fallingLeaves.update(seconds, this.camera.camera, frustum);
+    this.animals.setZoom(this.camera.camera.zoom);
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
     // Světla vozidel jsou při oddálení menší než pixel, jen by přidávala draw cally
     const vehicleLights = this.lightsAmount > 0.5 && this.camera.camera.zoom >= NIGHT_DETAIL_ZOOM;
+    this.buildings.setZoom(this.camera.camera.zoom);
     this.trains.update(frustum, vehicleLights);
     this.vehicles.update(frustum, this.cityTraffic.cars, vehicleLights);
     this.trafficLightView.update(this.trafficLights);

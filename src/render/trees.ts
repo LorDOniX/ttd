@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MapChanges, TileType, type GameMap } from '../world/map';
 import type { Season, SeasonBlend } from '../game/seasons';
 import { loadPrototype } from './buildings';
+import { createLatheGeometry } from './treeLod';
 
 // Listnaté a jehličnaté stromy z nature kitu; varianty _dark mají tmavší listí
 export const TREE_MODELS = [
@@ -64,7 +65,8 @@ function treeMaterial(material: THREE.Material): THREE.Material {
       seasonColor(material.name, new THREE.Color()) ??
       (material as THREE.MeshStandardMaterial).color?.clone() ??
       new THREE.Color(0xffffff);
-    result = new THREE.MeshLambertMaterial({ color });
+    // Název podle kitu pozná kmen při zjednodušení stromu
+    result = new THREE.MeshLambertMaterial({ color, name: material.name });
     result.onBeforeCompile = (shader) => {
       shader.uniforms.treeTime = treeTime;
       shader.vertexShader =
@@ -85,8 +87,18 @@ function treeMaterial(material: THREE.Material): THREE.Material {
   return result;
 }
 
-// Strom z nature kitu: přebarvený, na šířku dlaždice a nejvýš TREE_HEIGHT vysoký
-async function loadTree(model: string): Promise<Parts> {
+// Strom z nature kitu: přebarvený, na šířku dlaždice a nejvýš TREE_HEIGHT vysoký; díly jsou sdílené
+const trees = new Map<string, Promise<Parts>>();
+function loadTree(model: string): Promise<Parts> {
+  let pending = trees.get(model);
+  if (!pending) {
+    pending = createTree(model);
+    trees.set(model, pending);
+  }
+  return pending;
+}
+
+async function createTree(model: string): Promise<Parts> {
   const parts = await loadPrototype('nature kit', model);
   const box = new THREE.Box3();
   for (const part of parts) {
@@ -103,6 +115,37 @@ async function loadTree(model: string): Promise<Parts> {
       material: treeMaterial(part.material as THREE.Material),
       matrix: scale.clone().multiply(part.matrix),
     }));
+}
+
+// Při oddálení pod tento zoom se kreslí zjednodušené stromy
+export const TREE_LOD_ZOOM = 0.5;
+// Zjednodušený kmen je čtyřboký hranol, koruna šestiboká se čtyřmi vrstvami podle obrysu modelu
+const TRUNK_LOD = [4, 2] as const;
+const CROWN_LOD = [6, 4] as const;
+
+// Strom pro oddálený pohled; díly, které by zjednodušením nezmenšily počet trojúhelníků, zůstanou
+function simplifyTree(parts: Parts): Parts {
+  return parts.map((part) => {
+    const [sides, levels] = (part.material as THREE.Material).name.startsWith('woodBark') ? TRUNK_LOD : CROWN_LOD;
+    const geometry = createLatheGeometry(part.geometry, part.matrix, sides, levels);
+    const triangles = (part.geometry.index?.count ?? part.geometry.getAttribute('position').count) / 3;
+    if (!geometry || geometry.getAttribute('position').count / 3 >= triangles) {
+      geometry?.dispose();
+      return part;
+    }
+    return { ...part, geometry, matrix: new THREE.Matrix4() };
+  });
+}
+
+// Zjednodušené stromy podle načtených dílů, aby se při přestavbě lesa nepočítaly znovu
+const simplifiedParts = new WeakMap<Parts, Parts>();
+function simplifiedTrees(parts: Parts): Parts {
+  let simplified = simplifiedParts.get(parts);
+  if (!simplified) {
+    simplified = simplifyTree(parts);
+    simplifiedParts.set(parts, simplified);
+  }
+  return simplified;
 }
 
 // Vykácený strom: nulové měřítko instanci schová
@@ -143,15 +186,27 @@ function tileHash(x: number, y: number, salt: number): number {
 // Stromy jako instancované modely z nature kitu; rozmístění je dané dlaždicí, takže je stabilní
 export class TreesView {
   readonly object = new THREE.Group();
+  private readonly detailed = new THREE.Group();
+  private readonly simplified = new THREE.Group();
   private generation = 0;
   private built = false;
-  // Instance po modelech a pro každou dlaždici její instance (model, index), aby šly skrýt jednotlivě
+  // Instance po modelech (plné i zjednodušené díly) a pro každou dlaždici její instance (model, index),
+  // aby šly skrýt jednotlivě
   private meshesByModel: THREE.InstancedMesh[][] = [];
   private instancesByTile = new Map<number, [number, number][]>();
   private readonly changes: MapChanges;
 
   constructor(private readonly map: GameMap) {
     this.changes = new MapChanges(map);
+    this.simplified.visible = false;
+    this.object.add(this.detailed, this.simplified);
+  }
+
+  // Přepnutí úrovně detailu podle zoomu kamery
+  setZoom(zoom: number): void {
+    const simplified = zoom < TREE_LOD_ZOOM;
+    this.detailed.visible = !simplified;
+    this.simplified.visible = simplified;
   }
 
   update(seconds: number): void {
@@ -215,7 +270,7 @@ export class TreesView {
 
     const prototypes = await Promise.all(TREE_MODELS.map(loadTree));
     if (generation !== this.generation) return;
-    const meshesByModel = prototypes.map((parts, model) =>
+    const instanced = (parts: Parts, model: number): THREE.InstancedMesh[] =>
       parts.map((part) => {
         const mesh = new THREE.InstancedMesh(part.geometry, part.material, Math.max(1, matrices[model].length));
         const m = new THREE.Matrix4();
@@ -223,13 +278,17 @@ export class TreesView {
         mesh.count = matrices[model].length;
         mesh.computeBoundingSphere();
         return mesh;
-      }),
-    );
+      });
+    const detailed = prototypes.map((parts, model) => instanced(parts, model));
+    const simplified = prototypes.map((parts, model) => instanced(simplifiedTrees(parts), model));
 
-    for (const old of this.object.children as THREE.InstancedMesh[]) old.dispose();
-    this.object.clear();
-    this.object.add(...meshesByModel.flat());
-    this.meshesByModel = meshesByModel;
+    for (const group of [this.detailed, this.simplified]) {
+      for (const old of group.children as THREE.InstancedMesh[]) old.dispose();
+      group.clear();
+    }
+    this.detailed.add(...detailed.flat());
+    this.simplified.add(...simplified.flat());
+    this.meshesByModel = detailed.map((meshes, model) => [...meshes, ...simplified[model]]);
     this.instancesByTile = instancesByTile;
     this.built = true;
   }

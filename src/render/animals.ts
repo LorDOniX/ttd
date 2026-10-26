@@ -11,6 +11,8 @@ export const ANIMAL_MODELS = [
   'animal-beaver',
   'animal-bee',
 ] as const;
+// Při větším oddálení jsou zvířata jen pár pixelů, skryjí se a nepohybují
+export const ANIMALS_MIN_ZOOM = 0.45;
 const SPAWN_CHANCE = 0.012;
 const BEE_CHANCE = 0.008;
 const BUNNY_SCALE = 0.55;
@@ -182,8 +184,12 @@ export class AnimalsView {
     for (const mesh of touched) mesh.instanceMatrix.needsUpdate = true;
   }
 
+  setZoom(zoom: number): void {
+    this.object.visible = zoom >= ANIMALS_MIN_ZOOM;
+  }
+
   update(seconds: number): void {
-    if (!this.built || seconds <= 0) return;
+    if (!this.built || seconds <= 0 || !this.object.visible) return;
     this.time += seconds;
     const touched = new Set<THREE.InstancedMesh>();
     for (const animal of this.roamers) {
