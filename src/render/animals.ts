@@ -18,6 +18,10 @@ const BEE_CHANCE = 0.008;
 const BUNNY_SCALE = 0.55;
 const BEE_SCALE = 0.07;
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+// Křídla včely mávají kolem úchytu u těla (pivot uzlu v modelu), levé a pravé zrcadlově
+const WING_FLAP: Partial<Record<string, number>> = { 'wing-left': 1, 'wing-right': -1 };
+const WING_SPEED = 70;
+const WING_AMPLITUDE = 0.5;
 
 export interface AnimalPlacement {
   tile: number;
@@ -201,6 +205,7 @@ export class AnimalsView {
         const target = nextForestTile(this.map, animal.tile, animal.previousTile, animal.step++);
         if (target === null) {
           animal.wait = 1;
+          if (flying) this.writeAnimal(animal, touched);
           continue;
         }
         animal.targetTile = target;
@@ -308,11 +313,17 @@ export class AnimalsView {
   private writeAnimal(animal: RoamingAnimal, touched: Set<THREE.InstancedMesh>): void {
     const transform = this.transform(animal);
     const matrix = new THREE.Matrix4();
+    const wing = new THREE.Matrix4();
+    const flap = Math.sin((this.time + animal.phase) * WING_SPEED) * WING_AMPLITUDE;
     const meshes = this.meshesByModel[animal.modelIndex];
     const parts = this.prototypesByModel[animal.modelIndex];
     for (let partIndex = 0; partIndex < meshes.length; partIndex++) {
       const mesh = meshes[partIndex];
-      mesh.setMatrixAt(animal.instanceIndex, matrix.multiplyMatrices(transform, parts[partIndex].matrix));
+      const part = parts[partIndex];
+      matrix.multiplyMatrices(transform, part.matrix);
+      const side = animal.altitude > 0 && part.name ? WING_FLAP[part.name] : undefined;
+      if (side !== undefined) matrix.multiply(wing.makeRotationZ(flap * side));
+      mesh.setMatrixAt(animal.instanceIndex, matrix);
       mesh.instanceMatrix.addUpdateRange(animal.instanceIndex * 16, 16);
       touched.add(mesh);
     }

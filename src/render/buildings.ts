@@ -13,6 +13,8 @@ interface Part {
   geometry: THREE.BufferGeometry;
   material: THREE.Material | THREE.Material[];
   matrix: THREE.Matrix4;
+  // Název uzlu v modelu, podle něj se animují jednotlivé díly
+  name?: string;
 }
 
 const prototypes = new Map<string, Promise<Part[]>>();
@@ -109,6 +111,7 @@ export function loadPrototype(kit: Kit, model: string): Promise<Part[]> {
           geometry: child.geometry,
           material: child.material,
           matrix: normalize.clone().multiply(child.matrixWorld),
+          name: child.name,
         });
       });
       return parts;
