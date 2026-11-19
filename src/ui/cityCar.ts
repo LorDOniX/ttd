@@ -8,6 +8,8 @@ export interface CityCarActions {
   car: (id: number) => CityCar | null;
   relocate: (id: number) => boolean;
   focus: (x: number, z: number) => void;
+  // Pohled z kabiny řidiče
+  ride: (car: CityCar) => void;
 }
 
 // Okno městského auta; zaseknuté auto jde odstranit, objeví se jinde v témže městě
@@ -31,6 +33,12 @@ export function openCityCar(windows: WindowManager, game: Game, car: CityCar, ac
       message = 'Ve městě teď není jinde volné místo, zkuste to později.';
       windows.update(id, render());
     });
+    const ride = h(
+      'button',
+      { className: 'small-button', title: 'Pohled z kabiny řidiče, obraz jede s autem' },
+      '🎥 Z kabiny',
+    );
+    ride.addEventListener('click', () => actions.ride(car));
     return h(
       'div',
       { className: 'form' },
@@ -40,7 +48,7 @@ export function openCityCar(windows: WindowManager, game: Game, car: CityCar, ac
         h('tr', {}, h('td', {}, 'Město'), h('td', {}, townName)),
         h('tr', {}, h('td', {}, 'Stav'), h('td', {}, state)),
       ),
-      h('div', { className: 'train__actions' }, remove),
+      h('div', { className: 'train__actions' }, remove, ride),
       h(
         'div',
         { className: 'form__hint' },

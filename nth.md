@@ -23,6 +23,7 @@ Volitelná rozšíření mimo hlavní fáze ze [ttd.md](ttd.md).
 - **Provoz městských aut** – autonomní doprava s křižovatkami, semafory a interakcí s hráčskými vozidly
 - **Zvířata v krajině** – dekorativní zvířata v lesích z cube pets kitu
 - **Zemědělský řetězec** – farma produkuje obilí, potravinářský závod z něj vyrábí potraviny pro města
+- **Pohled z první osoby** – v okně vlaku, auta i městského auta „🎥 Z kabiny“ (kamera jede s vozidlem, tachometr, tlačítko Zpět); panáček vpravo dole přetažením na mapu spustí průzkum pěšky (WASD/šipky, Shift běh, myš rozhlížení, Zavřít/Esc)
 
 ## Zbývá
 - **Letecká doprava** – letiště a letadla z `assets/airplanes/` (pořadí generací v [airplanes.md](airplanes.md), autoři v `assets/credits.md`); chybí návrh letiště (velikost, ranveje, hangár, kapacita) a parametry letadel jako u vlaků. Modely mají různé měřítko (délka 8,6–1676 jednotek), takže je potřeba je při načtení sjednotit na délku; airplane-1 má předek na +X (otočit `rotation.y = -π/2`), ostatní na +Z; airplane-2 má kola pod y = 0; airplane-3 má 11 tis. trojúhelníků. Ve hře je zobrazit credits (CC BY)

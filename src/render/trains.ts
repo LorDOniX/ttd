@@ -7,6 +7,7 @@ import { TileType, type GameMap } from '../world/map';
 import { pointAt } from '../world/route';
 import { inView } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
+import type { CabPose } from './firstPerson';
 import { BRIDGE_DECK } from './rail';
 
 // Modely z train kitu jsou dlouhé ~2,6 jednotky podél +Z
@@ -22,6 +23,8 @@ interface TrainView {
   // Náklad každého vagonu (část modelu `cargo`), null u vagonů bez viditelného nákladu
   loads: (THREE.Object3D | null)[];
   lights: THREE.Mesh[];
+  // Obrys lokomotivy (výška střechy, vzdálenost čela od středu) pro pohled z kabiny
+  cab: { height: number; front: number } | null;
 }
 
 const HEADLIGHTS_GEOMETRY = lightMarkerGeometry(
@@ -66,6 +69,8 @@ function trainKey(train: Train): string {
 export class TrainsView {
   readonly object = new THREE.Group();
   private readonly views = new Map<number, TrainView>();
+  // Vlak, z jehož kabiny se hráč dívá; jeho lokomotiva se nevykresluje, aby nezakrývala výhled
+  private cabTrain: number | null = null;
 
   constructor(
     private readonly fleet: Fleet,
@@ -95,6 +100,19 @@ export class TrainsView {
     }
   }
 
+  setCabTrain(id: number | null): void {
+    this.cabTrain = id;
+  }
+
+  // Poloha lokomotivy pro pohled z kabiny; null, když vlak stojí v depu nebo model ještě není načtený
+  cabPose(id: number): CabPose | null {
+    const train = this.fleet.trains.find((t) => t.id === id);
+    const view = this.views.get(id);
+    if (!train || !view?.cab || train.state === 'depot' || !view.group.visible) return null;
+    const lead = view.vehicles[0];
+    return { x: lead.position.x, y: lead.position.y, z: lead.position.z, heading: lead.rotation.y, ...view.cab };
+  }
+
   // Id vlaku, jehož viditelný vůz paprsek zasáhne jako první
   pick(raycaster: THREE.Raycaster): number | null {
     const isShown = (o: THREE.Object3D | null): boolean => !o || (o.visible && isShown(o.parent));
@@ -111,7 +129,14 @@ export class TrainsView {
 
   private createView(train: Train): TrainView {
     const model = trainModel(train);
-    const view: TrainView = { key: trainKey(train), group: new THREE.Group(), vehicles: [], loads: [], lights: [] };
+    const view: TrainView = {
+      key: trainKey(train),
+      group: new THREE.Group(),
+      vehicles: [],
+      loads: [],
+      lights: [],
+      cab: null,
+    };
     const wagonModels = CARGOS[train.cargo].wagonModels ?? [model.wagonModel];
     const names = [model.model, ...Array.from({ length: train.wagons }, (_, i) => wagonModels[i % wagonModels.length])];
     void Promise.all(names.map((n) => loadModel('train kit', n))).then((objects) => {
@@ -125,6 +150,10 @@ export class TrainsView {
         o.scale.setScalar(SCALE);
         view.group.add(o);
       }
+      const lead = objects[0];
+      lead.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(lead);
+      view.cab = { height: box.max.y, front: box.max.z };
       view.vehicles = objects;
       view.loads = wagons.map((w) => w.getObjectByName('cargo') ?? null);
     });
@@ -152,6 +181,7 @@ export class TrainsView {
       // Vozy ještě (nebo už) v depu nejsou vidět
       vehicle.visible =
         center > 0 &&
+        !(i === 0 && train.id === this.cabTrain) &&
         this.map.get(Math.floor(x), Math.floor(z)) !== TileType.Depot &&
         inView(frustum, x, y, z, VEHICLE_LENGTH);
     }

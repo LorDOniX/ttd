@@ -21,6 +21,8 @@ import type { WindowManager } from './windows';
 export interface VehicleLinks {
   focus: (x: number, z: number) => void;
   openRoadDepot: (depot: Depot) => void;
+  // Pohled z kabiny řidiče
+  ride: (vehicle: RoadVehicle) => void;
 }
 
 const speedText = (v: number): string => v.toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
@@ -144,6 +146,12 @@ export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: Roa
         const depot = roadFleet.depot(vehicle);
         if (depot) links.openRoadDepot(depot);
       }),
+      smallButton(
+        '🎥 Z kabiny',
+        () => links.ride(vehicle),
+        vehicle.state === 'depot',
+        'Pohled z kabiny řidiče, obraz jede s autem',
+      ),
     );
     if (vehicle.state === 'depot' && vehicle.orders) {
       const orders = vehicle.orders;

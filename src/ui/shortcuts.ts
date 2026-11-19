@@ -18,11 +18,13 @@ const PAN_DIRECTIONS: Record<string, [number, number]> = {
 // Klávesové zkratky hry a posun mapy držením šipek
 export class Shortcuts {
   private readonly held = new Set<string>();
+  // Vypnuté v pohledu z první osoby: klávesy (WASD, šipky) tam patří chůzi
+  private on = true;
 
   constructor(private readonly list: Shortcut[]) {
     window.addEventListener('keydown', (e) => {
       // Ctrl/Cmd/Alt nechá prohlížeči (Cmd+R apod.), psaní do polí nechá polím
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!this.on || e.ctrlKey || e.metaKey || e.altKey) return;
       if ((e.target as HTMLElement).closest('input, textarea, select')) return;
       if (e.code in PAN_DIRECTIONS) {
         e.preventDefault();
@@ -36,6 +38,15 @@ export class Shortcuts {
     });
     window.addEventListener('keyup', (e) => this.held.delete(e.code));
     window.addEventListener('blur', () => this.held.clear());
+  }
+
+  get enabled(): boolean {
+    return this.on;
+  }
+
+  set enabled(on: boolean) {
+    this.on = on;
+    this.held.clear();
   }
 
   // Směr posunu podle držených šipek (x doprava, y nahoru)

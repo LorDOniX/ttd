@@ -25,6 +25,7 @@ export function openDepot(
   game: Game,
   depot: Depot,
   focus: (x: number, z: number) => void,
+  ride: (train: Train) => void,
 ): void {
   const id = `depot-${depot.id}`;
   const { fleet } = game;
@@ -39,13 +40,12 @@ export function openDepot(
   const stationsByDistance = (): { id: number; name: string }[] =>
     game.world.rail.stations
       .filter((s) => s.kind !== 'road')
-      .sort(
-      (a, b) => Math.hypot(a.x - depot.x, a.y - depot.y) - Math.hypot(b.x - depot.x, b.y - depot.y),
-    );
+      .sort((a, b) => Math.hypot(a.x - depot.x, a.y - depot.y) - Math.hypot(b.x - depot.x, b.y - depot.y));
 
   const stationSelect = (selected: number | undefined): HTMLSelectElement => {
     const select = h('select', {});
-    for (const s of stationsByDistance()) select.append(h('option', { value: String(s.id), selected: s.id === selected }, s.name));
+    for (const s of stationsByDistance())
+      select.append(h('option', { value: String(s.id), selected: s.id === selected }, s.name));
     return select;
   };
 
@@ -65,21 +65,31 @@ export function openDepot(
       ` · ${model.name} · ${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'}`,
       ` (${formatTiles(trainLength(train))})`,
       ` · ${formatLoad(train)}`,
-      h('span', { className: isOld(train, game.clock.day) ? 'warning' : '' }, ` · ${formatYears(trainAge(train, game.clock.day))}`),
+      h(
+        'span',
+        { className: isOld(train, game.clock.day) ? 'warning' : '' },
+        ` · ${formatYears(trainAge(train, game.clock.day))}`,
+      ),
       h('div', { className: 'form__hint' }, stateText(game, train)),
     );
     const warning = shortStationsWarning(game, train);
     if (warning) info.append(h('div', { className: 'form__hint warning' }, warning));
     const row = h('div', { className: 'train' }, info);
     const detail = (label: string): HTMLButtonElement =>
-      button(label, () => openTrain(windows, game, train, { focus, openDepot: (d) => openDepot(windows, game, d, focus) }));
+      button(label, () =>
+        openTrain(windows, game, train, { focus, ride, openDepot: (d) => openDepot(windows, game, d, focus, ride) }),
+      );
 
     if (train.state === 'depot') {
       row.append(
         h(
           'div',
           { className: 'train__actions' },
-          button(`+ vagon (${formatMoney(WAGON_PRICE)})`, () => report(fleet.addWagon(train)), train.wagons >= MAX_WAGONS),
+          button(
+            `+ vagon (${formatMoney(WAGON_PRICE)})`,
+            () => report(fleet.addWagon(train)),
+            train.wagons >= MAX_WAGONS,
+          ),
           button('− vagon', () => fleet.removeWagon(train), train.wagons === 0),
           button(`Prodat (${formatMoney(sellPrice(train, game.clock.day))})`, () => fleet.sell(train)),
           button(`Obnovit (${formatMoney(fleet.renewalOffer(train).cost)})`, () => report(fleet.renew(train))),
@@ -156,7 +166,14 @@ export function openDepot(
       models[models.length - 1].id,
     );
     const buy = h('button', { className: 'small-button' }, 'Koupit');
-    buy.addEventListener('click', () => report(fleet.buy(depot, models.find((m) => m.id === picker.value)!)));
+    buy.addEventListener('click', () =>
+      report(
+        fleet.buy(
+          depot,
+          models.find((m) => m.id === picker.value)!,
+        ),
+      ),
+    );
 
     const trains = fleet.inDepot(depot);
     return h(
@@ -164,7 +181,9 @@ export function openDepot(
       { className: 'form' },
       h('div', { className: 'train__actions' }, picker.element, buy),
       h('h4', {}, 'Vlaky'),
-      ...(trains.length > 0 ? trains.map(trainRow) : [h('div', { className: 'form__hint' }, 'Depo zatím nemá žádné vlaky.')]),
+      ...(trains.length > 0
+        ? trains.map(trainRow)
+        : [h('div', { className: 'form__hint' }, 'Depo zatím nemá žádné vlaky.')]),
     );
   };
 

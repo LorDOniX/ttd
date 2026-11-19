@@ -30,6 +30,8 @@ export function inView(frustum: THREE.Frustum, x: number, y: number, z: number, 
 export class IsoCamera {
   readonly camera = new THREE.OrthographicCamera();
   readonly target = new THREE.Vector3();
+  // Hráč smí kameru ovládat myší (zoom, posun, otáčení); úvodní obrazovka to vypíná
+  interactive = true;
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly raycaster = new THREE.Raycaster();
   private readonly viewFrustum = new THREE.Frustum();
@@ -127,6 +129,19 @@ export class IsoCamera {
     requestAnimationFrame(step);
   }
 
+  // Nejdelší vzdálenost na zemi od středu pohledu k rohu obrazovky; při otáčení kolem středu se nemění
+  visibleRadius(): number {
+    const rect = this.dom.getBoundingClientRect();
+    let radius = 0;
+    for (const x of [rect.left, rect.right]) {
+      for (const y of [rect.top, rect.bottom]) {
+        const p = this.groundPoint(x, y);
+        if (p) radius = Math.max(radius, Math.hypot(p.x - this.target.x, p.z - this.target.z));
+      }
+    }
+    return radius;
+  }
+
   // Paprsek z kamery skrz bod obrazovky
   ray(clientX: number, clientY: number): THREE.Raycaster {
     const rect = this.dom.getBoundingClientRect();
@@ -159,6 +174,7 @@ export class IsoCamera {
       'wheel',
       (e) => {
         e.preventDefault();
+        if (!this.interactive) return;
         const before = this.groundPoint(e.clientX, e.clientY);
         const factor = Math.exp(-e.deltaY * 0.0015);
         this.camera.zoom = THREE.MathUtils.clamp(this.camera.zoom * factor, MIN_ZOOM, MAX_ZOOM);
@@ -174,7 +190,7 @@ export class IsoCamera {
     );
 
     this.dom.addEventListener('pointerdown', (e) => {
-      if (e.button !== 2) return;
+      if (e.button !== 2 || !this.interactive) return;
       this.dom.setPointerCapture(e.pointerId);
       this.rotatingPointer = e.shiftKey;
       this.panAnchor = this.rotatingPointer ? null : this.groundPoint(e.clientX, e.clientY);

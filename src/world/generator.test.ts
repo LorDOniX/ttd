@@ -24,6 +24,19 @@ describe('generátor světa', () => {
     }
   });
 
+  it('Brno na požádání stojí u zadaného místa (úvodní ukázka)', () => {
+    for (const seed of [0, 7, 42]) {
+      const world = generateWorld(seed, 128, 1950, {
+        waterLevel: 0.3,
+        townDensity: 2.5,
+        firstTownAt: { x: 64, y: 64 },
+      });
+      const brno = world.towns.filter((town) => town.name === 'Brno');
+      expect(brno).toHaveLength(1);
+      expect(Math.hypot(brno[0].x - 64, brno[0].y - 64)).toBeLessThan(16);
+    }
+  });
+
   it('výchozí parametry zachovávají dosavadní mapy', () => {
     const implicit = generateWorld(7, 128, 1950);
     const explicit = generateWorld(7, 128, 1950, { waterLevel: 0.34, townDensity: 1 });

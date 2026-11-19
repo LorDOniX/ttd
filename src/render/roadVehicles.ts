@@ -6,6 +6,7 @@ import { roadVehicleModel, vehiclePoint, type RoadFleet, type RoadVehicle } from
 import type { GameMap } from '../world/map';
 import { inView } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
+import type { CabPose } from './firstPerson';
 import { BRIDGE_DECK } from './rail';
 
 // Modely z car kitu jsou dlouhé ~3 jednotky podél +Z (předek), kola stojí na y = 0
@@ -21,6 +22,10 @@ interface VehicleView {
   // Náklad na korbě, viditelný jen naložený
   load: THREE.Object3D | null;
   lights: THREE.Mesh;
+  // Obrys modelu (výška střechy, vzdálenost čela od středu) pro pohled z kabiny
+  cab: { height: number; front: number } | null;
+  // Auto je tento snímek na silnici (ne v garáži)
+  placed: boolean;
 }
 
 const VEHICLE_LIGHTS_GEOMETRY = lightMarkerGeometry(
@@ -77,6 +82,8 @@ const FLATBED_LOADS: Partial<Record<string, 'pile' | 'logs' | 'plates'>> = {
 export class RoadVehiclesView {
   readonly object = new THREE.Group();
   private readonly views = new Map<string, VehicleView>();
+  // Auto, z jehož kabiny se hráč dívá (player:id nebo city:id); nevykresluje se, aby nezakrývalo výhled
+  private cabKey: string | null = null;
 
   constructor(
     private readonly fleet: RoadFleet,
@@ -105,12 +112,13 @@ export class RoadVehiclesView {
         this.views.set(key, view);
         this.object.add(view.group);
       }
-      view.group.visible = vehicle.state !== 'depot' && vehicle.path.length > 0;
+      view.placed = vehicle.state !== 'depot' && vehicle.path.length > 0;
+      view.group.visible = view.placed;
       view.lights.visible = false;
       if (!view.group.visible) continue;
       this.place(vehicle.path, vehicle.pos, view);
       const { x, y, z } = view.group.position;
-      view.group.visible = inView(frustum, x, y, z, 0.3);
+      view.group.visible = key !== this.cabKey && inView(frustum, x, y, z, 0.3);
       view.lights.visible = night && view.group.visible;
     }
     for (const car of cityCars) {
@@ -123,12 +131,24 @@ export class RoadVehiclesView {
         this.views.set(key, view);
         this.object.add(view.group);
       }
-      view.group.visible = true;
+      view.placed = true;
       this.place(car.path, car.pos, view);
       const { x, y, z } = view.group.position;
-      view.group.visible = inView(frustum, x, y, z, 0.3);
+      view.group.visible = key !== this.cabKey && inView(frustum, x, y, z, 0.3);
       view.lights.visible = night && view.group.visible;
     }
+  }
+
+  setCabVehicle(key: string | null): void {
+    this.cabKey = key;
+  }
+
+  // Poloha auta pro pohled z kabiny (klíč player:id nebo city:id); null, když je v garáži nebo není načtené
+  cabPose(key: string): CabPose | null {
+    const view = this.views.get(key);
+    if (!view?.cab || !view.placed) return null;
+    const { position, rotation } = view.group;
+    return { x: position.x, y: position.y, z: position.z, heading: rotation.y, ...view.cab };
   }
 
   // Auto (hráčovo, nebo městské), které paprsek zasáhne jako první
@@ -155,6 +175,8 @@ export class RoadVehiclesView {
       group: new THREE.Group(),
       load: null,
       lights: vehicleLightMarkers(),
+      cab: null,
+      placed: false,
     };
     view.group.scale.setScalar(SCALE);
     view.group.add(view.lights);
@@ -163,6 +185,13 @@ export class RoadVehiclesView {
       // Popelářský vůz slouží jako cisterna, odpadky na střeše nepatří k ropě
       const trash = object.getObjectByName('trash');
       if (trash) trash.visible = false;
+      // Obrys v souřadnicích modelu (ještě bez rodiče), skupina auta ho zmenší o SCALE
+      object.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      object.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.visible) box.expandByObject(o);
+      });
+      view.cab = { height: box.max.y * SCALE, front: box.max.z * SCALE };
       view.group.add(object);
       const kind = model && FLATBED_LOADS[model.cargo];
       if (model && kind) {

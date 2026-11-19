@@ -39,6 +39,8 @@ export function stateText(game: Game, train: Train): string {
 export interface TrainLinks {
   focus: (x: number, z: number) => void;
   openDepot: (depot: Depot) => void;
+  // Pohled z kabiny strojvedoucího
+  ride: (train: Train) => void;
 }
 
 export function formatYears(age: number): string {
@@ -236,12 +238,19 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
       const error = game.fleet.requestRenewal(train);
       if (error) game.news(error);
     });
+    const ride = h('button', {
+      className: 'small-button',
+      textContent: '🎥 Z kabiny',
+      title: 'Pohled z kabiny strojvedoucího, obraz jede s vlakem',
+      disabled: train.state === 'depot',
+    });
+    ride.addEventListener('click', () => links.ride(train));
     return h(
       'div',
       { className: 'form' },
       table,
       ...(warning ? [h('div', { className: 'form__hint warning' }, warning)] : []),
-      h('div', { className: 'train__actions' }, toDepot, depot, renew),
+      h('div', { className: 'train__actions' }, toDepot, depot, renew, ride),
       h('h4', {}, 'Jízdní řád'),
       ordersEditor(game, train, choice),
       sharingEditor(game, train, shareChoice),

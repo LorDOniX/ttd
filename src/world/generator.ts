@@ -1,6 +1,6 @@
 import { TOWN_POPULATION } from '../game/balance';
 import { placeIndustries, type Industry } from './industry';
-import { GameMap, TileType } from './map';
+import { GameMap, TileType, type TilePos } from './map';
 import { CITY_NAMES, VILLAGE_NAMES } from './names';
 import { fbm } from './noise';
 import { RailNetwork } from './rail';
@@ -24,6 +24,8 @@ export interface GenerateOptions {
   townDensity: number;
   // Násobek počtu průmyslových závodů
   industryDensity?: number;
+  // Brno co nejblíž tomuto místu (úvodní ukázka ho chce uprostřed mapy), jinak náhodně
+  firstTownAt?: TilePos;
 }
 
 const DEFAULT_OPTIONS: GenerateOptions = { waterLevel: 0.34, townDensity: 1 };
@@ -78,6 +80,23 @@ function landRatio(map: GameMap, cx: number, cy: number, r: number): number {
   return land / total;
 }
 
+// Nejbližší místo pro město k bodu: volná souš s dostatkem souše kolem, hledaná v soustředných čtvercích
+function townSiteNear(map: GameMap, at: TilePos): TilePos | null {
+  for (let r = 0; r <= Math.min(map.width, map.height) / 2 - EDGE_MARGIN; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const x = at.x + dx;
+        const y = at.y + dy;
+        if (x < EDGE_MARGIN || y < EDGE_MARGIN || x >= map.width - EDGE_MARGIN || y >= map.height - EDGE_MARGIN)
+          continue;
+        if (map.isFree(x, y) && landRatio(map, x, y, 6) >= 0.75) return { x, y };
+      }
+    }
+  }
+  return null;
+}
+
 function minDistance(kind: TownKind, other: TownKind): number {
   return kind === 'city' && other === 'city' ? 40 : 26;
 }
@@ -91,10 +110,29 @@ function placeTowns(
   year: number,
   density: number,
   requiredFirstName?: string,
+  firstAt?: TilePos,
 ): void {
   const population = TOWN_POPULATION[kind];
   const count = Math.max(1, Math.round(((map.width * map.height) / TILES_PER_TOWN[kind]) * density));
   let placed = 0;
+
+  const site = requiredFirstName && firstAt ? townSiteNear(map, firstAt) : null;
+  if (requiredFirstName && site) {
+    const town: Town = {
+      id: towns.length,
+      name: requiredFirstName,
+      kind,
+      ...site,
+      population: rng.int(population.min, population.max),
+      radius: 2,
+      shape: createTownShape(rng),
+      buildings: [],
+      served: false,
+    };
+    expandTown(map, town, year, rng);
+    towns.push(town);
+    placed++;
+  }
 
   for (
     let attempt = 0;
@@ -166,7 +204,7 @@ export function generateWorld(
   const towns: Town[] = [];
   // Města a městečka berou jména ze společného seznamu, aby se neopakovala
   const townNames = rng.shuffle(CITY_NAMES.filter((name) => name !== 'Brno'));
-  placeTowns(map, rng, 'city', townNames, towns, year, options.townDensity, 'Brno');
+  placeTowns(map, rng, 'city', townNames, towns, year, options.townDensity, 'Brno', options.firstTownAt);
   placeTowns(map, rng, 'town', townNames, towns, year, options.townDensity);
   placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year, options.townDensity);
   generateTrees(map, seed);

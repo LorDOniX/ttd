@@ -27,6 +27,9 @@ const SPIN_PER_SECOND = 0.05;
 const DEMO_LINES = 3;
 // Ukázka v pozdějším roce: města mají za sebou desítky let růstu a v centru mrakodrapy
 const DEMO_YEAR = 2025;
+const DEMO_SIZE = 128;
+// Přiblížení ukázky; když by i tak byl vidět okraj mapy (široké okno), přiblíží se víc
+const DEMO_ZOOM = 1.6;
 
 function placeStationNear(game: Game, town: Town): Station | null {
   const { rail } = game.world;
@@ -61,7 +64,15 @@ function buildDemoLine(game: Game, from: Town, to: Town, model: TrainModel): boo
 }
 
 function createDemo(): Game {
-  const game = new Game(generateWorld(hashSeed('ttd-title'), 128, START_YEAR, { waterLevel: 0.3, townDensity: 2.5 }));
+  // Brno uprostřed mapy, aby kolem něj při otáčení nebyl vidět okraj
+  const center = { x: DEMO_SIZE / 2, y: DEMO_SIZE / 2 };
+  const game = new Game(
+    generateWorld(hashSeed('ttd-title'), DEMO_SIZE, START_YEAR, {
+      waterLevel: 0.3,
+      townDensity: 2.5,
+      firstTownAt: center,
+    }),
+  );
   game.money = 1e9;
   const { map } = game.world;
   for (let year = START_YEAR + 1; year <= DEMO_YEAR; year++) {
@@ -70,7 +81,10 @@ function createDemo(): Game {
   game.clock.date = { year: DEMO_YEAR, month: 0, day: 1 };
   // Od nejnovějších vlaků, které v roce ukázky jezdí
   const models = TRAIN_MODELS.filter((m) => m.year <= DEMO_YEAR).reverse();
-  const towns = [...game.world.towns].sort((a, b) => b.population - a.population);
+  // Brno (uprostřed mapy) dostane trať jako první, ostatní podle velikosti
+  const towns = [...game.world.towns].sort(
+    (a, b) => Number(b.name === 'Brno') - Number(a.name === 'Brno') || b.population - a.population,
+  );
   const used = new Set<Town>();
   let lines = 0;
   for (const from of towns) {
@@ -182,25 +196,35 @@ export function runTitle(container: HTMLElement): void {
   view.setSeasonMode('summer');
   view.terrain.setGridVisible(false);
   view.setLabelsInteractive(false);
-  // Mezi centrum největšího města s tratí a jeho nádraží, aby bylo vidět město i vlaky;
-  // přiblížení skryje okraj mapy
-  view.camera.camera.zoom = 1.6;
-  view.camera.camera.updateProjectionMatrix();
+  // Ukázka se jen otáčí: bez zoomu, posunu a otáčení myší
+  view.camera.interactive = false;
+  // Mezi centrum Brna a jeho nádraží, aby bylo vidět město i vlaky
   const { map, rail, towns } = game.world;
   const brno = towns.find((town) => town.name === 'Brno');
-  const station = brno
-    ? rail.stations.find((candidate) => candidate.townId === brno.id)
-    : [...rail.stations].sort((a, b) => towns[b.townId].population - towns[a.townId].population)[0];
-  if (station && brno) {
-    view.camera.focus((brno.x + station.x) / 2, (brno.y + station.y) / 2);
-  } else if (brno) {
-    view.camera.focus(brno.x + 0.5, brno.y + 0.5);
-  } else if (station) {
-    const town = towns[station.townId];
-    view.camera.focus((town.x + station.x) / 2, (town.y + station.y) / 2);
-  } else {
-    view.camera.focus(map.width / 2, map.height / 2);
-  }
+  const station = brno && rail.stations.find((candidate) => candidate.townId === brno.id);
+  const focus = brno
+    ? station
+      ? { x: (brno.x + station.x) / 2, y: (brno.y + station.y) / 2 }
+      : { x: brno.x + 0.5, y: brno.y + 0.5 }
+    : { x: map.width / 2, y: map.height / 2 };
+  // Střed pohledu tak daleko od okraje, kam kamera v jakémkoli natočení dohlédne
+  const fitView = (): void => {
+    const camera = view.camera.camera;
+    camera.zoom = DEMO_ZOOM;
+    camera.updateProjectionMatrix();
+    const limit = Math.min(map.width, map.height) / 2 - 1;
+    const radius = view.camera.visibleRadius();
+    if (radius > limit) {
+      camera.zoom *= radius / limit;
+      camera.updateProjectionMatrix();
+    }
+    const margin = Math.min(limit, radius) + 1;
+    const clamp = (value: number, size: number): number =>
+      Math.min(Math.max(value, margin), Math.max(margin, size - margin));
+    view.camera.focus(clamp(focus.x, map.width), clamp(focus.y, map.height));
+  };
+  fitView();
+  window.addEventListener('resize', fitView);
 
   const panel = h('div', { className: 'title__panel' });
   const showMain = (): void => panel.replaceChildren(mainPanel(() => panel.replaceChildren(newGamePanel(showMain))));

@@ -1079,3 +1079,246 @@ kbd {
 .title__panel .tool-button:hover {
   background: var(--button-hover);
 }
+
+/* Pohled z první osoby: kabina vozidla a průzkum pěšky */
+#app.first-person > :not(canvas):not(.fp-overlay) {
+  display: none !important;
+}
+
+.fp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  color: #f2f0ea;
+  font-size: 14px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.fp-overlay--dragging {
+  cursor: grabbing;
+}
+
+.fp-bar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: none;
+}
+
+.fp-bar__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-weight: 600;
+  background: rgba(16, 17, 20, 0.7);
+  border-radius: 6px;
+}
+
+.fp-bar .fp-button {
+  margin-left: auto;
+  pointer-events: auto;
+}
+
+.fp-button {
+  padding: 7px 14px;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(16, 17, 20, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.fp-button:hover {
+  background: #8a5a2a;
+}
+
+.fp-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  white-space: nowrap;
+  font-size: 13px;
+  background: rgba(16, 17, 20, 0.6);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.fp-hint kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  margin: 0 1px;
+  padding: 0 4px;
+  text-align: center;
+  font: inherit;
+  font-size: 12px;
+  color: #222;
+  background: var(--kbd);
+  border-radius: 3px;
+}
+
+/* Kabina: rám skla, palubní deska, tachometr */
+.fp-cab__frame-wrap,
+.fp-cab__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.fp-cab .fp-hint {
+  bottom: auto;
+  top: 58px;
+}
+
+.fp-dash {
+  position: absolute;
+  left: 50%;
+  bottom: 2.5vh;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 18px 10px 10px;
+  background: rgba(10, 10, 12, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.fp-gauge svg {
+  display: block;
+  width: 96px;
+  height: 96px;
+}
+
+.fp-gauge__needle {
+  transform-origin: 50px 50px;
+  transform-box: view-box;
+}
+
+.fp-dash__speed {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #ffb03a;
+}
+
+.fp-dash__status {
+  max-width: 340px;
+  margin-top: 2px;
+  color: #d8d5cc;
+}
+
+/* Chůze: zaměřovač, kompas, místo */
+.fp-walk__pegman svg {
+  display: block;
+  width: 12px;
+  height: 20px;
+}
+
+.fp-walk__place {
+  padding: 6px 12px;
+  background: rgba(16, 17, 20, 0.6);
+  border-radius: 6px;
+}
+
+.fp-walk__place:empty {
+  display: none;
+}
+
+.fp-walk__compass {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  width: 64px;
+  height: 64px;
+  pointer-events: none;
+}
+
+.fp-walk__compass svg {
+  width: 100%;
+  height: 100%;
+}
+
+.fp-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* Panáček v rohu mapy a jeho přetahovaná kopie */
+.pegman-dock {
+  position: absolute;
+  right: 12px;
+  bottom: 40px;
+  z-index: 6;
+  width: 44px;
+  height: 56px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid;
+  border-color: var(--bevel-light) var(--bevel-dark) var(--bevel-dark) var(--bevel-light);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  touch-action: none;
+}
+
+.pegman-dock:hover svg {
+  transform: translateY(-2px);
+}
+
+.pegman-dock svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.12s;
+}
+
+.pegman-dock--empty svg {
+  opacity: 0.25;
+}
+
+.pegman-ghost {
+  position: fixed;
+  z-index: 40;
+  width: 30px;
+  height: 50px;
+  /* Nohy panáčka míří na kurzor */
+  transform: translate(-50%, -100%) rotate(-8deg);
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+
+.pegman-ghost svg {
+  width: 100%;
+  height: 100%;
+}
+
+.pegman-ghost--invalid {
+  opacity: 0.5;
+}
+
+body.pegman-dragging,
+body.pegman-dragging * {
+  cursor: grabbing !important;
+}

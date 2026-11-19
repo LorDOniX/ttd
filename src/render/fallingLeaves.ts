@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { tilesAroundCamera } from './firstPerson';
 import type { Season } from '../game/seasons';
 import { TileType, type GameMap } from '../world/map';
 
@@ -201,6 +202,8 @@ export class FallingLeavesView {
 
   // Obdélník dlaždic [x0, y0, x1, y1], který kamera vidí mezi zemí a nejvyšším listem
   private visibleTiles(camera: THREE.Camera): [number, number, number, number] {
+    // Perspektivní kamera z první osoby vidí až k obzoru, efekty stačí kolem ní
+    if (camera instanceof THREE.PerspectiveCamera) return tilesAroundCamera(camera, this.map);
     let minX = Infinity;
     let minZ = Infinity;
     let maxX = -Infinity;

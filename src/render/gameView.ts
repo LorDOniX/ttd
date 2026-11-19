@@ -10,6 +10,7 @@ import { AmbientPropsView } from './ambientProps';
 import { AnimalsView } from './animals';
 import { BuildingsView } from './buildings';
 import { IsoCamera } from './camera';
+import { FIRST_PERSON_DETAIL_ZOOM, FOG_FAR, FOG_NEAR, type CabPose, type FirstPersonController } from './firstPerson';
 import { CrossingsView } from './crossings';
 import { IndustriesView } from './industries';
 import { FloatingTexts, StationLabels, TownLabels } from './labels';
@@ -37,6 +38,9 @@ const DAY_GROUND = new THREE.Color(0x556644);
 const NIGHT_GROUND = new THREE.Color(0x171b26);
 const DAY_SUN = new THREE.Color(0xffffff);
 const NIGHT_SUN = new THREE.Color(0x8095c0);
+// Mlha je pořád ve scéně (přepnutí by přeložilo všechny shadery), v izometrii ale začíná daleko za kamerou
+const ISO_FOG_NEAR = 1e5;
+const ISO_FOG_FAR = 1e6;
 // Přechod ročního období po krocích: každý krok přebarví celý terén, proto ne každý herní den
 const SEASON_STEPS = 10;
 
@@ -91,6 +95,11 @@ export class GameView {
   // Čas animací scény (kouř, listí, vlnky…) v sekundách; při pauze stojí
   private effectsSeconds = 0;
   private readonly sky = new THREE.Color(DAY_SKY);
+  private readonly fog = new THREE.Fog(DAY_SKY, ISO_FOG_NEAR, ISO_FOG_FAR);
+  // Pohled z kabiny nebo chůze; null = izometrický pohled
+  private firstPerson: FirstPersonController | null = null;
+  private readonly firstPersonFrustum = new THREE.Frustum();
+  private readonly firstPersonProjection = new THREE.Matrix4();
 
   constructor(
     container: HTMLElement,
@@ -105,6 +114,7 @@ export class GameView {
 
     const scene = this.scene;
     scene.background = new THREE.Color(0x87b5d8);
+    scene.fog = this.fog;
     this.hemisphere = new THREE.HemisphereLight(0xffffff, 0x556644, 1.2);
     scene.add(this.hemisphere);
     this.sun = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -306,6 +316,57 @@ export class GameView {
     this.industries.setSeason(season);
   }
 
+  // Přepne vykreslování na kameru z první osoby (null = zpět do izometrie, kamera izometrie se nemění)
+  setFirstPerson(controller: FirstPersonController | null): void {
+    this.firstPerson?.dispose();
+    this.firstPerson = controller;
+    const active = controller !== null;
+    this.fog.near = active ? FOG_NEAR : ISO_FOG_NEAR;
+    this.fog.far = active ? FOG_FAR : ISO_FOG_FAR;
+    // Popisky měst a stanic patří k mapě, v pohledu z první osoby by visely přes celý obzor
+    this.labels.renderer.domElement.hidden = active;
+    // Hned na místo, ať první snímek neořezává scénu podle prázdné kamery
+    controller?.update(0);
+    if (!active) {
+      this.trains.setCabTrain(null);
+      this.vehicles.setCabVehicle(null);
+    }
+  }
+
+  get firstPersonActive(): boolean {
+    return this.firstPerson !== null;
+  }
+
+  // Pohled z kabiny vlaku: lokomotiva se skryje a poloha se čte každý snímek
+  trainCab(trainId: number): () => CabPose | null {
+    this.vehicles.setCabVehicle(null);
+    this.trains.setCabTrain(trainId);
+    return () => this.trains.cabPose(trainId);
+  }
+
+  // Pohled z kabiny auta: klíč player:id (hráčovo) nebo city:id (městské)
+  vehicleCab(key: string): () => CabPose | null {
+    this.trains.setCabTrain(null);
+    this.vehicles.setCabVehicle(key);
+    return () => this.vehicles.cabPose(key);
+  }
+
+  // Zoom pro LOD a efekty: z první osoby plné detaily
+  private get detailZoom(): number {
+    return this.firstPerson ? FIRST_PERSON_DETAIL_ZOOM : this.camera.camera.zoom;
+  }
+
+  private get activeCamera(): THREE.Camera & { zoom: number } {
+    return this.firstPerson?.camera ?? this.camera.camera;
+  }
+
+  private activeFrustum(): THREE.Frustum {
+    if (!this.firstPerson) return this.camera.frustum();
+    const { camera } = this.firstPerson;
+    this.firstPersonProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    return this.firstPersonFrustum.setFromProjectionMatrix(this.firstPersonProjection);
+  }
+
   // Id vlaku pod kurzorem
   trainAt(clientX: number, clientY: number): number | null {
     return this.trains.pick(this.camera.ray(clientX, clientY));
@@ -370,7 +431,7 @@ export class GameView {
     this.lastFrameTime = now;
     if (!this.game.clock.paused) this.effectsSeconds += Math.min(dtMs, 100) / 1000;
     this.syncMap();
-    const frustum = this.camera.frustum();
+    const frustum = this.activeFrustum();
     // Chodci chodí v reálném čase nezávisle na rychlosti hry, při pauze stojí
     this.pedestrians.update(this.game.clock.paused ? 0 : Math.min(dtMs, 100) / 1000, frustum);
     this.game.roadFleet.setPedestrianCrossings(this.pedestrians.crossingTiles);
@@ -397,16 +458,17 @@ export class GameView {
     this.applySeason();
     const seconds = this.effectsSeconds;
     updateWater(seconds);
-    this.trees.setZoom(this.camera.camera.zoom);
+    const zoom = this.detailZoom;
+    this.trees.setZoom(zoom);
     this.trees.update(seconds);
-    this.forestMist.update(seconds, this.camera.camera, frustum);
-    this.fallingLeaves.update(seconds, this.camera.camera, frustum);
-    this.animals.setZoom(this.camera.camera.zoom);
+    this.forestMist.update(seconds, this.activeCamera, frustum);
+    this.fallingLeaves.update(seconds, this.activeCamera, frustum);
+    this.animals.setZoom(zoom);
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
     // Světla vozidel jsou při oddálení menší než pixel, jen by přidávala draw cally
-    const vehicleLights = this.lightsAmount > 0.5 && this.camera.camera.zoom >= NIGHT_DETAIL_ZOOM;
-    this.buildings.setZoom(this.camera.camera.zoom);
+    const vehicleLights = this.lightsAmount > 0.5 && zoom >= NIGHT_DETAIL_ZOOM;
+    this.buildings.setZoom(zoom);
     this.trains.update(frustum, vehicleLights);
     this.vehicles.update(frustum, this.cityTraffic.cars, vehicleLights);
     this.trafficLightView.update(this.trafficLights);
@@ -414,8 +476,11 @@ export class GameView {
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
     this.crossings.update(seconds * 1000, (x, y) => reservations.ownerAt(x, y) !== undefined);
     this.floatingTexts.update(now);
-    this.renderer.render(this.scene, this.camera.camera);
-    this.labels.render(this.labelScene, this.camera.camera);
+    // Kamera z první osoby se posune až po vozidlech, aby seděla na právě vykreslené poloze kabiny
+    this.firstPerson?.update(Math.min(dtMs, 100) / 1000);
+    this.fog.color.copy(this.scene.background as THREE.Color);
+    this.renderer.render(this.scene, this.activeCamera);
+    if (!this.firstPerson) this.labels.render(this.labelScene, this.camera.camera);
     // Pohled se ukládá s hrou
     this.game.view = this.camera.view;
   }

@@ -5,6 +5,7 @@ import type { Train } from '../game/trains';
 import { launch, returnToTitle, writeAutosave, type LaunchIntent, type NewGameOptions } from '../game/launch';
 import { parseSave, restoreGame } from '../game/save';
 import { TileCursor } from '../render/cursor';
+import { DropMarker, groundYaw } from '../render/firstPerson';
 import { GameView } from '../render/gameView';
 import { BuildPreview } from '../render/preview';
 import { BuildTools, type PointerTile } from '../ui/buildTools';
@@ -13,6 +14,7 @@ import { openDepot } from '../ui/depot';
 import { openNewsLog, openSaveLoad, openSettings, openTown } from '../ui/dialogs';
 import { h } from '../ui/dom';
 import { openFinance } from '../ui/finance';
+import { FirstPersonMode, createPegmanDock } from '../ui/firstPerson';
 import { Hud, type ToolbarActions } from '../ui/hud';
 import { openMinimap } from '../ui/minimap';
 import { Shortcuts } from '../ui/shortcuts';
@@ -92,13 +94,30 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     setVisible: (visible: boolean) => terrain.setGridVisible(visible),
   };
   const focus = (x: number, z: number): void => isoCamera.focus(x, z);
+  // Pohled z kabiny a průzkum pěšky: skryje HUD a okna, klávesy patří chůzi
+  const firstPerson = new FirstPersonMode(container, game, view, {
+    enter: () => {
+      buildTools.setTool(null);
+      shortcuts.enabled = false;
+      cursor.show(null);
+      clickStart = null;
+      container.classList.add('first-person');
+    },
+    exit: () => {
+      shortcuts.enabled = true;
+      container.classList.remove('first-person');
+    },
+  });
+  const rideTrain = (train: Train): void => firstPerson.rideTrain(train);
   const vehicleLinks = {
     focus,
     openRoadDepot: (depot: Depot) => openRoadDepot(windows, game, depot, vehicleLinks),
+    ride: (vehicle: RoadVehicle) => firstPerson.rideVehicle(vehicle),
   };
   const links = {
     focus,
-    openDepot: (depot: Depot) => openDepot(windows, game, depot, focus),
+    ride: rideTrain,
+    openDepot: (depot: Depot) => openDepot(windows, game, depot, focus, rideTrain),
     openRoadDepot: vehicleLinks.openRoadDepot,
     openTown: (town: Town) => openTown(windows, game, town, focus),
     openIndustry: (industry: Industry) => openIndustry(windows, game, industry, focus),
@@ -205,6 +224,20 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     { codes: ['Delete'], key: 'Delete', label: 'Zavřít všechna okna', run: () => windows.closeAll() },
   ]);
 
+  // Panáček v rohu: přetažením na mapu se jde na průzkum pěšky
+  const dropMarker = new DropMarker();
+  view.scene.add(dropMarker.object);
+  createPegmanDock(container, {
+    game,
+    marker: dropMarker,
+    tileAt,
+    centerTile: () => tileAt(window.innerWidth / 2, window.innerHeight / 2),
+    drop: (tile) => {
+      if (!firstPerson.walk(tile, groundYaw(isoCamera.camera))) game.news('Sem se pěšky nedostanete.');
+    },
+    reject: () => game.news('Sem se pěšky nedostanete, panáčka položte na souš nebo ke břehu.'),
+  });
+
   game.events.on('outOfMoney', () => {
     windows.open(
       'out-of-money',
@@ -278,6 +311,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
         car: (id) => view.cityCar(id),
         relocate: (id) => view.relocateCityCar(id),
         focus,
+        ride: (car) => firstPerson.rideCityCar(car),
       });
       return;
     }
