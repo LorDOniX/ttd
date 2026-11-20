@@ -7,6 +7,7 @@ import {
   DEMOLISH_TREES_COST,
   DEPOT_COST,
   PLATFORM_TILE_COST,
+  PORT_COST,
   ROAD_BRIDGE_COST,
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
@@ -19,6 +20,7 @@ import { formatMoney, type Game } from './game';
 import type { World } from '../world/generator';
 import { NO_OWNER, TileType, type GameMap, type TilePos } from '../world/map';
 import { airportShape } from '../world/airport';
+import { canPlacePort, type PortShape } from '../world/port';
 import { stationTiles, type Axis, type Edge, type Station, type StationShape } from '../world/rail';
 import type { PathStep } from '../world/railPath';
 import type { RoadStep } from '../world/roadPath';
@@ -30,6 +32,7 @@ const PIECES_PER_SECOND = 25;
 export function stationCost(shape: StationShape & Pick<Station, 'kind' | 'airport'>): number {
   if (shape.kind === 'road') return ROAD_STOP_COST;
   if (shape.kind === 'air') return AIRPORT_TYPES[shape.airport ?? 'small'].cost;
+  if (shape.kind === 'water') return PORT_COST;
   return PLATFORM_TILE_COST * shape.length * shape.tracks;
 }
 
@@ -145,6 +148,21 @@ export class Construction {
     return null;
   }
 
+  // Přístav na břehu: nábřeží na souši, kotviště na volné vodě před ním
+  buildPort(shape: PortShape): string | null {
+    const { map, rail } = this.game.world;
+    if (!canPlacePort(map, shape, (x, y) => rail.isBerth(x, y))) {
+      return 'Přístav potřebuje dvě dlaždice volného břehu a před nimi volnou vodu.';
+    }
+    if (this.game.money < PORT_COST) return `Nedostatek peněz (${formatMoney(PORT_COST)}).`;
+    const { name, townId } = this.stationName(shape);
+    this.game.spend(PORT_COST, 'construction');
+    rail.addPort(shape, name, townId);
+    this.game.news(`Postaven přístav ${name}.`, shape);
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
   buildRoadDepot(x: number, y: number, entrance: Edge): string | null {
     const { map, rail } = this.game.world;
     if (!map.isFree(x, y)) return 'Garáž jde jen na volnou dlaždici vedle silnice.';
@@ -218,10 +236,12 @@ export class Construction {
         TileType.RoadBridgeY,
       ].includes(type);
       const airport = type === TileType.Airport ? rail.stationAt(x, y) : undefined;
+      const port = type === TileType.Port ? rail.stationAt(x, y) : undefined;
       const blocker =
         (railway ? this.game.fleet.demolitionBlocker(x, y) : null) ??
         (roadway ? this.game.roadFleet.demolitionBlocker(x, y) : null) ??
-        (airport ? this.game.airFleet.demolitionBlocker(airport) : null);
+        (airport ? this.game.airFleet.demolitionBlocker(airport) : null) ??
+        (port ? this.game.shipFleet.demolitionBlocker(port) : null);
       if (blocker) {
         blocked ??= blocker;
         continue;
@@ -235,7 +255,8 @@ export class Construction {
           tiles.push({ x, y });
           break;
         case TileType.Station:
-        case TileType.Airport: {
+        case TileType.Airport:
+        case TileType.Port: {
           const station = rail.stationAt(x, y);
           if (!station || stations.has(station.id)) break;
           stations.add(station.id);
@@ -307,7 +328,8 @@ export class Construction {
           railChanged = true;
           break;
         case TileType.Station:
-        case TileType.Airport: {
+        case TileType.Airport:
+        case TileType.Port: {
           const station = rail.stationAt(x, y);
           if (station) rail.removeStation(station);
           railChanged = true;
@@ -414,7 +436,7 @@ export class Construction {
     const { map, rail } = this.game.world;
     const type = map.get(step.x, step.y);
     if (map.isFree(step.x, step.y)) return true;
-    if (type === TileType.Water) return step.axis !== undefined;
+    if (type === TileType.Water) return step.axis !== undefined && !rail.isBerth(step.x, step.y);
     // Přejezd jen přes samotnou rovnou kolej
     const mask = rail.mask(step.x, step.y);
     return type === TileType.Rail && (mask === 1 || mask === 2);

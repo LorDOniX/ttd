@@ -23,6 +23,8 @@ export enum TileType {
   RoadBridgeY = 14,
   // Plocha letiště: ranvej, pojezdová dráha, stání, terminál a hangár
   Airport = 15,
+  // Nábřeží přístavu; lodě kotví na vodě před ním
+  Port = 16,
 }
 
 // Vede silniční most podél osy přes hranu edge? Hrany V a Z (lichá čísla) leží na ose X

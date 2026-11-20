@@ -607,6 +607,89 @@ export const TAXI_SPEED = 2.5;
 export const RUNWAY_SPEED_SHARE = 0.6;
 export const HOLDING_SPEED_SHARE = 0.7;
 
+// Přístav: dvě dlaždice nábřeží na břehu a před nimi dvě kotviště na vodě
+export const PORT_COST = 180_000;
+
+// Lodě: pomalé, ale s velkou kapacitou a bez stavby trati; plují jen po vodě a pod mosty neproplují.
+// Model z watercraft kitu (předek na +Z), délka v dlaždicích při vykreslení.
+export interface ShipModel {
+  id: string;
+  name: string;
+  model: string;
+  cargo: Cargo;
+  year: number;
+  price: number;
+  speed: number;
+  runningCost: number;
+  capacity: number;
+}
+
+// Nákladní lodě dvou generací pro každý druh nákladu: sypký náklad, cisterna a kontejnery
+const FREIGHT_SHIPS: [Cargo, string, string][] = [
+  ['coal', 'na uhlí', 'ship-cargo-b'],
+  ['iron-ore', 'na rudu', 'ship-cargo-b'],
+  ['grain', 'na obilí', 'ship-cargo-b'],
+  ['wood', 'na dřevo', 'ship-cargo-b'],
+  ['oil', 'Tanker', 'ship-cargo-c'],
+  ['steel', 'na ocel', 'ship-cargo-a'],
+  ['goods', 'na zboží', 'ship-cargo-a'],
+  ['food', 'na potraviny', 'ship-cargo-a'],
+];
+
+export const SHIP_MODELS: readonly ShipModel[] = [
+  {
+    id: 'parnik',
+    name: 'Osobní parník',
+    model: 'ship-ocean-liner-small',
+    cargo: 'passengers',
+    year: 1950,
+    price: 260_000,
+    speed: 2,
+    runningCost: 26_000,
+    capacity: 120,
+  },
+  {
+    id: 'parnik-velky',
+    name: 'Velký osobní parník',
+    model: 'ship-ocean-liner',
+    cargo: 'passengers',
+    year: 1985,
+    price: 420_000,
+    speed: 2.8,
+    runningCost: 40_000,
+    capacity: 250,
+  },
+  ...FREIGHT_SHIPS.flatMap(([cargo, label, model]): ShipModel[] => {
+    const name = cargo === 'oil' ? label : `Nákladní loď ${label}`;
+    return [
+      {
+        id: `${cargo}-ship`,
+        name,
+        model,
+        cargo,
+        year: 1950,
+        price: 230_000,
+        speed: 1.9,
+        runningCost: 22_000,
+        capacity: 160,
+      },
+      {
+        id: `${cargo}-ship-2`,
+        name: `${name} II`,
+        model,
+        cargo,
+        year: 1980,
+        price: 330_000,
+        speed: 2.6,
+        runningCost: 32_000,
+        capacity: 250,
+      },
+    ];
+  }),
+];
+
+export const SHIP_LIFETIME_YEARS = 30;
+
 export const WAGON_PRICE = 50_000;
 export const WAGON_CAPACITY = 30;
 export const WAGON_RUNNING_COST = 4_000;

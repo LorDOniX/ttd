@@ -4,6 +4,10 @@ import { Edge, PIECES, type Axis } from '../world/rail';
 import type { IndustryKind } from '../world/industry';
 import { normalizedAircraft } from './aircraft';
 import { createAirportObject } from './airports';
+import { createPortObject } from './ports';
+import { normalizedShip } from './ships';
+import { WATER_DEPTH } from './terrain';
+import { moorDirection, moorPoint, portShape } from '../world/port';
 import { buildIndustryPreview } from './industries';
 import { AIRPORT_TYPES, type AirportType } from '../game/balance';
 import { airportShape, standPoint } from '../world/airport';
@@ -35,6 +39,7 @@ export type SceneIcon =
   | 'road-depot'
   | 'airport-small'
   | 'airport-large'
+  | 'port'
   | 'demolish';
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -88,6 +93,25 @@ async function airport(type: AirportType): Promise<THREE.Object3D[]> {
   return [ground, createAirportObject(shape, type, material), plane];
 }
 
+// Přístav na břehu s lodí u kotviště
+async function port(): Promise<THREE.Object3D[]> {
+  const shape = portShape(1, 0, 'x', Edge.S);
+  const land = new THREE.Mesh(
+    new THREE.BoxGeometry(2, TILE_DEPTH, 1).translate(1, -TILE_DEPTH / 2, 0.5),
+    new THREE.MeshLambertMaterial({ color: GRASS }),
+  );
+  const water = new THREE.Mesh(
+    new THREE.BoxGeometry(2, TILE_DEPTH, 1).translate(1, -TILE_DEPTH / 2 - WATER_DEPTH, 1.5),
+    new THREE.MeshLambertMaterial({ color: 0x3a6fb0 }),
+  );
+  const ship = await normalizedShip('ship-cargo-a');
+  const moor = moorPoint(shape, 0);
+  const dir = moorDirection(shape);
+  ship.position.set(moor.x + 0.4, -WATER_DEPTH, moor.y);
+  ship.rotation.y = Math.atan2(dir.x, dir.y);
+  return [land, water, createPortObject(shape, material), ship];
+}
+
 // Scény ikon nástrojů: stavby na dlaždici trávy
 const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D[]> = {
   track: () => [tile(), track('x')],
@@ -107,6 +131,7 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
   },
   'airport-small': () => airport('small'),
   'airport-large': () => airport('large'),
+  port,
   demolish: async () => [await loadModel('car kit', 'tractor-shovel')],
 };
 

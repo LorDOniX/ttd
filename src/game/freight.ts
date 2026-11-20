@@ -5,6 +5,7 @@ import { catchmentArea, fare, type Area } from './passengers';
 import { inflowFactor, recordVisit } from './rating';
 import { aircraftModel } from './aircraft';
 import { roadVehicleModel } from './roadVehicles';
+import { shipModel } from './ships';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
 import type { Station, StationShape } from '../world/rail';
 
@@ -68,7 +69,8 @@ export class Freight {
     const aircraft = this.game.airFleet.aircraft
       .filter((p) => aircraftModel(p).cargo === type)
       .flatMap((p) => p.orders ?? []);
-    return new Set([...trains, ...vehicles, ...aircraft]);
+    const ships = this.game.shipFleet.ships.filter((s) => shipModel(s).cargo === type).flatMap((s) => s.orders ?? []);
+    return new Set([...trains, ...vehicles, ...aircraft, ...ships]);
   }
 
   pickupStations(industry: Industry): Station[] {

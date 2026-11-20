@@ -39,7 +39,7 @@ function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: nu
       return rail.stationAt(x, y)?.axis === (dir % 2 === 0 ? 'y' : 'x');
     // Přes vodu vede most, po existujícím mostě jen podél něj
     case TileType.Water:
-      return true;
+      return !rail.isBerth(x, y);
     case TileType.RoadBridgeX:
     case TileType.RoadBridgeY:
       return bridgeAlong(map.roadBridgeAxis(x, y)!, dir);

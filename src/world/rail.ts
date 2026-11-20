@@ -92,9 +92,11 @@ export interface Station extends StationShape {
   // Hodnocení zvlášť pro každý druh nákladu jako v OpenTTD
   ratings: Record<Cargo, CargoRating>;
   // Zastávka aut na silnici nebo letiště; bez údaje železniční nástupiště
-  kind?: 'road' | 'air';
+  kind?: 'road' | 'air' | 'water';
   // Velikost letiště (jen u kind 'air')
   airport?: AirportType;
+  // Strana nábřeží k vodě (jen u kind 'water')
+  dock?: Edge;
 }
 
 export interface Depot {
@@ -165,7 +167,7 @@ export class RailNetwork {
         return piece === crossingPiece(this.map.roadAxis(x, y));
       // Most vede jen rovně
       case TileType.Water:
-        return !isCorner(piece);
+        return !isCorner(piece) && !this.isBerth(x, y);
       case TileType.Station:
       case TileType.Depot:
       case TileType.Crossing:
@@ -220,7 +222,14 @@ export class RailNetwork {
 
   stationAt(x: number, y: number): Station | undefined {
     const type = this.map.inBounds(x, y) ? this.map.get(x, y) : null;
-    if (type !== TileType.Station && type !== TileType.RoadStop && type !== TileType.Airport) return undefined;
+    if (
+      type !== TileType.Station &&
+      type !== TileType.RoadStop &&
+      type !== TileType.Airport &&
+      type !== TileType.Port
+    ) {
+      return undefined;
+    }
     return this.stations.find((s) => stationTiles(s).some((t) => t.x === x && t.y === y));
   }
 
@@ -280,6 +289,37 @@ export class RailNetwork {
     for (const t of stationTiles(shape)) this.map.set(t.x, t.y, TileType.Airport);
     this.stations.push(airport);
     return airport;
+  }
+
+  // Přístav: nábřeží na souši, kotviště před ním zůstávají vodou
+  addPort(shape: StationShape & { dock: Edge }, name: string, townId: number): Station {
+    const port: Station = {
+      ...shape,
+      kind: 'water',
+      name,
+      townId,
+      id: this.nextStationId++,
+      waiting: 0,
+      freight: emptyFreight(),
+      ratings: newRatings(),
+    };
+    for (const t of stationTiles(shape)) this.map.set(t.x, t.y, TileType.Port);
+    this.stations.push(port);
+    return port;
+  }
+
+  ports(): Station[] {
+    return this.stations.filter((s) => s.kind === 'water');
+  }
+
+  // Kotviště přístavu: voda, přes kterou nevede most ani silnice
+  isBerth(x: number, y: number): boolean {
+    for (const s of this.stations) {
+      if (s.kind !== 'water' || s.dock === undefined) continue;
+      const [dx, dy] = EDGE_DELTA[s.dock];
+      if (stationTiles(s).some((t) => t.x + dx === x && t.y + dy === y)) return true;
+    }
+    return false;
   }
 
   airports(): Station[] {

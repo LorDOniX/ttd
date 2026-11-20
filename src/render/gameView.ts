@@ -7,6 +7,7 @@ import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { TrafficLights } from '../game/trafficLights';
 import { AircraftView3D } from './aircraft';
+import { ShipsView } from './ships';
 import { AmbientPropsView } from './ambientProps';
 import { AnimalsView } from './animals';
 import { BuildingsView } from './buildings';
@@ -66,6 +67,7 @@ export class GameView {
   private readonly trains: TrainsView;
   private readonly vehicles: RoadVehiclesView;
   private readonly aircraft: AircraftView3D;
+  private readonly ships: ShipsView;
   private readonly cityTraffic: CityTraffic;
   private readonly pedestrians: PedestriansView;
   private readonly trees: TreesView;
@@ -150,6 +152,7 @@ export class GameView {
     this.trains = new TrainsView(game.fleet, map);
     this.vehicles = new RoadVehiclesView(game.roadFleet, map);
     this.aircraft = new AircraftView3D(game.airFleet);
+    this.ships = new ShipsView(game.shipFleet);
     this.pedestrians = new PedestriansView(map, world.rail, towns, roads);
     this.crossings = new CrossingsView(map, world.rail);
     this.labels = new TownLabels(container);
@@ -175,6 +178,7 @@ export class GameView {
       this.trains.object,
       this.vehicles.object,
       this.aircraft.object,
+      this.ships.object,
       this.pedestrians.object,
       this.crossings.object,
     );
@@ -335,6 +339,7 @@ export class GameView {
       this.trains.setCabTrain(null);
       this.vehicles.setCabVehicle(null);
       this.aircraft.setCabAircraft(null);
+      this.ships.setCabShip(null);
     }
   }
 
@@ -346,6 +351,7 @@ export class GameView {
   trainCab(trainId: number): () => CabPose | null {
     this.vehicles.setCabVehicle(null);
     this.aircraft.setCabAircraft(null);
+    this.ships.setCabShip(null);
     this.trains.setCabTrain(trainId);
     return () => this.trains.cabPose(trainId);
   }
@@ -354,6 +360,7 @@ export class GameView {
   vehicleCab(key: string): () => CabPose | null {
     this.trains.setCabTrain(null);
     this.aircraft.setCabAircraft(null);
+    this.ships.setCabShip(null);
     this.vehicles.setCabVehicle(key);
     return () => this.vehicles.cabPose(key);
   }
@@ -363,7 +370,17 @@ export class GameView {
     this.trains.setCabTrain(null);
     this.vehicles.setCabVehicle(null);
     this.aircraft.setCabAircraft(id);
+    this.ships.setCabShip(null);
     return () => this.aircraft.cabPose(id);
+  }
+
+  // Pohled z můstku lodi
+  shipCab(id: number): () => CabPose | null {
+    this.trains.setCabTrain(null);
+    this.vehicles.setCabVehicle(null);
+    this.aircraft.setCabAircraft(null);
+    this.ships.setCabShip(id);
+    return () => this.ships.cabPose(id);
   }
 
   // Zoom pro LOD a efekty: z první osoby plné detaily
@@ -396,6 +413,11 @@ export class GameView {
   // Id letadla pod kurzorem
   aircraftAt(clientX: number, clientY: number): number | null {
     return this.aircraft.pick(this.camera.ray(clientX, clientY));
+  }
+
+  // Id lodi pod kurzorem
+  shipAt(clientX: number, clientY: number): number | null {
+    return this.ships.pick(this.camera.ray(clientX, clientY));
   }
 
   // Městské auto pod kurzorem
@@ -492,6 +514,7 @@ export class GameView {
     this.trains.update(frustum, vehicleLights);
     this.vehicles.update(frustum, this.cityTraffic.cars, vehicleLights);
     this.aircraft.update(frustum);
+    this.ships.update(frustum, seconds, Math.min(dtMs, 100) / 1000);
     this.trafficLightView.update(this.trafficLights);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);

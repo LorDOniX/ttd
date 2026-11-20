@@ -12,6 +12,8 @@ import {
   type StationShape,
 } from '../world/rail';
 import { createAirportObject } from './airports';
+import { createPortObject } from './ports';
+import type { PortShape } from '../world/port';
 import { WATER_DEPTH } from './terrain';
 
 const BALLAST = 0x8c8273;
@@ -292,7 +294,9 @@ export class RailView {
           ? createRoadStopMesh(this.material, s.x, s.y, s.axis)
           : s.kind === 'air'
             ? createAirportObject(s, s.airport ?? 'small', this.material)
-            : createStationObject(s, this.material),
+            : s.kind === 'water'
+              ? createPortObject(s as PortShape, this.material)
+              : createStationObject(s, this.material),
       );
     }
     for (const d of this.rail.depots) {

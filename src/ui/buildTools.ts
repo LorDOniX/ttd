@@ -7,6 +7,7 @@ import {
   MAX_STATION_LENGTH,
   MAX_STATION_TRACKS,
   PLATFORM_TILE_COST,
+  PORT_COST,
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
   ROAD_TILE_COST,
@@ -23,6 +24,7 @@ import type { BuildPreview } from '../render/preview';
 import { roadConnects } from '../render/roads';
 import { INDUSTRY_TYPES, industrySiteProblem, industryTiles, type IndustryKind } from '../world/industry';
 import { airportShape } from '../world/airport';
+import { portAt } from '../world/port';
 import { TileType, type TilePos } from '../world/map';
 import {
   EDGE_DELTA,
@@ -50,6 +52,7 @@ export type BuildTool =
   | 'road-depot'
   | 'airport-small'
   | 'airport-large'
+  | 'port'
   | 'demolish'
   | 'industry'
   | 'info';
@@ -90,6 +93,8 @@ export class BuildTools {
   onToolChange: (tool: BuildTool | null) => void = () => {};
   private axis: Axis = 'x';
   private entrance: Edge = Edge.E;
+  // Upřednostněná strana přístavu k vodě (R)
+  private dock: Edge = Edge.S;
   private dragStart: PointerTile | null = null;
   private path: PathStep[] | null = null;
   private roadPath: RoadStep[] | null = null;
@@ -174,6 +179,20 @@ export class BuildTools {
     );
   }
 
+  openWaterWindow(): void {
+    this.openToolWindow(
+      'water-build',
+      'Stavba přístavů',
+      [
+        ['port', '⚓', 'Přístav', 'W', `${formatMoneyShort(PORT_COST)}, 2 kotviště`],
+        ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
+      ],
+      'Přístav se staví na břeh: dvě dlaždice volné země a před nimi volná voda pro dvě kotviště. ' +
+        'Lodě plují jen po souvislé vodní ploše a pod mosty neproplují. Kliknutím na přístav se otevře loděnice. ' +
+        'R – otočit k vodě, Esc – zrušit nástroj.',
+    );
+  }
+
   // Okno s druhy závodů; výběr druhu zapne nástroj pro umístění areálu na mapě
   openIndustryWindow(): void {
     const buttons = new Map<IndustryKind, HTMLButtonElement>();
@@ -217,7 +236,7 @@ export class BuildTools {
 
   // Tlačítka vedle sebe (ikona, pod ní popisek), pod nimi ceny a nápověda na šířku tlačítek
   private openToolWindow(
-    id: 'rail-build' | 'road-build' | 'air-build',
+    id: 'rail-build' | 'road-build' | 'air-build' | 'water-build',
     title: string,
     tools: [SceneIcon, string, string, string, string][],
     hint: string,
@@ -275,6 +294,7 @@ export class BuildTools {
     if (!windowOpen && tool !== 'info') {
       if (tool === 'road' || tool === 'road-stop' || tool === 'road-depot') this.openRoadWindow();
       else if (airportTool(tool)) this.openAirWindow();
+      else if (tool === 'port') this.openWaterWindow();
       else this.openRailWindow();
     }
     this.setTool(this.tool === tool ? null : tool);
@@ -283,6 +303,7 @@ export class BuildTools {
   rotate(): void {
     if (this.tool === 'station' || airportTool(this.tool)) this.axis = this.axis === 'x' ? 'y' : 'x';
     if (this.tool === 'depot' || this.tool === 'road-depot') this.entrance = (this.entrance + 1) % 4;
+    if (this.tool === 'port') this.dock = (this.dock + 1) % 4;
     if (this.tool === 'industry') this.industryRotation = (this.industryRotation + 1) % 4;
     this.refresh();
   }
@@ -301,6 +322,10 @@ export class BuildTools {
       this.updatePath();
     } else if (this.tool === 'road-stop') {
       this.report(this.game.construction.buildRoadStop(tile.x, tile.y));
+    } else if (this.tool === 'port') {
+      const { map, rail } = this.game.world;
+      const shape = portAt(map, tile, this.dock, (x, y) => rail.isBerth(x, y));
+      this.report(shape ? this.game.construction.buildPort(shape) : 'Přístav jde jen na volný břeh u volné vody.');
     } else if (airportTool(this.tool)) {
       this.report(this.game.construction.buildAirport(airportTool(this.tool)!, tile.x, tile.y, this.axis));
     } else if (this.tool === 'road-depot') {
@@ -534,6 +559,16 @@ export class BuildTools {
       const ok = rail.canPlaceDepot(tile.x, tile.y);
       this.preview.showDepot(tile.x, tile.y, this.depotEntrance(tile), ok && this.game.money >= DEPOT_COST);
       text = ok ? formatMoneyShort(DEPOT_COST) : 'Sem depo postavit nelze';
+    } else if (this.tool === 'port' && tile) {
+      const shape = portAt(this.game.world.map, tile, this.dock, (x, y) => rail.isBerth(x, y));
+      if (shape) {
+        this.preview.showPort(shape, this.game.money >= PORT_COST);
+        this.showCatchment(shape);
+        text = `Přístav · ${formatMoneyShort(PORT_COST)} · ${this.reachText(shape)}`;
+      } else {
+        this.preview.showArea([tile], 'invalid');
+        text = 'Přístav jde jen na volný břeh u volné vody (dvě dlaždice)';
+      }
     } else if (airportTool(this.tool) && tile) {
       const type = airportTool(this.tool)!;
       const spec = AIRPORT_TYPES[type];

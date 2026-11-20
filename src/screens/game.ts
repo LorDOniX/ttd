@@ -23,6 +23,8 @@ import { openTrain, openTrainList } from '../ui/trainWindow';
 import { openRoadDepot, openRoadVehicle, openVehicleList } from '../ui/roadVehicles';
 import { openAircraft, openAircraftList, openHangar, type AircraftLinks } from '../ui/aircraft';
 import type { Aircraft } from '../game/aircraft';
+import type { Ship } from '../game/ships';
+import { openShip, openShipList, openShipyard, type ShipLinks } from '../ui/ships';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
 import { NO_OWNER } from '../world/map';
@@ -122,6 +124,14 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openVehicle: (vehicle: RoadVehicle) => openRoadVehicle(windows, game, vehicle, vehicleLinks),
     openAircraft: (plane: Aircraft) => openAircraft(windows, game, plane, aircraftLinks),
     openHangar: (airport: Station) => openHangar(windows, game, airport, aircraftLinks),
+    openShip: (ship: Ship) => openShip(windows, game, ship, shipLinks),
+    openShipyard: (port: Station) => openShipyard(windows, game, port, shipLinks),
+  };
+  const shipLinks: ShipLinks = {
+    focus,
+    openShipyard: stationLinks.openShipyard,
+    openStation: (port: Station) => openStation(windows, game, port, stationLinks),
+    ride: (ship: Ship) => firstPerson.rideShip(ship),
   };
   const aircraftLinks: AircraftLinks = {
     focus,
@@ -140,7 +150,9 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openStation: (station: Station) =>
       station.kind === 'air'
         ? openHangar(windows, game, station, aircraftLinks)
-        : openStation(windows, game, station, stationLinks),
+        : station.kind === 'water'
+          ? openShipyard(windows, game, station, shipLinks)
+          : openStation(windows, game, station, stationLinks),
   };
   buildTools.onInspect = (tile) => openTileInfo(windows, game, tile, links);
   const actions: ToolbarActions = {
@@ -168,6 +180,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openRailBuild: () => buildTools.openRailWindow(),
     openRoadBuild: () => buildTools.openRoadWindow(),
     openAirBuild: () => buildTools.openAirWindow(),
+    openWaterBuild: () => buildTools.openWaterWindow(),
     openIndustryFund: () => buildTools.openIndustryWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
@@ -182,6 +195,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openTrainList: () => openTrainList(windows, game, links),
     openVehicleList: () => openVehicleList(windows, game, vehicleLinks),
     openAircraftList: () => openAircraftList(windows, game, aircraftLinks),
+    openShipList: () => openShipList(windows, game, shipLinks),
     openNews: () => openNewsLog(windows, game, focus),
     toggleInfo: () => buildTools.toggleTool('info'),
   };
@@ -229,12 +243,19 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     },
     { codes: ['KeyX'], key: 'X', label: 'Demolice', run: () => buildTools.toggleTool('demolish') },
     { codes: ['KeyP'], key: 'P', label: 'Založit průmysl', run: actions.openIndustryFund },
-    { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště, depo, letiště nebo závod', run: () => buildTools.rotate() },
+    {
+      codes: ['KeyR'],
+      key: 'R',
+      label: 'Otočit nástupiště, depo, letiště, přístav nebo závod',
+      run: () => buildTools.rotate(),
+    },
     { codes: ['KeyI'], key: 'I', label: 'Informace o dlaždici („?“)', run: actions.toggleInfo },
     { codes: ['KeyF'], key: 'F', label: 'Finance', run: actions.openFinance },
     { codes: ['KeyV'], key: 'V', label: 'Seznam vlaků', run: actions.openTrainList },
     { codes: ['KeyA'], key: 'A', label: 'Seznam aut', run: actions.openVehicleList },
     { codes: ['KeyO'], key: 'O', label: 'Seznam letadel', run: actions.openAircraftList },
+    { codes: ['KeyT'], key: 'T', label: 'Seznam lodí', run: actions.openShipList },
+    { codes: ['KeyW'], key: 'W', label: 'Přístav', run: () => buildTools.toggleTool('port') },
     { codes: ['KeyH'], key: 'H', label: 'Historie zpráv', run: actions.openNews },
     { codes: ['KeyM'], key: 'M', label: 'Minimapa', run: actions.openMinimap },
     { codes: ['KeyG'], key: 'G', label: 'Mřížka', run: () => grid.setVisible(!grid.visible()) },
@@ -332,6 +353,12 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     const plane = game.airFleet.aircraft.find((p) => p.id === planeId);
     if (plane) {
       openAircraft(windows, game, plane, aircraftLinks);
+      return;
+    }
+    const shipId = view.shipAt(e.clientX, e.clientY);
+    const ship = game.shipFleet.ships.find((s) => s.id === shipId);
+    if (ship) {
+      openShip(windows, game, ship, shipLinks);
       return;
     }
     const cityCar = view.cityCarAt(e.clientX, e.clientY);

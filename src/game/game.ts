@@ -9,6 +9,7 @@ import { companyValue, performance, performanceScore, performanceTitle } from '.
 import { IndustryLife } from './industryLife';
 import { Passengers } from './passengers';
 import { RoadFleet } from './roadVehicles';
+import { ShipFleet } from './ships';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
@@ -63,6 +64,8 @@ type GameEvents = {
   vehiclesChanged: [];
   // Letadla: nákup, prodej, stav nebo řád
   aircraftChanged: [];
+  // Lodě: nákup, prodej, stav nebo řád
+  shipsChanged: [];
   stationsChanged: [];
   // Závod vznikl nebo zanikl
   industriesChanged: [];
@@ -104,6 +107,7 @@ export class Game {
   readonly fleet: Fleet;
   readonly roadFleet: RoadFleet;
   readonly airFleet: AirFleet;
+  readonly shipFleet: ShipFleet;
   readonly passengers: Passengers;
   readonly freight: Freight;
   readonly industryLife: IndustryLife;
@@ -129,6 +133,7 @@ export class Game {
     this.fleet = new Fleet(this);
     this.roadFleet = new RoadFleet(this);
     this.airFleet = new AirFleet(this);
+    this.shipFleet = new ShipFleet(this);
     this.passengers = new Passengers(this);
     this.freight = new Freight(this);
     // Až po Freight, aby měsíční změny viděly uzavřený odvoz
@@ -160,6 +165,7 @@ export class Game {
     this.fleet.update(days);
     this.roadFleet.update(days);
     this.airFleet.update(days);
+    this.shipFleet.update(days);
     this.construction.update(dtMs);
     return days;
   }

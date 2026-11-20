@@ -3,6 +3,7 @@ import { CARGOS, CARGO_TYPES, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
 import { AIRPORT_TYPES, MAINTENANCE_RATE, TOWN_ACCEPTS_MIN_BUILDINGS } from '../game/balance';
 import { aircraftModel, type Aircraft } from '../game/aircraft';
+import { shipModel, type Ship } from '../game/ships';
 import { ratingParts, targetRating, waitingAmount } from '../game/rating';
 import { roadVehicleModel, type RoadVehicle } from '../game/roadVehicles';
 import { trainModel, type Train } from '../game/trains';
@@ -32,18 +33,23 @@ export function stationRows(game: Game, station: Station): [string, string][] {
   const now = game.clock.now;
   const road = station.kind === 'road';
   const air = station.kind === 'air';
+  const water = station.kind === 'water';
   const served = (
     road
       ? game.roadFleet.vehicles.filter((v) => v.orders?.includes(station.id))
       : air
         ? game.airFleet.aircraft.filter((p) => p.orders?.includes(station.id))
-        : game.fleet.trains.filter((t) => t.orders?.includes(station.id))
+        : water
+          ? game.shipFleet.ships.filter((s) => s.orders?.includes(station.id))
+          : game.fleet.trains.filter((t) => t.orders?.includes(station.id))
   ).map((t) => t.name);
   const type: [string, string] = road
     ? ['Typ', 'Zastávka aut']
     : air
       ? ['Typ', `${AIRPORT_TYPES[station.airport ?? 'small'].name} ${station.length}×${station.tracks}`]
-      : ['Rozměr', `${station.tracks}×${station.length}`];
+      : water
+        ? ['Typ', 'Přístav se 2 kotvišti']
+        : ['Rozměr', `${station.tracks}×${station.length}`];
   const reach = [...game.passengers.townShares(station)].map(([t, share]) => `${t.name} (${percent(share)})`);
   const industries = game.freight.industriesInReach(station).map((i) => i.name);
   const accepted = game.freight.accepted(station).map((t) => CARGOS[t].noun);
@@ -58,7 +64,7 @@ export function stationRows(game: Game, station: Station): [string, string][] {
       return [
         CARGOS[c].name,
         `${waitingText(station, c)} · hodnocení ${percent(rating)} → ${percent(targetRating(station, c, now))} ` +
-          `(${road || air ? 'návštěva' : 'vlak'} ${visit} ${percent(parts.visit)}, rychlost ${percent(parts.speed)}, ` +
+          `(${road || air || water ? 'návštěva' : 'vlak'} ${visit} ${percent(parts.visit)}, rychlost ${percent(parts.speed)}, ` +
           `čekající ${percent(parts.waiting)})`,
       ];
     }),
@@ -73,7 +79,7 @@ export function stationRows(game: Game, station: Station): [string, string][] {
     ],
     ['Průmysl v dosahu', industries.length > 0 ? industries.join(', ') : 'žádný'],
     [
-      road ? 'Obsluhují auta' : air ? 'Obsluhují letadla' : 'Obsluhují vlaky',
+      road ? 'Obsluhují auta' : air ? 'Obsluhují letadla' : water ? 'Obsluhují lodě' : 'Obsluhují vlaky',
       served.length > 0 ? served.join(', ') : 'žádná',
     ],
     ['Údržba', `${formatMoney((stationCost(station) * MAINTENANCE_RATE) / 12)} měsíčně`],
@@ -91,15 +97,19 @@ export function openStation(
     openVehicle: (vehicle: RoadVehicle) => void;
     openAircraft?: (plane: Aircraft) => void;
     openHangar?: (airport: Station) => void;
+    openShip?: (ship: Ship) => void;
+    openShipyard?: (port: Station) => void;
   },
 ): void {
   const id = `station-${station.id}`;
   const road = station.kind === 'road';
   const air = station.kind === 'air';
+  const water = station.kind === 'water';
   const render = (): HTMLElement => {
     const trains = game.fleet.trains.filter((t) => t.orders?.includes(station.id));
     const vehicles = game.roadFleet.vehicles.filter((v) => v.orders?.includes(station.id));
     const aircraft = game.airFleet.aircraft.filter((p) => p.orders?.includes(station.id));
+    const ships = game.shipFleet.ships.filter((s) => s.orders?.includes(station.id));
     const buttons = [
       ...trains.map((t) => {
         const b = h(
@@ -131,7 +141,22 @@ export function openStation(
         b.addEventListener('click', () => links.openAircraft?.(p));
         return b;
       }),
+      ...ships.map((s) => {
+        const b = h(
+          'button',
+          { className: 'small-button small-button--thumb' },
+          modelThumb('watercraft kit', shipModel(s).model),
+          s.name,
+        );
+        b.addEventListener('click', () => links.openShip?.(s));
+        return b;
+      }),
     ];
+    if (water && links.openShipyard) {
+      const b = h('button', { className: 'small-button' }, '⚓ Loděnice');
+      b.addEventListener('click', () => links.openShipyard!(station));
+      buttons.push(b);
+    }
     if (air && links.openHangar) {
       const b = h('button', { className: 'small-button' }, '🛩️ Hangár');
       b.addEventListener('click', () => links.openHangar!(station));
@@ -147,7 +172,7 @@ export function openStation(
           .filter(([label]) => !label.startsWith('Obsluhují'))
           .map(([label, value]) => h('tr', {}, h('td', {}, label), h('td', {}, value))),
       ),
-      h('h4', {}, road ? 'Auta' : air ? 'Letadla' : 'Vlaky'),
+      h('h4', {}, road ? 'Auta' : air ? 'Letadla' : water ? 'Lodě' : 'Vlaky'),
       buttons.length > 0
         ? h('div', { className: 'train__actions' }, ...buttons)
         : h(
@@ -176,6 +201,7 @@ export function openStation(
     game.events.on('trainsChanged', refresh),
     game.events.on('vehiclesChanged', refresh),
     game.events.on('aircraftChanged', refresh),
+    game.events.on('shipsChanged', refresh),
   ];
   windows.open(id, station.name, render(), {
     width: 420,

@@ -1,4 +1,5 @@
 import { aircraftModel } from '../game/aircraft';
+import { shipModel } from '../game/ships';
 import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN } from '../game/balance';
 import { CARGOS, FREIGHT_TYPES } from '../game/cargo';
 import { companyValue, performance, performanceScore, performanceTitle } from '../game/company';
@@ -145,6 +146,7 @@ function trains(game: Game): HTMLElement {
     ...game.fleet.trains.map((t) => ({ ...t, label: `${t.name} (${trainModel(t).name})` })),
     ...game.roadFleet.vehicles.map((v) => ({ ...v, label: `${v.name} (${roadVehicleModel(v).name})` })),
     ...game.airFleet.aircraft.map((p) => ({ ...p, label: `${p.name} (${aircraftModel(p).name})` })),
+    ...game.shipFleet.ships.map((s) => ({ ...s, label: `${s.name} (${shipModel(s).name})` })),
   ];
   if (list.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádná vozidla.');
   const money = (value: number, strong = false): HTMLTableCellElement =>
@@ -243,6 +245,7 @@ export function openFinance(windows: WindowManager, game: Game): void {
     game.events.on('trainsChanged', refresh),
     game.events.on('vehiclesChanged', refresh),
     game.events.on('aircraftChanged', refresh),
+    game.events.on('shipsChanged', refresh),
     game.clock.events.on('month', refresh),
   ];
   const options = { width: 460, onClose: () => unsubscribe.forEach((off) => off()) };
