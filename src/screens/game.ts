@@ -21,6 +21,8 @@ import { Shortcuts } from '../ui/shortcuts';
 import { openTileInfo } from '../ui/tileInfo';
 import { openTrain, openTrainList } from '../ui/trainWindow';
 import { openRoadDepot, openRoadVehicle, openVehicleList } from '../ui/roadVehicles';
+import { openAircraft, openAircraftList, openHangar, type AircraftLinks } from '../ui/aircraft';
+import type { Aircraft } from '../game/aircraft';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
 import { NO_OWNER } from '../world/map';
@@ -114,6 +116,19 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openRoadDepot: (depot: Depot) => openRoadDepot(windows, game, depot, vehicleLinks),
     ride: (vehicle: RoadVehicle) => firstPerson.rideVehicle(vehicle),
   };
+  const stationLinks = {
+    focus,
+    openTrain: (train: Train) => openTrain(windows, game, train, links),
+    openVehicle: (vehicle: RoadVehicle) => openRoadVehicle(windows, game, vehicle, vehicleLinks),
+    openAircraft: (plane: Aircraft) => openAircraft(windows, game, plane, aircraftLinks),
+    openHangar: (airport: Station) => openHangar(windows, game, airport, aircraftLinks),
+  };
+  const aircraftLinks: AircraftLinks = {
+    focus,
+    openHangar: stationLinks.openHangar,
+    openStation: (airport: Station) => openStation(windows, game, airport, stationLinks),
+    ride: (plane: Aircraft) => firstPerson.rideAircraft(plane),
+  };
   const links = {
     focus,
     ride: rideTrain,
@@ -121,12 +136,11 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openRoadDepot: vehicleLinks.openRoadDepot,
     openTown: (town: Town) => openTown(windows, game, town, focus),
     openIndustry: (industry: Industry) => openIndustry(windows, game, industry, focus),
+    // Letiště otevře hangár (v něm je tlačítko na okno stanice)
     openStation: (station: Station) =>
-      openStation(windows, game, station, {
-        focus,
-        openTrain: (train: Train) => openTrain(windows, game, train, links),
-        openVehicle: (vehicle: RoadVehicle) => openRoadVehicle(windows, game, vehicle, vehicleLinks),
-      }),
+      station.kind === 'air'
+        ? openHangar(windows, game, station, aircraftLinks)
+        : openStation(windows, game, station, stationLinks),
   };
   buildTools.onInspect = (tile) => openTileInfo(windows, game, tile, links);
   const actions: ToolbarActions = {
@@ -153,6 +167,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openFinance: () => openFinance(windows, game),
     openRailBuild: () => buildTools.openRailWindow(),
     openRoadBuild: () => buildTools.openRoadWindow(),
+    openAirBuild: () => buildTools.openAirWindow(),
     openIndustryFund: () => buildTools.openIndustryWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
@@ -166,6 +181,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     toggleNight: () => view.toggleNightMode(),
     openTrainList: () => openTrainList(windows, game, links),
     openVehicleList: () => openVehicleList(windows, game, vehicleLinks),
+    openAircraftList: () => openAircraftList(windows, game, aircraftLinks),
     openNews: () => openNewsLog(windows, game, focus),
     toggleInfo: () => buildTools.toggleTool('info'),
   };
@@ -205,13 +221,20 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     { codes: ['KeyZ'], key: 'Z', label: 'Zastávka aut', run: () => buildTools.toggleTool('road-stop') },
     { codes: ['KeyU'], key: 'U', label: 'Garáž aut', run: () => buildTools.toggleTool('road-depot') },
     { codes: ['KeyB'], key: 'B', label: 'Návěstidlo', run: () => buildTools.toggleTool('signal') },
+    {
+      codes: ['KeyL'],
+      key: 'L',
+      label: 'Letiště (znovu = velké letiště)',
+      run: () => buildTools.toggleTool(buildTools.tool === 'airport-small' ? 'airport-large' : 'airport-small'),
+    },
     { codes: ['KeyX'], key: 'X', label: 'Demolice', run: () => buildTools.toggleTool('demolish') },
     { codes: ['KeyP'], key: 'P', label: 'Založit průmysl', run: actions.openIndustryFund },
-    { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště, depo nebo závod', run: () => buildTools.rotate() },
+    { codes: ['KeyR'], key: 'R', label: 'Otočit nástupiště, depo, letiště nebo závod', run: () => buildTools.rotate() },
     { codes: ['KeyI'], key: 'I', label: 'Informace o dlaždici („?“)', run: actions.toggleInfo },
     { codes: ['KeyF'], key: 'F', label: 'Finance', run: actions.openFinance },
     { codes: ['KeyV'], key: 'V', label: 'Seznam vlaků', run: actions.openTrainList },
     { codes: ['KeyA'], key: 'A', label: 'Seznam aut', run: actions.openVehicleList },
+    { codes: ['KeyO'], key: 'O', label: 'Seznam letadel', run: actions.openAircraftList },
     { codes: ['KeyH'], key: 'H', label: 'Historie zpráv', run: actions.openNews },
     { codes: ['KeyM'], key: 'M', label: 'Minimapa', run: actions.openMinimap },
     { codes: ['KeyG'], key: 'G', label: 'Mřížka', run: () => grid.setVisible(!grid.visible()) },
@@ -303,6 +326,12 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     const vehicle = game.roadFleet.vehicles.find((v) => v.id === vehicleId);
     if (vehicle) {
       openRoadVehicle(windows, game, vehicle, vehicleLinks);
+      return;
+    }
+    const planeId = view.aircraftAt(e.clientX, e.clientY);
+    const plane = game.airFleet.aircraft.find((p) => p.id === planeId);
+    if (plane) {
+      openAircraft(windows, game, plane, aircraftLinks);
       return;
     }
     const cityCar = view.cityCarAt(e.clientX, e.clientY);

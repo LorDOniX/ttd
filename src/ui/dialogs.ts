@@ -1,3 +1,4 @@
+import { AIRCRAFT_CREDITS } from './aircraft';
 import { AD_CAMPAIGN_COST, AD_RATING_BOOST } from '../game/balance';
 import { formatDate } from '../game/clock';
 import { SEASON_MODES, type SeasonMode } from '../game/seasons';
@@ -94,6 +95,8 @@ export function openSettings(
     h('label', { className: 'form__field' }, 'Roční období', seasonSelect),
     h('h4', {}, 'Klávesové zkratky'),
     shortcutsHelp,
+    h('h4', {}, 'Autoři'),
+    h('div', { className: 'form__hint' }, `Modely Kenney (CC0, kenney.nl). ${AIRCRAFT_CREDITS}`),
   );
   windows.open('settings', 'Nastavení', content, { width: 300 });
 }

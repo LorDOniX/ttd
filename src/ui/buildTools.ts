@@ -1,4 +1,5 @@
 import {
+  AIRPORT_TYPES,
   BRIDGE_PIECE_COST,
   DEMOLISH_REFUND,
   DEPOT_COST,
@@ -11,6 +12,7 @@ import {
   ROAD_TILE_COST,
   SIGNAL_COST,
   TRACK_PIECE_COST,
+  type AirportType,
 } from '../game/balance';
 import { CARGOS } from '../game/cargo';
 import { roadPieceCost, stationCost, trackPieceCost } from '../game/construction';
@@ -20,6 +22,7 @@ import { iconElement, industryIcon, sceneIcon, type SceneIcon } from '../render/
 import type { BuildPreview } from '../render/preview';
 import { roadConnects } from '../render/roads';
 import { INDUSTRY_TYPES, industrySiteProblem, industryTiles, type IndustryKind } from '../world/industry';
+import { airportShape } from '../world/airport';
 import { TileType, type TilePos } from '../world/map';
 import {
   EDGE_DELTA,
@@ -27,6 +30,7 @@ import {
   PIECES,
   defaultStationShape,
   isCorner,
+  stationTiles,
   opposite,
   type Axis,
   type StationShape,
@@ -37,7 +41,24 @@ import { h } from './dom';
 import type { WindowManager } from './windows';
 
 export type BuildTool =
-  'track' | 'station' | 'depot' | 'signal' | 'road' | 'road-stop' | 'road-depot' | 'demolish' | 'industry' | 'info';
+  | 'track'
+  | 'station'
+  | 'depot'
+  | 'signal'
+  | 'road'
+  | 'road-stop'
+  | 'road-depot'
+  | 'airport-small'
+  | 'airport-large'
+  | 'demolish'
+  | 'industry'
+  | 'info';
+
+// Nástroj letiště → velikost letiště
+function airportTool(tool: BuildTool | null): AirportType | null {
+  if (tool === 'airport-small') return 'small';
+  return tool === 'airport-large' ? 'large' : null;
+}
 
 // Dlaždice pod kurzorem a poloha kurzoru uvnitř ní (0..1)
 export interface PointerTile extends TilePos {
@@ -131,6 +152,28 @@ export class BuildTools {
     );
   }
 
+  openAirWindow(): void {
+    const { small, large } = AIRPORT_TYPES;
+    this.openToolWindow(
+      'air-build',
+      'Stavba letišť',
+      [
+        ['airport-small', '🛫', small.name, 'L', `${formatMoneyShort(small.cost)}, ${small.length}×${small.depth}`],
+        [
+          'airport-large',
+          '🛬',
+          large.name,
+          'L',
+          `${formatMoneyShort(large.cost)}, ${large.length}×${large.depth}, od ${large.year}`,
+        ],
+        ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
+      ],
+      `Letiště potřebuje volnou zemi. Malé má ${small.stands} stání a nepřijme velká letadla, ` +
+        `velké má ${large.stands} stání. Kliknutím na letiště se otevře hangár s nákupem letadel. ` +
+        'R – otočit ranvej, Esc – zrušit nástroj.',
+    );
+  }
+
   // Okno s druhy závodů; výběr druhu zapne nástroj pro umístění areálu na mapě
   openIndustryWindow(): void {
     const buttons = new Map<IndustryKind, HTMLButtonElement>();
@@ -174,7 +217,7 @@ export class BuildTools {
 
   // Tlačítka vedle sebe (ikona, pod ní popisek), pod nimi ceny a nápověda na šířku tlačítek
   private openToolWindow(
-    id: 'rail-build' | 'road-build',
+    id: 'rail-build' | 'road-build' | 'air-build',
     title: string,
     tools: [SceneIcon, string, string, string, string][],
     hint: string,
@@ -231,13 +274,14 @@ export class BuildTools {
     const windowOpen = [...this.buttons.values()].some((buttons) => buttons.has(tool));
     if (!windowOpen && tool !== 'info') {
       if (tool === 'road' || tool === 'road-stop' || tool === 'road-depot') this.openRoadWindow();
+      else if (airportTool(tool)) this.openAirWindow();
       else this.openRailWindow();
     }
     this.setTool(this.tool === tool ? null : tool);
   }
 
   rotate(): void {
-    if (this.tool === 'station') this.axis = this.axis === 'x' ? 'y' : 'x';
+    if (this.tool === 'station' || airportTool(this.tool)) this.axis = this.axis === 'x' ? 'y' : 'x';
     if (this.tool === 'depot' || this.tool === 'road-depot') this.entrance = (this.entrance + 1) % 4;
     if (this.tool === 'industry') this.industryRotation = (this.industryRotation + 1) % 4;
     this.refresh();
@@ -257,6 +301,8 @@ export class BuildTools {
       this.updatePath();
     } else if (this.tool === 'road-stop') {
       this.report(this.game.construction.buildRoadStop(tile.x, tile.y));
+    } else if (airportTool(this.tool)) {
+      this.report(this.game.construction.buildAirport(airportTool(this.tool)!, tile.x, tile.y, this.axis));
     } else if (this.tool === 'road-depot') {
       this.report(this.game.construction.buildRoadDepot(tile.x, tile.y, this.roadDepotEntrance(tile)));
     } else if (this.tool === 'industry') {
@@ -488,6 +534,19 @@ export class BuildTools {
       const ok = rail.canPlaceDepot(tile.x, tile.y);
       this.preview.showDepot(tile.x, tile.y, this.depotEntrance(tile), ok && this.game.money >= DEPOT_COST);
       text = ok ? formatMoneyShort(DEPOT_COST) : 'Sem depo postavit nelze';
+    } else if (airportTool(this.tool) && tile) {
+      const type = airportTool(this.tool)!;
+      const spec = AIRPORT_TYPES[type];
+      const shape = airportShape(type, tile.x, tile.y, this.axis);
+      const ok = rail.canPlaceAirport(shape);
+      const allowed = this.game.clock.date.year >= spec.year;
+      this.preview.showAirport(shape, type, ok && allowed && this.game.money >= spec.cost);
+      this.showCatchment(shape);
+      if (!allowed) text = `${spec.name} lze stavět až od roku ${spec.year}`;
+      else if (!ok) {
+        this.preview.showArea(stationTiles(shape), 'invalid');
+        text = 'Letiště potřebuje volnou zemi bez staveb, silnic a vody';
+      } else text = `${spec.name} · ${formatMoneyShort(spec.cost)} · ${this.reachText(shape)}`;
     } else if (this.tool === 'road-stop' && tile) {
       const axis = rail.roadStopAxis(tile.x, tile.y);
       if (axis) {

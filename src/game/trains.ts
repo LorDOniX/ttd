@@ -749,7 +749,7 @@ export class Fleet {
   }
 
   private station(id: number): Station | undefined {
-    return this.game.world.rail.stations.find((s) => s.id === id && s.kind !== 'road');
+    return this.game.world.rail.stations.find((s) => s.id === id && s.kind === undefined);
   }
 
   private changed(): void {

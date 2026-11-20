@@ -1,4 +1,5 @@
-import { RATING_START, ROAD_VEHICLE_MODELS, STATION_LENGTH } from './balance';
+import { AIRCRAFT_MODELS, AIRPORT_TYPES, RATING_START, ROAD_VEHICLE_MODELS, STATION_LENGTH } from './balance';
+import type { Aircraft } from './aircraft';
 import {
   CARGO_TYPES,
   FREIGHT_TYPES,
@@ -16,14 +17,15 @@ import type { RoadVehicle } from './roadVehicles';
 import type { Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
-import { GameMap } from '../world/map';
-import { RailNetwork, PIECES, type Depot, type Station } from '../world/rail';
+import { GameMap, TileType } from '../world/map';
+import { RailNetwork, PIECES, stationTiles, type Depot, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
 // 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům;
-// 11: den poslední dodávky; 12: hodnocení podle nákladu; 13: silniční doprava; 14: zemědělský řetězec
-const SAVE_VERSION = 14;
+// 11: den poslední dodávky; 12: hodnocení podle nákladu; 13: silniční doprava; 14: zemědělský řetězec;
+// 15: letecká doprava
+const SAVE_VERSION = 15;
 const MAX_MAP_SIZE = 1024;
 
 export interface SaveData {
@@ -46,6 +48,7 @@ export interface SaveData {
   };
   fleet: { trains: Train[]; nextId: number };
   roadFleet?: { vehicles: RoadVehicle[]; nextId: number };
+  airFleet?: { aircraft: Aircraft[]; nextId: number };
   game: {
     companyName: string;
     money: number;
@@ -124,6 +127,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
     },
     fleet: { trains: fleet.trains, nextId: fleet.nextId },
     roadFleet: { vehicles: game.roadFleet.vehicles, nextId: game.roadFleet.nextId },
+    airFleet: { aircraft: game.airFleet.aircraft, nextId: game.airFleet.nextId },
     game: {
       companyName: game.companyName,
       money: game.money,
@@ -208,7 +212,10 @@ export function parseSave(text: string): SaveData {
   } catch {
     throw new Error('Soubor není platný JSON.');
   }
-  if (!isObject(data) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, SAVE_VERSION].includes(data.version as number)) {
+  if (
+    !isObject(data) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, SAVE_VERSION].includes(data.version as number)
+  ) {
     throw new Error('Nepodporovaná verze uložené hry.');
   }
   const { map, rail, fleet, game, clock } = data;
@@ -271,6 +278,13 @@ export function restoreGame(data: SaveData): Game {
       return station;
     }),
   );
+  // Letiště neznámé velikosti z cizího souboru se zahodí i se svou plochou
+  for (let i = rail.stations.length - 1; i >= 0; i--) {
+    const s = rail.stations[i];
+    if (s.kind !== 'air' || (s.airport && s.airport in AIRPORT_TYPES)) continue;
+    for (const t of stationTiles(s)) if (map.isType(t.x, t.y, TileType.Airport)) map.set(t.x, t.y, TileType.Grass);
+    rail.stations.splice(i, 1);
+  }
   rail.depots.push(...data.rail.depots);
   rail.roadDepots.push(...(Array.isArray(data.rail.roadDepots) ? data.rail.roadDepots : []));
   rail.nextStationId = data.rail.nextStationId;
@@ -326,6 +340,20 @@ export function restoreGame(data: SaveData): Game {
     ),
   );
   game.roadFleet.nextId = Number.isInteger(roadFleet.nextId) ? roadFleet.nextId : 1;
+  // Starší uložení letadla nemá; letadla neznámého modelu nebo bez letiště se zahodí
+  const airFleet = isObject(data.airFleet) ? data.airFleet : { aircraft: [], nextId: 1 };
+  const airports = new Set(rail.stations.filter((s) => s.kind === 'air').map((s) => s.id));
+  game.airFleet.aircraft.push(
+    ...(Array.isArray(airFleet.aircraft) ? airFleet.aircraft : []).filter(
+      (p) =>
+        isObject(p) &&
+        AIRCRAFT_MODELS.some((m) => m.id === p.modelId) &&
+        Array.isArray(p.route) &&
+        airports.has(p.depotId) &&
+        airports.has(p.airportId),
+    ),
+  );
+  game.airFleet.nextId = Number.isInteger(airFleet.nextId) ? airFleet.nextId : 1;
   game.view = validView(data.view);
   // Cizí soubor může obsahovat nesmysly; místo se před stavbou kontroluje znovu
   game.construction.restore((data.construction ?? []).filter((job) => validJob(job, width, height)));

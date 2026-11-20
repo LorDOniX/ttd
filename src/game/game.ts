@@ -1,3 +1,4 @@
+import { AirFleet } from './aircraft';
 import { LOAN_INTEREST, LOAN_STEP, MAINTENANCE_RATE, MAX_LOAN, START_MONEY } from './balance';
 import { CARGOS, FREIGHT_TYPES, emptyFreight, type FreightStock } from './cargo';
 import { Construction, infrastructureValue } from './construction';
@@ -60,6 +61,8 @@ type GameEvents = {
   trainsChanged: [];
   // Silniční vozidla: nákup, prodej, stav nebo řád
   vehiclesChanged: [];
+  // Letadla: nákup, prodej, stav nebo řád
+  aircraftChanged: [];
   stationsChanged: [];
   // Závod vznikl nebo zanikl
   industriesChanged: [];
@@ -100,6 +103,7 @@ export class Game {
   readonly construction = new Construction(this);
   readonly fleet: Fleet;
   readonly roadFleet: RoadFleet;
+  readonly airFleet: AirFleet;
   readonly passengers: Passengers;
   readonly freight: Freight;
   readonly industryLife: IndustryLife;
@@ -124,6 +128,7 @@ export class Game {
     this.rng = new Rng(world.seed ^ 0x5bd1e995);
     this.fleet = new Fleet(this);
     this.roadFleet = new RoadFleet(this);
+    this.airFleet = new AirFleet(this);
     this.passengers = new Passengers(this);
     this.freight = new Freight(this);
     // Až po Freight, aby měsíční změny viděly uzavřený odvoz
@@ -154,6 +159,7 @@ export class Game {
     const days = this.clock.tick(dtMs);
     this.fleet.update(days);
     this.roadFleet.update(days);
+    this.airFleet.update(days);
     this.construction.update(dtMs);
     return days;
   }

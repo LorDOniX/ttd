@@ -2,7 +2,11 @@ import * as THREE from 'three';
 import { loadModel, type Kit } from '../assets';
 import { Edge, PIECES, type Axis } from '../world/rail';
 import type { IndustryKind } from '../world/industry';
+import { normalizedAircraft } from './aircraft';
+import { createAirportObject } from './airports';
 import { buildIndustryPreview } from './industries';
+import { AIRPORT_TYPES, type AirportType } from '../game/balance';
+import { airportShape, standPoint } from '../world/airport';
 import {
   TrackView,
   createDepotMesh,
@@ -21,7 +25,17 @@ const ISO_DIRECTION = new THREE.Vector3(1, Math.SQRT2 * Math.tan(Math.PI / 6), 1
 const GRASS = 0x5f9e3c;
 const TILE_DEPTH = 0.12;
 
-export type SceneIcon = 'track' | 'station' | 'depot' | 'signal' | 'road' | 'road-stop' | 'road-depot' | 'demolish';
+export type SceneIcon =
+  | 'track'
+  | 'station'
+  | 'depot'
+  | 'signal'
+  | 'road'
+  | 'road-stop'
+  | 'road-depot'
+  | 'airport-small'
+  | 'airport-large'
+  | 'demolish';
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 
@@ -59,6 +73,21 @@ function signal(): THREE.Object3D {
   return group;
 }
 
+// Letiště na trávě s letadlem na prvním stání
+async function airport(type: AirportType): Promise<THREE.Object3D[]> {
+  const { length, depth } = AIRPORT_TYPES[type];
+  const shape = airportShape(type, Math.floor(length / 2), Math.floor(depth / 2), 'x');
+  const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(length, TILE_DEPTH, depth).translate(length / 2, -TILE_DEPTH / 2, depth / 2),
+    new THREE.MeshLambertMaterial({ color: GRASS }),
+  );
+  const plane = await normalizedAircraft(type === 'large' ? 'airplane-3' : 'airplane-1');
+  const stand = standPoint(shape, type, 0);
+  plane.position.set(stand.x, 0, stand.y);
+  plane.rotation.y = Math.PI;
+  return [ground, createAirportObject(shape, type, material), plane];
+}
+
 // Scény ikon nástrojů: stavby na dlaždici trávy
 const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D[]> = {
   track: () => [tile(), track('x')],
@@ -76,6 +105,8 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
     placeDepot(depot, 0, 0, Edge.S);
     return [tile(), depot];
   },
+  'airport-small': () => airport('small'),
+  'airport-large': () => airport('large'),
   demolish: async () => [await loadModel('car kit', 'tractor-shovel')],
 };
 

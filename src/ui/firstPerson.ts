@@ -1,3 +1,4 @@
+import type { Aircraft } from '../game/aircraft';
 import { cityCarName, type CityCar } from '../game/cityTraffic';
 import type { Game } from '../game/game';
 import type { RoadVehicle } from '../game/roadVehicles';
@@ -5,6 +6,7 @@ import type { Train } from '../game/trains';
 import { CabCamera, WalkCamera, nearestStandable, type CabPose, type DropMarker } from '../render/firstPerson';
 import type { GameView } from '../render/gameView';
 import { NO_OWNER, TileType, type TilePos } from '../world/map';
+import { aircraftStateText } from './aircraft';
 import { h } from './dom';
 import { vehicleStateText } from './roadVehicles';
 import { stateText } from './trainWindow';
@@ -64,6 +66,7 @@ const TILE_NAMES: Partial<Record<TileType, string>> = {
   [TileType.RoadStop]: 'Zastávka',
   [TileType.RoadBridgeX]: 'Silniční most',
   [TileType.RoadBridgeY]: 'Silniční most',
+  [TileType.Airport]: 'Letiště',
 };
 
 export interface FirstPersonHooks {
@@ -124,6 +127,18 @@ export class FirstPersonMode {
       alive: () => this.game.roadFleet.vehicles.includes(vehicle),
       pose: this.view.vehicleCab(`player:${vehicle.id}`),
       parkedText: 'Auto stojí v garáži.',
+    });
+  }
+
+  rideAircraft(plane: Aircraft): void {
+    this.exit();
+    this.ride({
+      icon: '✈️',
+      title: plane.name,
+      status: () => aircraftStateText(this.game, plane),
+      alive: () => this.game.airFleet.aircraft.includes(plane),
+      pose: this.view.aircraftCab(plane.id),
+      parkedText: 'Letadlo stojí v hangáru.',
     });
   }
 

@@ -24,6 +24,7 @@ const COLORS: Record<TileType, [number, number, number]> = {
   [TileType.RoadDepot]: [255, 122, 48],
   [TileType.RoadBridgeX]: [120, 120, 128],
   [TileType.RoadBridgeY]: [120, 120, 128],
+  [TileType.Airport]: [200, 200, 205],
 };
 
 // Okno s minimapou: terén, stavby, vlaky a viditelný výřez; kliknutí přesune pohled
@@ -77,7 +78,9 @@ export function openMinimap(windows: WindowManager, game: Game, camera: IsoCamer
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      corners.forEach((c, i) => (i === 0 ? ctx.moveTo(c!.x * scale, c!.z * scale) : ctx.lineTo(c!.x * scale, c!.z * scale)));
+      corners.forEach((c, i) =>
+        i === 0 ? ctx.moveTo(c!.x * scale, c!.z * scale) : ctx.lineTo(c!.x * scale, c!.z * scale),
+      );
       ctx.closePath();
       ctx.stroke();
     }

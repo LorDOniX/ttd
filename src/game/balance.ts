@@ -493,6 +493,120 @@ export const ROAD_DEPOT_COST = 40_000;
 // Životnost silničních vozidel v OpenTTD je kratší než u vlaků
 export const ROAD_VEHICLE_LIFETIME_YEARS = 15;
 
+// Letiště: obdélník délka (podél ranveje) × hloubka; stání pro letadla na zemi, malé letiště nepřijme velká letadla
+export type AirportType = 'small' | 'large';
+
+export interface AirportSpec {
+  name: string;
+  year: number;
+  cost: number;
+  length: number;
+  depth: number;
+  stands: number;
+}
+
+export const AIRPORT_TYPES: Record<AirportType, AirportSpec> = {
+  small: { name: 'Malé letiště', year: 1950, cost: 400_000, length: 5, depth: 4, stands: 2 },
+  large: { name: 'Velké letiště', year: 1972, cost: 950_000, length: 7, depth: 5, stands: 4 },
+};
+
+// Letadla: rychlost v dlaždicích za herní den letu vzdušnou čarou, provoz za rok. Model z assets/airplanes
+// (pořadí generací v airplanes.md), délka modelu v dlaždicích; velké letadlo přistane jen na velkém letišti.
+export interface AircraftModel {
+  id: string;
+  name: string;
+  model: string;
+  cargo: 'passengers' | 'mail';
+  year: number;
+  price: number;
+  speed: number;
+  runningCost: number;
+  capacity: number;
+  large: boolean;
+}
+
+export const AIRCRAFT_MODELS: readonly AircraftModel[] = [
+  {
+    id: 'racek',
+    name: 'Letoun L-50 Racek',
+    model: 'airplane-1',
+    cargo: 'passengers',
+    year: 1950,
+    price: 420_000,
+    speed: 6,
+    runningCost: 48_000,
+    capacity: 30,
+    large: false,
+  },
+  {
+    id: 'racek-mail',
+    name: 'Poštovní L-50 Racek',
+    model: 'airplane-1',
+    cargo: 'mail',
+    year: 1950,
+    price: 400_000,
+    speed: 6,
+    runningCost: 46_000,
+    capacity: 12,
+    large: false,
+  },
+  {
+    id: 'cap',
+    name: 'Letoun L-64 Čáp',
+    model: 'airplane-2',
+    cargo: 'passengers',
+    year: 1964,
+    price: 620_000,
+    speed: 8.5,
+    runningCost: 72_000,
+    capacity: 55,
+    large: false,
+  },
+  {
+    id: 'jerab',
+    name: 'Letoun L-80 Jeřáb',
+    model: 'airplane-3',
+    cargo: 'passengers',
+    year: 1980,
+    price: 950_000,
+    speed: 11,
+    runningCost: 115_000,
+    capacity: 110,
+    large: true,
+  },
+  {
+    id: 'jerab-mail',
+    name: 'Poštovní L-80 Jeřáb',
+    model: 'airplane-3',
+    cargo: 'mail',
+    year: 1980,
+    price: 900_000,
+    speed: 11,
+    runningCost: 110_000,
+    capacity: 40,
+    large: true,
+  },
+  // Rychlý tryskáč menší kapacity, přistane i na malém letišti
+  {
+    id: 'sokol',
+    name: 'Tryskáč J-98 Sokol',
+    model: 'airplane-4',
+    cargo: 'passengers',
+    year: 1998,
+    price: 1_150_000,
+    speed: 15,
+    runningCost: 140_000,
+    capacity: 75,
+    large: false,
+  },
+];
+
+export const AIRCRAFT_LIFETIME_YEARS = 20;
+// Pojíždění po letišti, rozjezd a dojezd na ranveji jako podíl cestovní rychlosti a kroužení nad letištěm
+export const TAXI_SPEED = 2.5;
+export const RUNWAY_SPEED_SHARE = 0.6;
+export const HOLDING_SPEED_SHARE = 0.7;
+
 export const WAGON_PRICE = 50_000;
 export const WAGON_CAPACITY = 30;
 export const WAGON_RUNNING_COST = 4_000;

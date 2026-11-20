@@ -119,7 +119,7 @@ function ordersEditor(game: Game, train: Train, choice: { station: number | null
   );
 
   const stations = game.world.rail.stations
-    .filter((s) => s.kind !== 'road')
+    .filter((s) => s.kind === undefined)
     .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
   const select = h('select', {});
   for (const s of stations) {

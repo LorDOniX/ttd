@@ -1,4 +1,5 @@
 import {
+  AIRPORT_TYPES,
   BRIDGE_PIECE_COST,
   DEMOLISH_COST_PER_RESIDENT,
   DEMOLISH_REFUND,
@@ -12,11 +13,13 @@ import {
   ROAD_TILE_COST,
   SIGNAL_COST,
   TRACK_PIECE_COST,
+  type AirportType,
 } from './balance';
 import { formatMoney, type Game } from './game';
 import type { World } from '../world/generator';
 import { NO_OWNER, TileType, type GameMap, type TilePos } from '../world/map';
-import { stationTiles, type Edge, type StationShape } from '../world/rail';
+import { airportShape } from '../world/airport';
+import { stationTiles, type Axis, type Edge, type Station, type StationShape } from '../world/rail';
 import type { PathStep } from '../world/railPath';
 import type { RoadStep } from '../world/roadPath';
 import { buildingAt, buildingCapacity, demolishBuilding } from '../world/town';
@@ -24,8 +27,9 @@ import { buildingAt, buildingCapacity, demolishBuilding } from '../world/town';
 // Rychlost postupné výstavby kolejí a silnic
 const PIECES_PER_SECOND = 25;
 
-export function stationCost(shape: StationShape & { kind?: 'road' }): number {
+export function stationCost(shape: StationShape & Pick<Station, 'kind' | 'airport'>): number {
   if (shape.kind === 'road') return ROAD_STOP_COST;
+  if (shape.kind === 'air') return AIRPORT_TYPES[shape.airport ?? 'small'].cost;
   return PLATFORM_TILE_COST * shape.length * shape.tracks;
 }
 
@@ -54,10 +58,7 @@ export function infrastructureValue(world: World): number {
   }
   for (const station of rail.stations) value += stationCost(station);
   return (
-    value +
-    rail.depots.length * DEPOT_COST +
-    rail.roadDepots.length * ROAD_DEPOT_COST +
-    rail.signals.size * SIGNAL_COST
+    value + rail.depots.length * DEPOT_COST + rail.roadDepots.length * ROAD_DEPOT_COST + rail.signals.size * SIGNAL_COST
   );
 }
 
@@ -128,6 +129,22 @@ export class Construction {
     return null;
   }
 
+  // Letiště se středem (x, y), ranvej podél osy
+  buildAirport(type: AirportType, x: number, y: number, axis: Axis): string | null {
+    const { rail } = this.game.world;
+    const spec = AIRPORT_TYPES[type];
+    const shape = airportShape(type, x, y, axis);
+    if (this.game.clock.date.year < spec.year) return `${spec.name} lze stavět až od roku ${spec.year}.`;
+    if (!rail.canPlaceAirport(shape)) return 'Letiště potřebuje volnou zemi bez staveb, silnic a vody.';
+    if (this.game.money < spec.cost) return `Nedostatek peněz (${formatMoney(spec.cost)}).`;
+    const { name, townId } = this.stationName(shape);
+    this.game.spend(spec.cost, 'construction');
+    rail.addAirport(shape, type, name, townId);
+    this.game.news(`Postaveno letiště ${name}.`, shape);
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
   buildRoadDepot(x: number, y: number, entrance: Edge): string | null {
     const { map, rail } = this.game.world;
     if (!map.isFree(x, y)) return 'Garáž jde jen na volnou dlaždici vedle silnice.';
@@ -142,9 +159,7 @@ export class Construction {
   private stationName(shape: StationShape): { name: string; townId: number } {
     const { rail, towns } = this.game.world;
     const { x, y } = shape;
-    const nearest = [...towns].sort(
-      (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
-    )[0];
+    const nearest = [...towns].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
     const covered = [...this.game.passengers.coverage(shape).shares].sort((a, b) => b[1] - a[1])[0]?.[0];
     const industry = this.game.freight.industriesInReach(shape)[0];
     const town = covered ?? nearest;
@@ -191,7 +206,9 @@ export class Construction {
     for (const { x, y } of area) {
       if (!map.inBounds(x, y)) continue;
       const type = map.get(x, y);
-      const railway = [TileType.Rail, TileType.Crossing, TileType.Bridge, TileType.Station, TileType.Depot].includes(type);
+      const railway = [TileType.Rail, TileType.Crossing, TileType.Bridge, TileType.Station, TileType.Depot].includes(
+        type,
+      );
       const roadway = [
         TileType.Road,
         TileType.Crossing,
@@ -200,9 +217,11 @@ export class Construction {
         TileType.RoadBridgeX,
         TileType.RoadBridgeY,
       ].includes(type);
+      const airport = type === TileType.Airport ? rail.stationAt(x, y) : undefined;
       const blocker =
         (railway ? this.game.fleet.demolitionBlocker(x, y) : null) ??
-        (roadway ? this.game.roadFleet.demolitionBlocker(x, y) : null);
+        (roadway ? this.game.roadFleet.demolitionBlocker(x, y) : null) ??
+        (airport ? this.game.airFleet.demolitionBlocker(airport) : null);
       if (blocker) {
         blocked ??= blocker;
         continue;
@@ -215,7 +234,8 @@ export class Construction {
           if (rail.hasSignal(x, y)) cost -= SIGNAL_COST * DEMOLISH_REFUND;
           tiles.push({ x, y });
           break;
-        case TileType.Station: {
+        case TileType.Station:
+        case TileType.Airport: {
           const station = rail.stationAt(x, y);
           if (!station || stations.has(station.id)) break;
           stations.add(station.id);
@@ -286,7 +306,8 @@ export class Construction {
           rail.removeTrack(x, y);
           railChanged = true;
           break;
-        case TileType.Station: {
+        case TileType.Station:
+        case TileType.Airport: {
           const station = rail.stationAt(x, y);
           if (station) rail.removeStation(station);
           railChanged = true;

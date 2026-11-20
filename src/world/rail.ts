@@ -1,4 +1,4 @@
-import { STATION_LENGTH } from '../game/balance';
+import { STATION_LENGTH, type AirportType } from '../game/balance';
 import { emptyFreight, newRatings, type Cargo, type CargoRating, type FreightStock } from '../game/cargo';
 import { GameMap, TileType, type TilePos } from './map';
 
@@ -91,8 +91,10 @@ export interface Station extends StationShape {
   freight: FreightStock;
   // Hodnocení zvlášť pro každý druh nákladu jako v OpenTTD
   ratings: Record<Cargo, CargoRating>;
-  // Zastávka aut na silnici; bez údaje železniční nástupiště
-  kind?: 'road';
+  // Zastávka aut na silnici nebo letiště; bez údaje železniční nástupiště
+  kind?: 'road' | 'air';
+  // Velikost letiště (jen u kind 'air')
+  airport?: AirportType;
 }
 
 export interface Depot {
@@ -196,8 +198,7 @@ export class RailNetwork {
     const bit = 1 << axisPiece(shape.axis);
     return stationTiles(shape).every(
       (t) =>
-        this.map.isFree(t.x, t.y) ||
-        (this.map.isType(t.x, t.y, TileType.Rail) && (this.mask(t.x, t.y) | bit) === bit),
+        this.map.isFree(t.x, t.y) || (this.map.isType(t.x, t.y, TileType.Rail) && (this.mask(t.x, t.y) | bit) === bit),
     );
   }
 
@@ -218,7 +219,8 @@ export class RailNetwork {
   }
 
   stationAt(x: number, y: number): Station | undefined {
-    if (!this.map.isType(x, y, TileType.Station) && !this.map.isType(x, y, TileType.RoadStop)) return undefined;
+    const type = this.map.inBounds(x, y) ? this.map.get(x, y) : null;
+    if (type !== TileType.Station && type !== TileType.RoadStop && type !== TileType.Airport) return undefined;
     return this.stations.find((s) => stationTiles(s).some((t) => t.x === x && t.y === y));
   }
 
@@ -256,6 +258,32 @@ export class RailNetwork {
     this.map.set(x, y, TileType.RoadStop);
     this.stations.push(stop);
     return stop;
+  }
+
+  // Letiště zabere obdélník volné země (tráva, les)
+  canPlaceAirport(shape: StationShape): boolean {
+    return stationTiles(shape).every((t) => this.map.isFree(t.x, t.y));
+  }
+
+  addAirport(shape: StationShape, type: AirportType, name: string, townId: number): Station {
+    const airport: Station = {
+      ...shape,
+      kind: 'air',
+      airport: type,
+      name,
+      townId,
+      id: this.nextStationId++,
+      waiting: 0,
+      freight: emptyFreight(),
+      ratings: newRatings(),
+    };
+    for (const t of stationTiles(shape)) this.map.set(t.x, t.y, TileType.Airport);
+    this.stations.push(airport);
+    return airport;
+  }
+
+  airports(): Station[] {
+    return this.stations.filter((s) => s.kind === 'air');
   }
 
   addRoadDepot(x: number, y: number, entrance: Edge): Depot {

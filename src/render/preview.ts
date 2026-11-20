@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import type { AirportType } from '../game/balance';
+import { createAirportObject } from './airports';
 import type { TilePos } from '../world/map';
 import { EDGE_DELTA, type Axis, type Edge, type StationShape } from '../world/rail';
 import {
@@ -113,6 +115,12 @@ export class BuildPreview {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
     this.station.add(createStationObject(shape, this.material));
+  }
+
+  showAirport(shape: StationShape, type: AirportType, valid: boolean): void {
+    this.clear();
+    this.material.color.set(valid ? VALID : INVALID);
+    this.station.add(createAirportObject(shape, type, this.material));
   }
 
   showDepot(x: number, y: number, entrance: Edge, valid: boolean): void {

@@ -1,7 +1,17 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TileType } from '../world/map';
-import { EDGE_MID, Edge, PIECES, RailNetwork, isCorner, stationTiles, type Axis, type StationShape } from '../world/rail';
+import {
+  EDGE_MID,
+  Edge,
+  PIECES,
+  RailNetwork,
+  isCorner,
+  stationTiles,
+  type Axis,
+  type StationShape,
+} from '../world/rail';
+import { createAirportObject } from './airports';
 import { WATER_DEPTH } from './terrain';
 
 const BALLAST = 0x8c8273;
@@ -278,7 +288,11 @@ export class RailView {
     this.structures.clear();
     for (const s of this.rail.stations) {
       this.structures.add(
-        s.kind === 'road' ? createRoadStopMesh(this.material, s.x, s.y, s.axis) : createStationObject(s, this.material),
+        s.kind === 'road'
+          ? createRoadStopMesh(this.material, s.x, s.y, s.axis)
+          : s.kind === 'air'
+            ? createAirportObject(s, s.airport ?? 'small', this.material)
+            : createStationObject(s, this.material),
       );
     }
     for (const d of this.rail.depots) {

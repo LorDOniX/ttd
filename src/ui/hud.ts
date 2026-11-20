@@ -13,11 +13,13 @@ export interface ToolbarActions {
   toggleNight: () => boolean;
   openRailBuild: () => void;
   openRoadBuild: () => void;
+  openAirBuild: () => void;
   openIndustryFund: () => void;
   rotateView: (direction: 1 | -1) => void;
   openMinimap: () => void;
   openTrainList: () => void;
   openVehicleList: () => void;
+  openAircraftList: () => void;
   openNews: () => void;
   toggleInfo: () => void;
 }
@@ -116,6 +118,13 @@ export class Hud {
       [
         windowButton('vehicle-list', '🚌', 'Seznam aut (A)', actions.openVehicleList, modelIcon('car kit', 'van')),
         windowButton(
+          'aircraft-list',
+          '✈️',
+          'Seznam letadel (O)',
+          actions.openAircraftList,
+          modelIcon('airplanes', 'airplane-3'),
+        ),
+        windowButton(
           'train-list',
           '🚆',
           'Seznam vlaků (V)',
@@ -133,6 +142,7 @@ export class Hud {
           sceneIcon('road-depot'),
         ),
         windowButton('rail-build', '🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild, sceneIcon('depot')),
+        windowButton('air-build', '🛫', 'Stavba letišť (L)', actions.openAirBuild, sceneIcon('airport-small')),
         windowButton('industry-fund', '🏭', 'Založit průmysl (P)', actions.openIndustryFund, industryIcon('factory')),
       ],
       [windowButton('news', '📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],

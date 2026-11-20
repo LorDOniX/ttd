@@ -6,6 +6,7 @@ import { collectTrafficHotspots, type TrafficHotspot } from '../game/traffic';
 import type { Game } from '../game/game';
 import { formatMoney } from '../game/game';
 import { TrafficLights } from '../game/trafficLights';
+import { AircraftView3D } from './aircraft';
 import { AmbientPropsView } from './ambientProps';
 import { AnimalsView } from './animals';
 import { BuildingsView } from './buildings';
@@ -64,6 +65,7 @@ export class GameView {
   private readonly labels: TownLabels;
   private readonly trains: TrainsView;
   private readonly vehicles: RoadVehiclesView;
+  private readonly aircraft: AircraftView3D;
   private readonly cityTraffic: CityTraffic;
   private readonly pedestrians: PedestriansView;
   private readonly trees: TreesView;
@@ -147,6 +149,7 @@ export class GameView {
     this.signals.rebuild();
     this.trains = new TrainsView(game.fleet, map);
     this.vehicles = new RoadVehiclesView(game.roadFleet, map);
+    this.aircraft = new AircraftView3D(game.airFleet);
     this.pedestrians = new PedestriansView(map, world.rail, towns, roads);
     this.crossings = new CrossingsView(map, world.rail);
     this.labels = new TownLabels(container);
@@ -171,6 +174,7 @@ export class GameView {
       this.signals.object,
       this.trains.object,
       this.vehicles.object,
+      this.aircraft.object,
       this.pedestrians.object,
       this.crossings.object,
     );
@@ -330,6 +334,7 @@ export class GameView {
     if (!active) {
       this.trains.setCabTrain(null);
       this.vehicles.setCabVehicle(null);
+      this.aircraft.setCabAircraft(null);
     }
   }
 
@@ -340,6 +345,7 @@ export class GameView {
   // Pohled z kabiny vlaku: lokomotiva se skryje a poloha se čte každý snímek
   trainCab(trainId: number): () => CabPose | null {
     this.vehicles.setCabVehicle(null);
+    this.aircraft.setCabAircraft(null);
     this.trains.setCabTrain(trainId);
     return () => this.trains.cabPose(trainId);
   }
@@ -347,8 +353,17 @@ export class GameView {
   // Pohled z kabiny auta: klíč player:id (hráčovo) nebo city:id (městské)
   vehicleCab(key: string): () => CabPose | null {
     this.trains.setCabTrain(null);
+    this.aircraft.setCabAircraft(null);
     this.vehicles.setCabVehicle(key);
     return () => this.vehicles.cabPose(key);
+  }
+
+  // Pohled z kokpitu letadla
+  aircraftCab(id: number): () => CabPose | null {
+    this.trains.setCabTrain(null);
+    this.vehicles.setCabVehicle(null);
+    this.aircraft.setCabAircraft(id);
+    return () => this.aircraft.cabPose(id);
   }
 
   // Zoom pro LOD a efekty: z první osoby plné detaily
@@ -376,6 +391,11 @@ export class GameView {
   vehicleAt(clientX: number, clientY: number): number | null {
     const hit = this.vehicles.pick(this.camera.ray(clientX, clientY));
     return hit && 'playerId' in hit ? hit.playerId : null;
+  }
+
+  // Id letadla pod kurzorem
+  aircraftAt(clientX: number, clientY: number): number | null {
+    return this.aircraft.pick(this.camera.ray(clientX, clientY));
   }
 
   // Městské auto pod kurzorem
@@ -471,6 +491,7 @@ export class GameView {
     this.buildings.setZoom(zoom);
     this.trains.update(frustum, vehicleLights);
     this.vehicles.update(frustum, this.cityTraffic.cars, vehicleLights);
+    this.aircraft.update(frustum);
     this.trafficLightView.update(this.trafficLights);
     const { reservations } = this.game.fleet;
     this.signals.update((x, y) => reservations.ownerAt(x, y) !== undefined);
