@@ -9,3 +9,8 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   el.append(...children);
   return el;
 }
+
+// Hra běží při vývoji na localhostu (FPS, odkazy na pomocné stránky)
+export function isDevHost(): boolean {
+  return ['localhost', '127.0.0.1'].includes(location.hostname);
+}

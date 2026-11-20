@@ -8,6 +8,9 @@ import { formatMoney } from '../game/game';
 import { TrafficLights } from '../game/trafficLights';
 import { AircraftView3D } from './aircraft';
 import { ShipsView } from './ships';
+import { MiniViews } from './miniViews';
+import { portLamps } from './ports';
+import type { PortShape } from '../world/port';
 import { AmbientPropsView } from './ambientProps';
 import { AnimalsView } from './animals';
 import { BuildingsView } from './buildings';
@@ -86,9 +89,13 @@ export class GameView {
   private readonly trafficLightView = new TrafficLightsView();
   private readonly nightLights: NightLightsView;
   readonly trafficOverlay = new TrafficOverlayView();
+  // Živé pohledy v oknech vozidel
+  readonly miniViews = new MiniViews();
   private readonly floatingTexts = new FloatingTexts();
   private readonly syncMap: () => void;
   private railDirty = false;
+  // Skvrny světla reflektorů přístavů; nové pole jen po změně staveb
+  private portLamps: THREE.Vector3[] = [];
   private seasonMode: SeasonMode = 'auto';
   private currentSeason: Season | null = null;
   private seasonKey = '';
@@ -147,6 +154,7 @@ export class GameView {
     this.applySeason();
     void this.industries.sync(world.industries);
     const railView = new RailView(world.rail);
+    this.portLamps = portLamps(world.rail.ports() as PortShape[]);
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
     this.trains = new TrainsView(game.fleet, map);
@@ -228,6 +236,7 @@ export class GameView {
       if (this.railDirty) {
         this.railDirty = false;
         railView.rebuild();
+        this.portLamps = portLamps(world.rail.ports() as PortShape[]);
         this.signals.rebuild();
         rebuildStationLabels();
       }
@@ -277,6 +286,10 @@ export class GameView {
       this.cityTraffic.cars,
       this.game.roadFleet.vehicles,
     );
+  }
+
+  get nightMode(): boolean {
+    return this.nightTarget;
   }
 
   toggleNightMode(): boolean {
@@ -473,7 +486,9 @@ export class GameView {
     this.lastFrameTime = now;
     if (!this.game.clock.paused) this.effectsSeconds += Math.min(dtMs, 100) / 1000;
     this.syncMap();
-    const frustum = this.activeFrustum();
+    const mainFrustum = this.activeFrustum();
+    // Okénka vozidel (mimo pohled z první osoby, kdy jsou okna skrytá) potřebují vidět i objekty mimo hlavní záběr
+    const frustum = this.firstPerson ? mainFrustum : [mainFrustum, ...this.miniViews.prepare(this.camera.azimuthAngle)];
     // Chodci chodí v reálném čase nezávisle na rychlosti hry, při pauze stojí
     this.pedestrians.update(this.game.clock.paused ? 0 : Math.min(dtMs, 100) / 1000, frustum);
     this.game.roadFleet.setPedestrianCrossings(this.pedestrians.crossingTiles);
@@ -490,8 +505,8 @@ export class GameView {
     if (this.trafficOverlay.visible) this.trafficOverlay.update(this.trafficHotspots());
     this.nightLights.update(
       this.lightsAmount,
-      frustum,
-      [this.roads.streetLamps, this.industries.lamps],
+      mainFrustum,
+      [this.roads.streetLamps, this.industries.lamps, this.portLamps],
       this.game.world.towns,
       now,
     );
@@ -503,8 +518,8 @@ export class GameView {
     const zoom = this.detailZoom;
     this.trees.setZoom(zoom);
     this.trees.update(seconds);
-    this.forestMist.update(seconds, this.activeCamera, frustum);
-    this.fallingLeaves.update(seconds, this.activeCamera, frustum);
+    this.forestMist.update(seconds, this.activeCamera, mainFrustum);
+    this.fallingLeaves.update(seconds, this.activeCamera, mainFrustum);
     this.animals.setZoom(zoom);
     this.animals.update(trafficSeconds);
     this.industries.update(seconds);
@@ -524,7 +539,10 @@ export class GameView {
     this.firstPerson?.update(Math.min(dtMs, 100) / 1000);
     this.fog.color.copy(this.scene.background as THREE.Color);
     this.renderer.render(this.scene, this.activeCamera);
-    if (!this.firstPerson) this.labels.render(this.labelScene, this.camera.camera);
+    if (!this.firstPerson) {
+      this.labels.render(this.labelScene, this.camera.camera);
+      this.miniViews.render(this.renderer, this.scene, now, this.camera.azimuthAngle);
+    }
     // Pohled se ukládá s hrou
     this.game.view = this.camera.view;
   }

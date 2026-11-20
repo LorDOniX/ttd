@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { loadModel } from '../assets';
 import { aircraftModel, type AirFleet, type Aircraft } from '../game/aircraft';
-import { inView } from './camera';
+import { inView, type ViewFrustums } from './camera';
 import type { CabPose } from './firstPerson';
 
 // Modely letadel mají různé měřítko i natočení: při načtení se sjednotí na délku v dlaždicích,
@@ -56,7 +56,7 @@ export class AircraftView3D {
 
   constructor(private readonly fleet: AirFleet) {}
 
-  update(frustum: THREE.Frustum): void {
+  update(frustum: ViewFrustums): void {
     const alive = new Set(this.fleet.aircraft.map((p) => p.id));
     for (const [id, view] of this.views) {
       if (alive.has(id)) continue;
@@ -120,7 +120,7 @@ export class AircraftView3D {
     return view;
   }
 
-  private place(plane: Aircraft, view: AircraftView, frustum: THREE.Frustum): void {
+  private place(plane: Aircraft, view: AircraftView, frustum: ViewFrustums): void {
     const sample = plane.state === 'hangar' ? null : this.fleet.sample(plane);
     view.placed = sample !== null;
     if (!sample) {

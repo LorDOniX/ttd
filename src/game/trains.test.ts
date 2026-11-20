@@ -252,6 +252,39 @@ describe('jízdní řád', () => {
     expect(game.fleet.setOrders(train, [a.id])).toMatch(/dvě/);
   });
 
+  it('odmítne řád k nástupišti, ke kterému nevede kolej, a depo ho nabídne až na konci', () => {
+    const line = buildLine();
+    const { game, a, b, depot } = line;
+    // Nástupiště C stojí samo, bez koleje
+    const c = game.world.rail.addStation({ ...defaultStationShape(56, 20, 'x'), name: 'C', townId: 1 });
+    const train = buyTrain(game, depot);
+    expect(game.fleet.connectedToDepot(depot, a)).toBe(true);
+    expect(game.fleet.connectedToDepot(depot, c)).toBe(false);
+    expect(game.fleet.start(train, [a.id, c.id])).toMatch(/nevede kolej/);
+    expect(train.state).toBe('depot');
+    // Po dostavění koleje už řád projde
+    layTrack(game, { x: 42, y: 20 }, { x: 54, y: 20 });
+    expect(game.fleet.connectedToDepot(depot, c)).toBe(true);
+    expect(game.fleet.start(train, [a.id, b.id, c.id])).toBeNull();
+  });
+
+  it('ztracený vlak po opravě řádu vyrazí, i když stojí na své nové zastávce', () => {
+    const { game, a, b, depot } = buildLine();
+    const c = game.world.rail.addStation({ ...defaultStationShape(56, 20, 'x'), name: 'C', townId: 1 });
+    const train = buyTrain(game, depot);
+    game.fleet.start(train, [a.id, b.id]);
+    expect(arrivals(game, train, 1)).toEqual([a.id]);
+    // Za jízdy se řád s nepropojenou zastávkou přijme, vlak se ale ztratí
+    expect(game.fleet.setOrders(train, [a.id, c.id])).toBeNull();
+    expect(game.fleet.routeError([a.id, c.id])).toMatch(/nevede kolej/);
+    for (let i = 0; i < 20_000 && train.state !== 'lost'; i++) game.update(200);
+    expect(train.state).toBe('lost');
+    // Oprava řádu: cílem je nástupiště A, na kterém vlak stojí
+    expect(game.fleet.setOrders(train, [a.id, b.id])).toBeNull();
+    expect(train.state).not.toBe('lost');
+    expect(arrivals(game, train, 3)).toContain(b.id);
+  });
+
   it('v depu smí být řád rozpracovaný a po návratu z trati zůstane', () => {
     const { game, a, b, depot } = threeStops();
     const train = buyTrain(game, depot);

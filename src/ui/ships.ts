@@ -12,6 +12,7 @@ import {
 } from '../game/ships';
 import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
+import { vehicleViewport } from './vehicleViewport';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -41,6 +42,9 @@ export function shipStateText(game: Game, ship: Ship): string {
   const { shipFleet } = game;
   const where = shipFleet.stationName(ship.portId);
   const depot = ship.toDepot ? ' (pak do loděnice)' : '';
+  if (shipFleet.frozen && ship.state !== 'depot') {
+    return ship.state === 'loading' ? `Kotví v zamrzlém přístavu: ${where}` : `Zamrzlá v ledu, cíl ${where}${depot}`;
+  }
   switch (ship.state) {
     case 'depot':
       return `V loděnici: ${shipFleet.stationName(ship.depotId)}`;
@@ -101,7 +105,8 @@ function ordersEditor(game: Game, ship: Ship, choice: { port: number | null }): 
     h(
       'div',
       { className: 'form__hint' },
-      'Loď objíždí přístavy dokola, v každém vyloží a naloží náklad. Pluje jen po souvislé vodě a pod mosty neproplouvá.',
+      'Loď objíždí přístavy dokola, v každém vyloží a naloží náklad. Pluje jen po souvislé vodě a pod mosty ' +
+        'neproplouvá. V zimě voda zamrzá a lodě stojí v ledu až do jara.',
     ),
   );
 }
@@ -110,6 +115,13 @@ export function openShip(windows: WindowManager, game: Game, ship: Ship, links: 
   const id = `ship-${ship.id}`;
   const { shipFleet } = game;
   const choice = { port: null as number | null };
+  const viewport = vehicleViewport(
+    () => {
+      const p = shipFleet.position(ship);
+      return p && { x: p.x, y: 0, z: p.y };
+    },
+    () => (ship.state === 'depot' ? 'V loděnici' : null),
+  );
   const render = (): HTMLElement => {
     const model = shipModel(ship);
     const today = game.clock.day;
@@ -157,6 +169,7 @@ export function openShip(windows: WindowManager, game: Game, ship: Ship, links: 
     return h(
       'div',
       { className: 'form' },
+      viewport.element,
       table,
       actions,
       h('h4', {}, 'Plavební řád'),
@@ -171,7 +184,10 @@ export function openShip(windows: WindowManager, game: Game, ship: Ship, links: 
   const unsubscribe = [game.events.on('shipsChanged', refresh), game.clock.events.on('day', refresh)];
   windows.open(id, ship.name, render(), {
     width: 360,
-    onClose: () => unsubscribe.forEach((off) => off()),
+    onClose: () => {
+      unsubscribe.forEach((off) => off());
+      viewport.dispose();
+    },
     locate: () => {
       const p = shipFleet.position(ship);
       if (p) links.focus(p.x, p.y);
@@ -303,6 +319,7 @@ export function openShipyard(windows: WindowManager, game: Game, port: Station, 
     const inDepot = shipFleet.inDepot(port);
     const away = shipFleet.basedAt(port).filter((s) => !inDepot.includes(s));
     const reachable = destinations().length;
+    const ice = shipFleet.frozen ? ' · voda je zamrzlá, lodě vyplují na jaře' : '';
     return h(
       'div',
       { className: 'form' },
@@ -310,7 +327,8 @@ export function openShipyard(windows: WindowManager, game: Game, port: Station, 
         'div',
         { className: 'form__hint' },
         `Přístav se 2 kotvišti · čeká ${Math.floor(port.waiting)} cestujících · ` +
-          (reachable > 0 ? `po vodě dosažitelné přístavy: ${reachable}` : 'žádný jiný přístav na stejné vodě'),
+          (reachable > 0 ? `po vodě dosažitelné přístavy: ${reachable}` : 'žádný jiný přístav na stejné vodě') +
+          ice,
       ),
       h(
         'div',

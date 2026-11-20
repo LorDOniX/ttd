@@ -10,6 +10,7 @@ import {
 } from './balance';
 import { CARGOS, isFreight, type Cargo } from './cargo';
 import { formatMoney, type Game } from './game';
+import { seasonBlendForDate, seasonWeight } from './seasons';
 import {
   BERTHS,
   berthTiles,
@@ -30,6 +31,13 @@ const LOST_RETRY_DAYS = 5;
 const FULL_LOAD_CHECK_DAYS = 1;
 // Na tolik dlaždic před kotvištěm se loď zastaví, je-li kotviště obsazené
 const BERTH_APPROACH = 1.2;
+// Vodu pokryje led, když zima převažuje (zhruba od poloviny prosince do poloviny března, stejně jako vykreslený led)
+const FREEZE_WINTER_SHARE = 0.5;
+
+// Je voda k danému dni zamrzlá? Podle kalendáře, ne podle ladicího přepnutí ročního období ve vzhledu
+export function waterFrozen(date: Parameters<typeof seasonBlendForDate>[0]): boolean {
+  return seasonWeight(seasonBlendForDate(date, 'auto'), 'winter') >= FREEZE_WINTER_SHARE;
+}
 
 // depot – stojí v loděnici přístavu depotId; sailing – pluje k přístavu portId na kotviště berth;
 // waiting – čeká před obsazeným kotvištěm; loading – kotví a nakládá; lost – nemá cestu po vodě
@@ -113,6 +121,8 @@ export class ShipFleet {
   nextId = 1;
   // Vodní plochy pro kontrolu, zda mezi přístavy vede cesta; přepočítají se po změně mostů
   private bodies: Int32Array | null = null;
+  // Stav ledu při poslední aktualizaci, aby šlo ohlásit zamrznutí a tání
+  private wasFrozen: boolean | null = null;
 
   constructor(private readonly game: Game) {
     game.clock.events.on('month', () => this.chargeRunningCosts());
@@ -260,8 +270,25 @@ export class ShipFleet {
     this.changed();
   }
 
+  // Voda je zamrzlá: lodě stojí v ledu, v přístavu mohou jen nakládat
+  get frozen(): boolean {
+    return waterFrozen(this.game.clock.date);
+  }
+
   update(days: number): void {
     if (days <= 0) return;
+    const frozen = this.frozen;
+    if (frozen !== this.wasFrozen) {
+      if (this.wasFrozen !== null && this.ships.some((s) => s.state !== 'depot')) {
+        this.game.news(frozen ? 'Voda zamrzla – lodě stojí v ledu až do jara.' : 'Led roztál, lodě opět plují.');
+      }
+      this.wasFrozen = frozen;
+      this.changed();
+    }
+    if (frozen) {
+      this.updateFrozen(days);
+      return;
+    }
     for (const ship of this.ships) {
       switch (ship.state) {
         case 'sailing':
@@ -279,6 +306,18 @@ export class ShipFleet {
           if (ship.waitDays <= 0) this.sailTo(ship, ship.portId);
           break;
       }
+    }
+  }
+
+  // V ledu se nepluje; kotvící lodě dál nakládají čekající náklad, ale nevyplují
+  private updateFrozen(days: number): void {
+    for (const ship of this.ships) {
+      if (ship.state !== 'loading') continue;
+      ship.waitDays -= days;
+      if (ship.waitDays > 0) continue;
+      const port = this.port(ship.portId);
+      if (port && ship.passengers < shipModel(ship).capacity) this.exchange(ship, port, true);
+      ship.waitDays = FULL_LOAD_CHECK_DAYS;
     }
   }
 

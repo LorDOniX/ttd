@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SHIP_MODELS } from './balance';
 import type { Game } from './game';
 import { parseSave, restoreGame, serializeGame } from './save';
-import type { Ship } from './ships';
+import { waterFrozen, type Ship } from './ships';
 import { addBuilding, emptyGame, makeTown, runDays } from '../test/fixtures';
 import { TileType } from '../world/map';
 import { berthTiles, findWaterRoute, portAt, type PortShape } from '../world/port';
@@ -16,12 +16,14 @@ interface WaterLine {
   b: Station;
 }
 
-// Jezero x 10–50, y 20–30 s ostrůvkem uprostřed; přístav A na severním břehu, B na jižním
+// Jezero x 10–50, y 20–30 s ostrůvkem uprostřed; přístav A na severním břehu, B na jižním. Hra začíná v červnu,
+// aby voda nebyla zamrzlá
 function buildWaterLine(): WaterLine {
   const townA = makeTown(0, 14, 16);
   const townB = makeTown(1, 46, 34);
   const game = emptyGame(64, [townA, townB]);
   game.money = 10_000_000;
+  game.clock.date = { year: 1950, month: 5, day: 1 };
   const { map } = game.world;
   for (let y = 20; y <= 30; y++) for (let x = 10; x <= 50; x++) map.set(x, y, TileType.Water);
   for (let y = 24; y <= 26; y++) for (let x = 25; x <= 35; x++) map.set(x, y, TileType.Grass);
@@ -133,6 +135,39 @@ describe('lodě', () => {
     expect(ship.state).toBe('depot');
     expect(ship.depotId).toBe(b.id);
     expect(game.construction.demolishPlan(stationTiles(b).slice(0, 1)).blocked).toMatch(/loděnici/);
+  });
+
+  it('v zimě voda zamrzne: lodě stojí v ledu, kotvící jen nakládají, na jaře plují dál', () => {
+    expect(waterFrozen({ month: 0, day: 10 })).toBe(true);
+    expect(waterFrozen({ month: 11, day: 5 })).toBe(false);
+    expect(waterFrozen({ month: 11, day: 25 })).toBe(true);
+    expect(waterFrozen({ month: 2, day: 25 })).toBe(false);
+    expect(waterFrozen({ month: 6, day: 1 })).toBe(false);
+
+    const { game, a, b } = buildWaterLine();
+    game.clock.date = { year: 1950, month: 11, day: 10 };
+    const sailing = buyShip(game, a);
+    game.shipFleet.start(sailing, [b.id, a.id]);
+    const moored = buyShip(game, a);
+    runDays(game, 3);
+    expect(sailing.state).toBe('sailing');
+    // Před Vánoci zamrzne: plující loď stojí v ledu, loď vypravená v zamrzlém přístavu jen nakládá
+    runDays(game, 10);
+    expect(game.shipFleet.frozen).toBe(true);
+    const at = game.shipFleet.position(sailing);
+    a.waiting = 0;
+    game.shipFleet.start(moored, [a.id, b.id]);
+    expect(moored.state).toBe('loading');
+    runDays(game, 40);
+    expect(game.shipFleet.position(sailing)).toEqual(at);
+    expect(moored.state).toBe('loading');
+    expect(moored.passengers).toBeGreaterThan(0);
+    expect(game.newsLog.some((n) => n.text.includes('zamrzla'))).toBe(true);
+    // Na jaře led roztaje a lodě vyplují
+    game.clock.date = { year: 1951, month: 3, day: 1 };
+    runDays(game, 30);
+    expect(game.shipFleet.position(sailing)).not.toEqual(at);
+    expect(game.newsLog.some((n) => n.text.includes('roztál'))).toBe(true);
   });
 
   it('uložení zachová přístavy i lodě na cestě', () => {

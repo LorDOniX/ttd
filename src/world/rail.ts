@@ -130,6 +130,8 @@ export function stationTiles(shape: StationShape): TilePos[] {
 export class RailNetwork {
   // Bitová maska kusů koleje na každé dlaždici
   readonly pieces: Uint8Array;
+  // Počítadlo změn kolejí (pro mezipaměti odvozené z kolejí)
+  revision = 0;
   readonly stations: Station[] = [];
   readonly depots: Depot[] = [];
   // Garáže aut; id sdílí s depy, aby byla jednoznačná
@@ -180,6 +182,7 @@ export class RailNetwork {
 
   addPiece(x: number, y: number, piece: number): void {
     this.pieces[y * this.map.width + x] |= 1 << piece;
+    this.revision++;
     const type = this.map.get(x, y);
     if (this.map.isFree(x, y)) this.map.set(x, y, TileType.Rail);
     if (type === TileType.Road) this.map.set(x, y, TileType.Crossing);
@@ -189,6 +192,7 @@ export class RailNetwork {
   // Odebere všechny kusy koleje z dlaždice
   removeTrack(x: number, y: number): void {
     this.pieces[y * this.map.width + x] = 0;
+    this.revision++;
     this.signals.delete(y * this.map.width + x);
     const type = this.map.get(x, y);
     if (type === TileType.Rail) this.map.set(x, y, TileType.Grass);
@@ -215,6 +219,7 @@ export class RailNetwork {
     for (const t of stationTiles(station)) {
       this.map.set(t.x, t.y, TileType.Station);
       this.pieces[t.y * this.map.width + t.x] = 1 << axisPiece(station.axis);
+      this.revision++;
     }
     this.stations.push(created);
     return created;
@@ -238,6 +243,7 @@ export class RailNetwork {
       // Ze zastávky aut zůstane silnice i s vlastníkem
       this.map.set(t.x, t.y, station.kind === 'road' ? TileType.Road : TileType.Grass);
       this.pieces[t.y * this.map.width + t.x] = 0;
+      this.revision++;
     }
     this.stations.splice(this.stations.indexOf(station), 1);
   }
@@ -350,6 +356,7 @@ export class RailNetwork {
     const depot = { id: this.nextDepotId++, x, y, entrance };
     this.map.set(x, y, TileType.Depot);
     this.pieces[y * this.map.width + x] = 1 << axisPiece(entrance % 2 === 0 ? 'y' : 'x');
+    this.revision++;
     this.depots.push(depot);
     return depot;
   }
@@ -357,6 +364,7 @@ export class RailNetwork {
   removeDepot(depot: Depot): void {
     this.map.set(depot.x, depot.y, TileType.Grass);
     this.pieces[depot.y * this.map.width + depot.x] = 0;
+    this.revision++;
     this.depots.splice(this.depots.indexOf(depot), 1);
   }
 

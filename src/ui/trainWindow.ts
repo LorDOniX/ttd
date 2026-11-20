@@ -16,6 +16,7 @@ import {
 import { modelThumb } from '../render/icons';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
+import { vehicleViewport } from './vehicleViewport';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
@@ -129,7 +130,7 @@ function ordersEditor(game: Game, train: Train, choice: { station: number | null
   const add = button('Přidat', 'Přidat zastávku na konec', () => apply([...orders, Number(select.value)]));
   add.disabled = stations.length === 0;
 
-  const problem = orders.length > 0 ? ordersError(orders) : null;
+  const problem = orders.length > 0 ? (ordersError(orders) ?? game.fleet.routeError(orders)) : null;
   return h(
     'div',
     { className: 'orders' },
@@ -186,6 +187,14 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
   // Výběr zastávky a vlaku ke sdílení musí přežít obnovení okna
   const choice = { station: null as number | null };
   const shareChoice = { train: null as number | null };
+  // Okénko se při obnově obsahu vkládá znovu tentýž prvek, obraz se tak nepřerušuje
+  const viewport = vehicleViewport(
+    () => {
+      const p = trainPosition(game, train);
+      return p && { x: p[0], y: 0, z: p[1] };
+    },
+    () => (train.state === 'depot' ? 'V depu' : null),
+  );
   const render = (): HTMLElement => {
     const model = trainModel(train);
     const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
@@ -248,6 +257,7 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
     return h(
       'div',
       { className: 'form' },
+      viewport.element,
       table,
       ...(warning ? [h('div', { className: 'form__hint warning' }, warning)] : []),
       h('div', { className: 'train__actions' }, toDepot, depot, renew, ride),
@@ -265,7 +275,10 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
   const unsubscribe = [game.events.on('trainsChanged', refresh), game.clock.events.on('day', refresh)];
   const options = {
     width: 360,
-    onClose: () => unsubscribe.forEach((off) => off()),
+    onClose: () => {
+      unsubscribe.forEach((off) => off());
+      viewport.dispose();
+    },
     locate: () => {
       const p = trainPosition(game, train);
       if (p) links.focus(...p);

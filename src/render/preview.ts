@@ -128,7 +128,7 @@ export class BuildPreview {
   showPort(shape: PortShape, valid: boolean): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    this.station.add(createPortObject(shape, this.material));
+    this.station.add(createPortObject(shape, this.material, false));
   }
 
   showDepot(x: number, y: number, entrance: Edge, valid: boolean): void {

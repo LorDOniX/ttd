@@ -13,7 +13,7 @@ import {
 import { parseSave } from '../game/save';
 import { GameView } from '../render/gameView';
 import { createLoadButton } from '../ui/dialogs';
-import { h } from '../ui/dom';
+import { h, isDevHost } from '../ui/dom';
 import { generateWorld } from '../world/generator';
 import { Edge, defaultStationShape, type Station } from '../world/rail';
 import { findTrackPath } from '../world/railPath';
@@ -111,6 +111,16 @@ function menuButton(label: string, hint: string, onClick: () => void): HTMLButto
   return b;
 }
 
+// Odkaz na podstránku hry (s base, na serveru /ttd/…)
+function menuLink(label: string, hint: string, path: string): HTMLAnchorElement {
+  return h(
+    'a',
+    { className: 'title__button', href: `${import.meta.env.BASE_URL}${path}` },
+    h('span', {}, label),
+    h('small', {}, hint),
+  );
+}
+
 function newGamePanel(back: () => void): HTMLElement {
   const seed = h('input', { type: 'text', value: String(Math.floor(Math.random() * 100000)), maxLength: 30 });
   const size = select<'128' | '256' | '512'>(
@@ -187,6 +197,14 @@ function mainPanel(showNewGame: () => void): HTMLElement {
   }
   items.push(menuButton('Nová hra', 'seed, velikost, voda, města, průmysl', showNewGame));
   items.push(createLoadButton((save) => launch({ mode: 'load', save }), status, null));
+  // Pomocné stránky jen při vývoji; na serveru zůstávají dostupné jen přímou adresou
+  if (isDevHost()) {
+    items.push(
+      h('div', { className: 'title__section' }, 'Vývoj'),
+      menuLink('Modely assetů', 'všechny GLB ze složky assets', 'all-models'),
+      menuLink('Modely použité ve hře', 'vozidla, letiště, export GLB', 'game-assets'),
+    );
+  }
   return h('div', { className: 'form' }, ...items, status);
 }
 

@@ -4,7 +4,7 @@ import { CARGOS } from '../game/cargo';
 import type { CityCar } from '../game/cityTraffic';
 import { roadVehicleModel, vehiclePoint, type RoadFleet, type RoadVehicle } from '../game/roadVehicles';
 import type { GameMap } from '../world/map';
-import { inView } from './camera';
+import { inView, type ViewFrustums } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
 import type { CabPose } from './firstPerson';
 import { BRIDGE_DECK } from './rail';
@@ -91,7 +91,7 @@ export class RoadVehiclesView {
   ) {}
 
   // Auta mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
-  update(frustum: THREE.Frustum, cityCars: readonly CityCar[] = [], night = false): void {
+  update(frustum: ViewFrustums, cityCars: readonly CityCar[] = [], night = false): void {
     const alive = new Set([
       ...this.fleet.vehicles.map((vehicle) => `player:${vehicle.id}`),
       ...cityCars.map((car) => `city:${car.id}`),

@@ -20,6 +20,7 @@ import { axisPiece, opposite, stationTiles, type Depot, type Station, type Stati
 import {
   extendThroughStation,
   findRoute,
+  railNetworks,
   pathLength,
   pointAt,
   reverseSegment,
@@ -175,6 +176,37 @@ export class Fleet {
     game.events.on('railChanged', () => this.revalidate());
   }
 
+  // Souvislé kolejové sítě; přepočítají se po změně kolejí
+  private networks: { revision: number; labels: Int32Array } | null = null;
+
+  private networkAt(x: number, y: number): number {
+    const { rail, map } = this.game.world;
+    if (this.networks?.revision !== rail.revision) {
+      this.networks = { revision: rail.revision, labels: railNetworks(rail) };
+    }
+    return this.networks.labels[y * map.width + x];
+  }
+
+  // Vede z depa kolej k nástupišti (případně oklikou přes jiné koleje)?
+  connectedToDepot(depot: Depot, station: Station): boolean {
+    const network = this.networkAt(depot.x, depot.y);
+    return network >= 0 && network === this.networkAt(station.x, station.y);
+  }
+
+  // Chyba řádu, když mezi některými po sobě jdoucími nástupišti (i přes konec řádu) nevede kolej
+  routeError(orders: number[]): string | null {
+    for (let i = 0; i < orders.length; i++) {
+      const a = this.station(orders[i]);
+      const b = this.station(orders[(i + 1) % orders.length]);
+      if (!a || !b) continue;
+      const network = this.networkAt(a.x, a.y);
+      if (network < 0 || network !== this.networkAt(b.x, b.y)) {
+        return `Mezi nástupišti ${a.name} a ${b.name} nevede kolej.`;
+      }
+    }
+    return null;
+  }
+
   available(): TrainModel[] {
     return TRAIN_MODELS.filter((m) => m.year <= this.game.clock.date.year);
   }
@@ -277,7 +309,7 @@ export class Fleet {
 
   // Vypraví vlak z depa; nejdřív jede k nejbližší zastávce jízdního řádu
   start(train: Train, orders: number[]): string | null {
-    const error = ordersError(orders);
+    const error = ordersError(orders) ?? this.routeError(orders);
     if (error) return error;
     const depot = this.depot(train);
     const stations = orders.map((id) => this.station(id));
@@ -358,6 +390,7 @@ export class Fleet {
   // V depu smí být řád rozpracovaný, ověří se až při výjezdu.
   setOrders(train: Train, orders: number[]): string | null {
     const line = this.lineOf(train);
+    // Nepropojené zastávky se za jízdy neblokují (řád se dá přestavět postupně), okno řádu je jen ukáže
     const error = line.some((t) => t.state !== 'depot') ? ordersError(orders) : null;
     if (error) return error;
     if (orders.some((id) => !this.station(id))) return 'Nástupiště neexistuje.';
@@ -375,7 +408,8 @@ export class Fleet {
       const kept = current === null ? -1 : orders.indexOf(current);
       // Ve stanici se po nástupu posune na další zastávku, tedy na začátek řádu
       train.target = kept >= 0 ? kept : train.state === 'loading' ? orders.length - 1 : 0;
-      if (kept < 0 && train.state === 'running') this.replan(train);
+      // Ztracený vlak zkusí novou trasu hned, ne až po další prodlevě
+      if ((kept < 0 && train.state === 'running') || train.state === 'lost') this.replan(train);
     }
   }
 
@@ -609,6 +643,10 @@ export class Fleet {
       const keep = pathLength(train.path.slice(0, train.path.indexOf(body[0])));
       train.path = [...body, ...forward];
       train.pos -= keep;
+    } else if (train.state !== 'running' && this.standsAt(train, goal)) {
+      // Ztracený vlak už stojí na nástupišti, kam má jet (např. po změně řádu)
+      this.arrive(train);
+      return;
     } else {
       this.lose(train);
       return;
@@ -618,8 +656,19 @@ export class Fleet {
     this.changed();
   }
 
+  private standsAt(train: Train, goal: Station | Depot): boolean {
+    if ('entrance' in goal) return false;
+    const body = this.body(train);
+    const head = body[body.length - 1];
+    return this.game.world.rail.stationAt(head.x, head.y)?.id === goal.id;
+  }
+
   private lose(train: Train): void {
-    if (train.state !== 'lost') this.game.news(`${train.name} nemůže najít cestu.`, this.position(train));
+    if (train.state !== 'lost') {
+      const goal = this.goal(train);
+      const where = goal ? ('entrance' in goal ? ' do depa' : ` do stanice ${goal.name}`) : '';
+      this.game.news(`${train.name} nemůže najít cestu${where}.`, this.position(train));
+    }
     train.state = 'lost';
     train.speed = 0;
     train.waitDays = LOST_RETRY_DAYS;

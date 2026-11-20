@@ -273,6 +273,7 @@ export function restoreGame(data: SaveData): Game {
 
   const rail = new RailNetwork(map);
   rail.pieces.set(decode(data.rail.pieces, width * height));
+  rail.revision++;
   // Starší uložení nezná velikost nástupišť (všechna byla 1×3) ani jejich hodnocení
   rail.stations.push(
     ...data.rail.stations.map((s) => {

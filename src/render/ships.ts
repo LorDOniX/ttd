@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { loadModel } from '../assets';
 import { shipModel, type Ship, type ShipFleet } from '../game/ships';
-import { inView } from './camera';
+import { inView, type ViewFrustums } from './camera';
 import type { CabPose } from './firstPerson';
 import { WATER_DEPTH } from './terrain';
 
@@ -46,7 +46,7 @@ export class ShipsView {
 
   constructor(private readonly fleet: ShipFleet) {}
 
-  update(frustum: THREE.Frustum, seconds: number, dt: number): void {
+  update(frustum: ViewFrustums, seconds: number, dt: number): void {
     const alive = new Set(this.fleet.ships.map((s) => s.id));
     for (const [id, view] of this.views) {
       if (alive.has(id)) continue;
@@ -105,7 +105,7 @@ export class ShipsView {
     return view;
   }
 
-  private place(ship: Ship, view: ShipView, frustum: THREE.Frustum, seconds: number, dt: number): void {
+  private place(ship: Ship, view: ShipView, frustum: ViewFrustums, seconds: number, dt: number): void {
     const sample = ship.state === 'depot' ? null : this.fleet.sample(ship);
     view.placed = sample !== null;
     if (!sample) {
@@ -120,10 +120,12 @@ export class ShipsView {
       const step = TURN_RATE * Math.min(dt, 0.1);
       view.yaw += Math.max(-step, Math.min(step, delta));
     }
-    const bob = Math.sin(seconds * 1.7 + ship.id) * 0.004;
+    // V ledu se loď nehoupe
+    const sway = this.fleet.frozen ? 0 : 1;
+    const bob = Math.sin(seconds * 1.7 + ship.id) * 0.004 * sway;
     view.group.position.set(sample.x, -WATER_DEPTH - DRAFT + bob, sample.y);
     view.group.rotation.y = view.yaw;
-    view.group.rotation.z = Math.sin(seconds * 1.3 + ship.id * 2) * 0.02;
+    view.group.rotation.z = Math.sin(seconds * 1.3 + ship.id * 2) * 0.02 * sway;
     view.group.visible = ship.id !== this.cabId && inView(frustum, sample.x, 0, sample.y, 0.7);
   }
 }

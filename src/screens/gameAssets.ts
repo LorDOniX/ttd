@@ -1,9 +1,19 @@
 import { assetModels } from 'virtual:asset-model-catalog';
-import { ROAD_VEHICLE_MODELS, TRAIN_MODELS } from '../game/balance';
+import * as THREE from 'three';
+import {
+  AIRCRAFT_MODELS,
+  AIRPORT_TYPES,
+  ROAD_VEHICLE_MODELS,
+  SHIP_MODELS,
+  TRAIN_MODELS,
+  type AirportType,
+} from '../game/balance';
 import { CARGO_TYPES, CARGOS } from '../game/cargo';
 import { CITY_CAR_MODELS } from '../game/cityTraffic';
 import type { Kit } from '../assets';
+import { airportModel } from '../render/airports';
 import { ANIMAL_MODELS } from '../render/animals';
+import { portModel } from '../render/ports';
 import { INDUSTRY_ASSET_MODELS } from '../render/industries';
 import { buildIndustryPreview } from '../render/industries';
 import { CHARACTER_MODELS } from '../render/pedestrians';
@@ -30,6 +40,8 @@ function usedModels(): GalleryModel[] {
   }
   for (const model of ROAD_VEHICLE_MODELS) add('car kit', model.model, 'Silniční vozidla');
   for (const model of CITY_CAR_MODELS) add('car kit', model, 'Městská auta');
+  for (const model of AIRCRAFT_MODELS) add('airplanes', model.model, 'Letadla');
+  for (const model of SHIP_MODELS) add('watercraft kit', model.model, 'Lodě');
   for (const model of TREE_MODELS) add('nature kit', model, 'Stromy');
   for (const model of ANIMAL_MODELS) add('cube pets', model, 'Zvířata');
   for (const model of CHARACTER_MODELS) add('blocky characters', model, 'Chodci');
@@ -38,6 +50,7 @@ function usedModels(): GalleryModel[] {
   }
   for (const model of INDUSTRY_ASSET_MODELS) add(model.kit, model.name, 'Průmyslové areály');
   add('car kit', 'tractor-shovel', 'Stavební ikony');
+  add('ports', 'port', 'Letiště a přístavy');
 
   const components = [...models.values()];
   const completeIndustries: GalleryModel[] = (Object.keys(INDUSTRY_TYPES) as IndustryKind[]).map((kind) => ({
@@ -46,7 +59,17 @@ function usedModels(): GalleryModel[] {
     category: 'Kompletní průmyslové areály',
     preview: () => buildIndustryPreview(kind),
   }));
-  return [...components, ...completeIndustries].sort(
+  // Letiště a přístav se skládají z kvádrů v kódu; díly jsou pojmenované, aby šly po exportu předělat
+  const transport: GalleryModel[] = [
+    ...(Object.keys(AIRPORT_TYPES) as AirportType[]).map((type) => ({
+      kit: 'Sestava hry',
+      name: AIRPORT_TYPES[type].name,
+      category: 'Letiště a přístavy',
+      preview: async (): Promise<THREE.Object3D> => airportModel(type),
+    })),
+    { kit: 'Sestava hry', name: 'Přístav z kódu', category: 'Letiště a přístavy', preview: async () => portModel() },
+  ];
+  return [...components, ...completeIndustries, ...transport].sort(
     (a, b) => a.category!.localeCompare(b.category!) || a.kit.localeCompare(b.kit) || a.name.localeCompare(b.name),
   );
 }

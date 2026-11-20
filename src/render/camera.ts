@@ -20,11 +20,20 @@ export function nextRotationTarget(angle: number, direction: 1 | -1): number {
   return (direction > 0 ? Math.floor(step) + 1 : Math.ceil(step) - 1) * ROTATION_STEP;
 }
 
-// Je koule kolem bodu aspoň zčásti v záběru kamery
-export function inView(frustum: THREE.Frustum, x: number, y: number, z: number, radius: number): boolean {
+// Záběr jedné kamery, nebo víc kamer naráz (hlavní pohled a okénka vozidel)
+export type ViewFrustums = THREE.Frustum | readonly THREE.Frustum[];
+
+// Je koule kolem bodu aspoň zčásti v záběru některé kamery
+export function inView(frustum: ViewFrustums, x: number, y: number, z: number, radius: number): boolean {
   sphere.center.set(x, y, z);
   sphere.radius = radius;
-  return frustum.intersectsSphere(sphere);
+  if (frustum instanceof THREE.Frustum) return frustum.intersectsSphere(sphere);
+  return frustum.some((f) => f.intersectsSphere(sphere));
+}
+
+// Směr od cíle ke kameře v izometrickém pohledu natočeném o azimuth
+export function isoDirection(azimuth: number): THREE.Vector3 {
+  return ISO_DIRECTION.clone().applyAxisAngle(UP, azimuth);
 }
 
 export class IsoCamera {
@@ -71,6 +80,11 @@ export class IsoCamera {
   frustum(): THREE.Frustum {
     this.viewProjection.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     return this.viewFrustum.setFromProjectionMatrix(this.viewProjection);
+  }
+
+  // Aktuální natočení pohledu (okénka vozidel se natáčejí stejně)
+  get azimuthAngle(): number {
+    return this.azimuth;
   }
 
   focus(x: number, z: number): void {

@@ -4,7 +4,7 @@ import { Edge, PIECES, type Axis } from '../world/rail';
 import type { IndustryKind } from '../world/industry';
 import { normalizedAircraft } from './aircraft';
 import { createAirportObject } from './airports';
-import { createPortObject } from './ports';
+import { createPortObject, loadPortModel } from './ports';
 import { normalizedShip } from './ships';
 import { WATER_DEPTH } from './terrain';
 import { moorDirection, moorPoint, portShape } from '../world/port';
@@ -105,6 +105,7 @@ async function port(): Promise<THREE.Object3D[]> {
     new THREE.MeshLambertMaterial({ color: 0x3a6fb0 }),
   );
   const ship = await normalizedShip('ship-cargo-a');
+  await loadPortModel();
   const moor = moorPoint(shape, 0);
   const dir = moorDirection(shape);
   ship.position.set(moor.x + 0.4, -WATER_DEPTH, moor.y);
@@ -200,6 +201,22 @@ function cached(key: string, objects: () => Promise<THREE.Object3D[]> | THREE.Ob
 // Obrázek ikony nástroje jako data URL; vykreslí se jednou a pak se bere z cache
 export function sceneIcon(icon: SceneIcon): Promise<string> {
   return cached(icon, SCENES[icon]);
+}
+
+// Ikona lišty z OpenGFX (assets/ui/toolbar, 40×40 px pro zoom 2×), stejné rozhraní jako vykreslené ikony
+export type ToolbarIcon =
+  | 'build-road'
+  | 'build-rail'
+  | 'build-water'
+  | 'build-air'
+  | 'list-road'
+  | 'list-trains'
+  | 'list-ships'
+  | 'list-aircraft'
+  | 'industry';
+
+export function toolbarIcon(name: ToolbarIcon): Promise<string> {
+  return Promise.resolve(`${import.meta.env.BASE_URL}ui/toolbar/${name}.png`);
 }
 
 // Obrázek modelu z kitu (např. lokomotivy nebo auta) bez podkladu

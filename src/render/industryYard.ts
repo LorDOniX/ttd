@@ -165,7 +165,7 @@ export function industryGround(kind: IndustryKind): THREE.Mesh {
   return ground;
 }
 
-interface FenceStyle {
+export interface FenceStyle {
   // Barva sloupků, příčlí a latí
   color: number;
   height: number;
@@ -180,7 +180,7 @@ interface FenceStyle {
   panel?: { color: number; thickness: number; opacity?: number };
 }
 
-const CHAIN_LINK: FenceStyle = {
+export const CHAIN_LINK: FenceStyle = {
   color: 0x8a8d8f,
   height: 0.22,
   post: 0.022,
@@ -249,10 +249,16 @@ function fenceSegments(): [number, number, number, number][] {
 
 const fenceCache = new Map<IndustryKind, { frame: THREE.Mesh; panel: THREE.Mesh | null }>();
 
-function buildFence(style: FenceStyle): { frame: THREE.Mesh; panel: THREE.Mesh | null } {
+// Úsek plotu [x0, z0, x1, z1] rovnoběžný s osou X nebo Z
+export type FenceSegment = [number, number, number, number];
+
+function buildFence(
+  style: FenceStyle,
+  segments: readonly FenceSegment[] = fenceSegments(),
+): { frame: THREE.Mesh; panel: THREE.Mesh | null } {
   const frame: THREE.BufferGeometry[] = [];
   const panels: THREE.BufferGeometry[] = [];
-  for (const [x0, z0, x1, z1] of fenceSegments()) {
+  for (const [x0, z0, x1, z1] of segments) {
     const length = Math.hypot(x1 - x0, z1 - z0);
     const alongX = z0 === z1;
     const cx = (x0 + x1) / 2;
@@ -300,6 +306,21 @@ function buildFence(style: FenceStyle): { frame: THREE.Mesh; panel: THREE.Mesh |
   return { frame: frameMesh, panel: panelMesh };
 }
 
+// Plot z vlastních úseků (např. kolem přístavu jen na souši); geometrie se sdílí podle klíče
+const customFences = new Map<string, { frame: THREE.Mesh; panel: THREE.Mesh | null }>();
+
+export function customFence(key: string, style: FenceStyle, segments: readonly FenceSegment[]): THREE.Group {
+  let fence = customFences.get(key);
+  if (!fence) {
+    fence = buildFence(style, segments);
+    customFences.set(key, fence);
+  }
+  const group = new THREE.Group();
+  group.add(fence.frame.clone());
+  if (fence.panel) group.add(fence.panel.clone());
+  return group;
+}
+
 // Oplocení po obvodu areálu podle druhu závodu, s vjezdem vpředu
 export function industryFence(kind: IndustryKind): THREE.Group {
   let fence = fenceCache.get(kind);
@@ -332,16 +353,21 @@ export const FLOODLIGHT_POOLS: readonly THREE.Vector3[] = CORNERS.map(
 const FLOODLIGHT_POLE_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x55585a, flatShading: true });
 const FLOODLIGHT_HEAD_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x8c8a80, flatShading: true });
 
-// Sloupy v rozích s reflektorem na rameni, natočeným dolů do středu areálu
-const FLOODLIGHT_GEOMETRY = (() => {
-  const corner = HALF - FLOODLIGHT_INSET;
+// Sloup s reflektorem na rameni: poloha a směr ramene (yaw od +Z k +X)
+export interface FloodlightSpot {
+  x: number;
+  z: number;
+  yaw: number;
+}
+
+function floodlightGeometry(spots: readonly FloodlightSpot[]): {
+  poles: THREE.BufferGeometry;
+  heads: THREE.BufferGeometry;
+} {
   const h = FLOODLIGHT_HEIGHT;
   const poles: THREE.BufferGeometry[] = [];
   const heads: THREE.BufferGeometry[] = [];
-  for (const [sx, sz] of CORNERS) {
-    const x = sx * corner;
-    const z = sz * corner;
-    const yaw = Math.atan2(-sx, -sz);
+  for (const { x, z, yaw } of spots) {
     poles.push(new THREE.CylinderGeometry(0.016, 0.022, h, 6).translate(x, h / 2, z));
     poles.push(new THREE.BoxGeometry(0.06, 0.04, 0.06).translate(x, 0.02, z));
     poles.push(
@@ -359,7 +385,24 @@ const FLOODLIGHT_GEOMETRY = (() => {
     );
   }
   return { poles: mergeGeometries(poles)!, heads: mergeGeometries(heads)! };
-})();
+}
+
+// Sloupy v rozích areálu, reflektory natočené dolů do středu
+const FLOODLIGHT_GEOMETRY = floodlightGeometry(
+  CORNERS.map(([sx, sz]) => {
+    const corner = HALF - FLOODLIGHT_INSET;
+    return { x: sx * corner, z: sz * corner, yaw: Math.atan2(-sx, -sz) };
+  }),
+);
+
+// Reflektory na vlastních místech (např. v přístavu); svítí spolu s reflektory průmyslu (setFloodlights)
+export function floodlights(spots: readonly FloodlightSpot[]): THREE.Group {
+  const geometry = floodlightGeometry(spots);
+  return new THREE.Group().add(
+    new THREE.Mesh(geometry.poles, FLOODLIGHT_POLE_MATERIAL),
+    new THREE.Mesh(geometry.heads, FLOODLIGHT_HEAD_MATERIAL),
+  );
+}
 
 export function industryFloodlights(): THREE.Group {
   return new THREE.Group().add(

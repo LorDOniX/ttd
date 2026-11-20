@@ -13,6 +13,7 @@ import {
 import { Game, formatMoney } from '../game/game';
 import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
+import { vehicleViewport } from './vehicleViewport';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -128,6 +129,13 @@ export function openAircraft(windows: WindowManager, game: Game, plane: Aircraft
   const id = `aircraft-${plane.id}`;
   const { airFleet } = game;
   const choice = { airport: null as number | null };
+  const viewport = vehicleViewport(
+    () => {
+      const p = airFleet.position(plane);
+      return p && { x: p.x, y: p.z, z: p.y };
+    },
+    () => (plane.state === 'hangar' ? 'V hangáru' : null),
+  );
   const render = (): HTMLElement => {
     const model = aircraftModel(plane);
     const today = game.clock.day;
@@ -180,6 +188,7 @@ export function openAircraft(windows: WindowManager, game: Game, plane: Aircraft
     return h(
       'div',
       { className: 'form' },
+      viewport.element,
       table,
       actions,
       h('h4', {}, 'Letový řád'),
@@ -195,7 +204,10 @@ export function openAircraft(windows: WindowManager, game: Game, plane: Aircraft
   const unsubscribe = [game.events.on('aircraftChanged', refresh), game.clock.events.on('day', refresh)];
   windows.open(id, plane.name, render(), {
     width: 360,
-    onClose: () => unsubscribe.forEach((off) => off()),
+    onClose: () => {
+      unsubscribe.forEach((off) => off());
+      viewport.dispose();
+    },
     locate: () => {
       const p = airFleet.position(plane);
       if (p) links.focus(p.x, p.y);

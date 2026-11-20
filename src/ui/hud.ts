@@ -1,7 +1,8 @@
 import { GAME_SPEEDS, formatDate, type GameSpeed } from '../game/clock';
 import { Game, formatMoney } from '../game/game';
-import { iconElement, industryIcon, modelIcon, sceneIcon } from '../render/icons';
+import { iconElement, toolbarIcon } from '../render/icons';
 import { h } from './dom';
+import { sceneButtons, type SceneControls } from './sceneControls';
 
 const NEWS_VISIBLE_MS = 30_000;
 
@@ -10,7 +11,8 @@ export interface ToolbarActions {
   openSettings: () => void;
   openFinance: () => void;
   openTraffic: () => void;
-  toggleNight: () => boolean;
+  // Den/noc a roční období
+  scene: SceneControls;
   openRailBuild: () => void;
   openRoadBuild: () => void;
   openAirBuild: () => void;
@@ -93,18 +95,12 @@ export class Hud {
       actions.rotateView(-1);
     });
 
-    const dayNight = button('☀', 'Přepnout na noc', () => {
-      const night = actions.toggleNight();
-      dayNight.textContent = night ? '☾' : '☀';
-      dayNight.title = night ? 'Přepnout na den' : 'Přepnout na noc';
-      dayNight.classList.toggle('toolbar__button--active', night);
-      dayNight.setAttribute('aria-pressed', String(night));
-    });
-    dayNight.setAttribute('aria-pressed', 'false');
+    const { night: dayNight, season } = sceneButtons(actions.scene, 'toolbar__button', false);
 
     this.infoButton = button('❓', 'Informace o dlaždici a dosah nástupiště (I)', actions.toggleInfo);
 
-    // Skupiny v pořadí jako v OpenTTD: čas, hra, mapa, finance, vozidla, pohled, stavba, zprávy a nápověda
+    // Skupiny v pořadí jako v OpenTTD: čas, hra, mapa, finance, vozidla, pohled, stavba, zprávy a nápověda;
+    // vozidla i stavba jdou silnice, železnice, voda, vzduch
     const groups: HTMLElement[][] = [
       [pause, speed],
       [
@@ -115,30 +111,20 @@ export class Hud {
         windowButton('minimap', '🗺️', 'Minimapa (M)', actions.openMinimap),
         windowButton('traffic', '🚦', 'Městský provoz', actions.openTraffic),
         dayNight,
+        season,
       ],
       [windowButton('finance', '💰', 'Finance (F)', actions.openFinance)],
       [
-        windowButton('vehicle-list', '🚌', 'Seznam aut (A)', actions.openVehicleList, modelIcon('car kit', 'van')),
+        // Pořadí jako u stavby: auta, vlaky, lodě, letadla
+        windowButton('vehicle-list', '🚌', 'Seznam aut (A)', actions.openVehicleList, toolbarIcon('list-road')),
+        windowButton('train-list', '🚆', 'Seznam vlaků (V)', actions.openTrainList, toolbarIcon('list-trains')),
+        windowButton('ship-list', '🚢', 'Seznam lodí (T)', actions.openShipList, toolbarIcon('list-ships')),
         windowButton(
           'aircraft-list',
           '✈️',
           'Seznam letadel (O)',
           actions.openAircraftList,
-          modelIcon('airplanes', 'airplane-3'),
-        ),
-        windowButton(
-          'ship-list',
-          '🚢',
-          'Seznam lodí (T)',
-          actions.openShipList,
-          modelIcon('watercraft kit', 'ship-cargo-a'),
-        ),
-        windowButton(
-          'train-list',
-          '🚆',
-          'Seznam vlaků (V)',
-          actions.openTrainList,
-          modelIcon('train kit', 'train-locomotive-a'),
+          toolbarIcon('list-aircraft'),
         ),
       ],
       [rotate],
@@ -148,12 +134,18 @@ export class Hud {
           '🛣️',
           'Stavba silnic, zastávek a garáží (S, Z, U)',
           actions.openRoadBuild,
-          sceneIcon('road-depot'),
+          toolbarIcon('build-road'),
         ),
-        windowButton('rail-build', '🚂', 'Stavba železnice (K, N, D, B, X)', actions.openRailBuild, sceneIcon('depot')),
-        windowButton('air-build', '🛫', 'Stavba letišť (L)', actions.openAirBuild, sceneIcon('airport-small')),
-        windowButton('water-build', '⚓', 'Stavba přístavů (W)', actions.openWaterBuild, sceneIcon('port')),
-        windowButton('industry-fund', '🏭', 'Založit průmysl (P)', actions.openIndustryFund, industryIcon('factory')),
+        windowButton(
+          'rail-build',
+          '🚂',
+          'Stavba železnice (K, N, D, B, X)',
+          actions.openRailBuild,
+          toolbarIcon('build-rail'),
+        ),
+        windowButton('water-build', '⚓', 'Stavba přístavů (W)', actions.openWaterBuild, toolbarIcon('build-water')),
+        windowButton('air-build', '🛫', 'Stavba letišť (L)', actions.openAirBuild, toolbarIcon('build-air')),
+        windowButton('industry-fund', '🏭', 'Založit průmysl (P)', actions.openIndustryFund, toolbarIcon('industry')),
       ],
       [windowButton('news', '📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
     ];

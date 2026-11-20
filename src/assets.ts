@@ -11,7 +11,8 @@ export type Kit =
   | 'nature kit'
   | 'cube pets'
   | 'watercraft kit'
-  | 'airplanes';
+  | 'airplanes'
+  | 'ports';
 
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<THREE.Group>>();

@@ -164,21 +164,28 @@ function parking(a0: number, a1: number, c0: number, c1: number): THREE.BufferGe
   return parts;
 }
 
-function layout(type: AirportType): THREE.BufferGeometry {
+// Pojmenované díly letiště v místních souřadnicích (1 jednotka = 1 dlaždice, ranvej podél +X na z 0..1)
+function layoutParts(type: AirportType): [string, THREE.BufferGeometry][] {
   const { length, depth } = AIRPORT_TYPES[type];
   const columns = standColumns(type);
   const hangarA = hangarColumn(type);
   const first = columns[0];
   const last = columns[columns.length - 1] + 1;
-  const parts = [...runway(length), ...taxiways(length), ...stands(columns)];
-  parts.push(
-    ...terminal(first + 0.08, last - 0.08, STAND_C + 0.55, depth - 0.3, type === 'large' ? 0.4 : 0.3, columns),
-  );
-  parts.push(...hangar(hangarA + 0.06, hangarA + 0.94, STAND_C - 0.45, depth - 0.1));
-  parts.push(...tower(0.5, STAND_C - 0.1, type === 'large' ? 1.25 : 0.85));
-  parts.push(...parking(0.1, 0.9, depth - 0.95, depth - 0.1));
-  if (type === 'large') parts.push(...parking(hangarA - 0.92, hangarA - 0.08, STAND_C + 0.55, depth - 0.1));
-  return mergeGeometries(parts)!;
+  const parking1 = parking(0.1, 0.9, depth - 0.95, depth - 0.1);
+  const parking2 = type === 'large' ? parking(hangarA - 0.92, hangarA - 0.08, STAND_C + 0.55, depth - 0.1) : [];
+  const parts: [string, THREE.BufferGeometry[]][] = [
+    ['ranvej', runway(length)],
+    ['pojezdova-draha', taxiways(length)],
+    ['stani', stands(columns)],
+    [
+      'terminal',
+      terminal(first + 0.08, last - 0.08, STAND_C + 0.55, depth - 0.3, type === 'large' ? 0.4 : 0.3, columns),
+    ],
+    ['hangar', hangar(hangarA + 0.06, hangarA + 0.94, STAND_C - 0.45, depth - 0.1)],
+    ['vez', tower(0.5, STAND_C - 0.1, type === 'large' ? 1.25 : 0.85)],
+    ['parkoviste', [...parking1, ...parking2]],
+  ];
+  return parts.map(([name, geometries]) => [name, mergeGeometries(geometries)!]);
 }
 
 const layouts = new Map<AirportType, THREE.BufferGeometry>();
@@ -186,10 +193,23 @@ const layouts = new Map<AirportType, THREE.BufferGeometry>();
 function layoutGeometry(type: AirportType): THREE.BufferGeometry {
   let geometry = layouts.get(type);
   if (!geometry) {
-    geometry = layout(type);
+    geometry = mergeGeometries(layoutParts(type).map(([, part]) => part))!;
     layouts.set(type, geometry);
   }
   return geometry;
+}
+
+// Letiště jako skupina pojmenovaných dílů (pro galerii modelů a export); počátek v rohu u začátku ranveje
+export function airportModel(type: AirportType): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `letiste-${type}`;
+  const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  for (const [name, geometry] of layoutParts(type)) {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = name;
+    group.add(mesh);
+  }
+  return group;
 }
 
 // Letiště na mapě: místní a, c se natočí stejně jako v airportPoint (u osy y o −90°)

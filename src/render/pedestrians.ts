@@ -11,7 +11,7 @@ import {
   type SidewalkNode,
 } from '../world/sidewalks';
 import type { Town } from '../world/town';
-import { inView } from './camera';
+import { inView, type ViewFrustums } from './camera';
 import { SIDEWALK_HEIGHT, roadConnects, type RoadView } from './roads';
 
 // Chodců na obyvatele: 10 na každých 1000, počet roste i klesá s městem
@@ -131,7 +131,7 @@ export class PedestriansView {
   }
 
   // Posun chodců o dt sekund (0 při pauze) a přepočet instancí jen pro chodce v záběru
-  update(dt: number, frustum: THREE.Frustum): void {
+  update(dt: number, frustum: ViewFrustums): void {
     const roadsChanged = this.roads.version !== this.version;
     this.version = this.roads.version;
     if (roadsChanged) this.relocate();
@@ -265,7 +265,7 @@ export class PedestriansView {
     }
   }
 
-  private render(frustum: THREE.Frustum): void {
+  private render(frustum: ViewFrustums): void {
     const used = this.variants.map(() => 0);
     for (const p of this.pedestrians) if (this.variants[p.variant]) used[p.variant]++;
     this.variants.forEach((variant, i) => {

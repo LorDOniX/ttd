@@ -10,6 +10,7 @@ import { NO_OWNER, TileType, type TilePos } from '../world/map';
 import { aircraftStateText } from './aircraft';
 import { shipStateText } from './ships';
 import { h } from './dom';
+import { sceneButtons, type SceneControls } from './sceneControls';
 import { vehicleStateText } from './roadVehicles';
 import { stateText } from './trainWindow';
 
@@ -76,7 +77,14 @@ export interface FirstPersonHooks {
   // Přepnutí do pohledu z první osoby (skrytí HUD, vypnutí zkratek) a zpět
   enter: () => void;
   exit: () => void;
+  // Den/noc a roční období, ovladatelné i z horní lišty pohledu
+  scene: SceneControls;
 }
+
+// Citlivost myši při zamčeném kurzoru (pohyb v pixelech) vůči tažení
+const POINTER_LOCK_SENSITIVITY = 0.6;
+// Esc, kterým prohlížeč právě uvolnil myš, pohled nezavře
+const UNLOCK_ESC_GRACE_MS = 200;
 
 interface CabInfo {
   icon: string;
@@ -92,9 +100,29 @@ interface CabInfo {
 export class FirstPersonMode {
   private overlay: HTMLElement | null = null;
   private frame = 0;
+  // Úklid posluchačů aktuálního pohledu (tlačítka scény, zamčená myš)
+  private cleanup: (() => void)[] = [];
+  private unlockedAt = -Infinity;
   private readonly onKey = (e: KeyboardEvent): void => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'KeyN') {
+      e.preventDefault();
+      this.hooks.scene.toggleNight();
+      return;
+    }
+    if (e.code === 'KeyR') {
+      e.preventDefault();
+      this.hooks.scene.cycleSeason(e.shiftKey ? -1 : 1);
+      return;
+    }
     if (e.code !== 'Escape') return;
     e.preventDefault();
+    // První Esc jen uvolní myš (u některých prohlížečů ho vůbec nedostaneme), teprve další pohled zavře
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+      return;
+    }
+    if (performance.now() - this.unlockedAt < UNLOCK_ESC_GRACE_MS) return;
     this.exit();
   };
 
@@ -190,8 +218,10 @@ export class FirstPersonMode {
         { className: 'fp-bar' },
         h('div', { className: 'fp-bar__title' }, h('span', { className: 'fp-walk__pegman' }), 'Průzkum pěšky'),
         place,
+        this.sceneBar(),
         close,
       ),
+      h('div', { className: 'fp-walk__lock' }, 'Klikněte do obrazu – myš pak otáčí pohledem bez držení tlačítka'),
       compass,
       h('div', { className: 'fp-crosshair' }),
       h(
@@ -203,9 +233,13 @@ export class FirstPersonMode {
         h('kbd', {}, 'D'),
         ' nebo šipky chůze · ',
         h('kbd', {}, 'Shift'),
-        ' běh · tažení myší rozhlížení · ',
+        ' běh · myš rozhlížení · ',
+        h('kbd', {}, 'N'),
+        ' den/noc · ',
+        h('kbd', {}, 'R'),
+        ' roční období · ',
         h('kbd', {}, 'Esc'),
-        ' zpět',
+        ' uvolnit myš, znovu zpět',
       ),
     );
     overlay.querySelector('.fp-walk__pegman')!.innerHTML = PEGMAN_SVG;
@@ -225,11 +259,58 @@ export class FirstPersonMode {
       const where = owner !== NO_OWNER ? towns[owner]?.name : 'Volná krajina';
       place.textContent = [where, kind].filter(Boolean).join(' · ');
     });
+    this.bindPointerLock(overlay, walker);
     return true;
+  }
+
+  // Den/noc a roční období v horní liště; tlačítka se obnoví i po změně z klávesnice
+  private sceneBar(): HTMLElement {
+    const { night, season, dispose } = sceneButtons(this.hooks.scene, 'fp-button', true);
+    this.cleanup.push(dispose);
+    return h('div', { className: 'fp-bar__scene' }, season, night);
+  }
+
+  // Myš jako ve hrách: po kliknutí do obrazu se kurzor zamkne a pohled sleduje každý pohyb bez držení tlačítka
+  private bindPointerLock(overlay: HTMLElement, walker: WalkCamera): void {
+    const lock = (): void => {
+      if (document.pointerLockElement === overlay || !overlay.isConnected) return;
+      try {
+        // Novější prohlížeče vrací Promise, odmítnutí (bez gesta uživatele) nevadí – zamkne se po kliknutí
+        const result = overlay.requestPointerLock() as unknown;
+        if (result instanceof Promise) result.catch(() => {});
+      } catch {
+        // Prohlížeč zamčení nepodporuje, zůstane rozhlížení tažením
+      }
+    };
+    const onDown = (e: PointerEvent): void => {
+      if ((e.target as HTMLElement).closest('button, select')) return;
+      lock();
+    };
+    const onMove = (e: MouseEvent): void => {
+      if (document.pointerLockElement !== overlay) return;
+      walker.look(e.movementX * POINTER_LOCK_SENSITIVITY, e.movementY * POINTER_LOCK_SENSITIVITY);
+    };
+    const onChange = (): void => {
+      const locked = document.pointerLockElement === overlay;
+      if (!locked && overlay.classList.contains('fp-overlay--locked')) this.unlockedAt = performance.now();
+      overlay.classList.toggle('fp-overlay--locked', locked);
+    };
+    overlay.addEventListener('pointerdown', onDown);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('pointerlockchange', onChange);
+    this.cleanup.push(() => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('pointerlockchange', onChange);
+      if (document.pointerLockElement === overlay) document.exitPointerLock();
+    });
+    // Panáček se právě pustil na mapu (gesto uživatele), většinou jde zamknout hned
+    lock();
   }
 
   exit(): void {
     if (!this.overlay) return;
+    this.cleanup.forEach((off) => off());
+    this.cleanup = [];
     cancelAnimationFrame(this.frame);
     window.removeEventListener('keydown', this.onKey, true);
     this.overlay.remove();
@@ -250,12 +331,22 @@ export class FirstPersonMode {
       'div',
       { className: 'fp-overlay fp-cab' },
       h('div', { className: 'fp-cab__frame-wrap' }),
-      h('div', { className: 'fp-bar' }, h('div', { className: 'fp-bar__title' }, `${info.icon} ${info.title}`), back),
+      h(
+        'div',
+        { className: 'fp-bar' },
+        h('div', { className: 'fp-bar__title' }, `${info.icon} ${info.title}`),
+        this.sceneBar(),
+        back,
+      ),
       h('div', { className: 'fp-dash' }, needle, h('div', { className: 'fp-dash__text' }, speed, status)),
       h(
         'div',
         { className: 'fp-hint' },
         'Tažení myší rozhlížení · dvojklik pohled vpřed · ',
+        h('kbd', {}, 'N'),
+        ' den/noc · ',
+        h('kbd', {}, 'R'),
+        ' roční období · ',
         h('kbd', {}, 'Esc'),
         ' zpět',
       ),

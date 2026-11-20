@@ -9,15 +9,9 @@ import type { Town, TownKind } from '../world/town';
 import { h } from './dom';
 import { loadTheme, saveTheme, type Theme } from './theme';
 import type { WindowManager } from './windows';
+import { SEASON_LABELS } from './sceneControls';
 
 const KIND_LABELS: Record<TownKind, string> = { city: 'Město', town: 'Městečko', village: 'Vesnice' };
-const SEASON_LABELS: Record<SeasonMode, string> = {
-  auto: 'Podle kalendáře',
-  spring: 'Jaro',
-  summer: 'Léto',
-  autumn: 'Podzim',
-  winter: 'Zima',
-};
 
 export interface Toggle {
   visible: () => boolean;

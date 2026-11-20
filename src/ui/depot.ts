@@ -36,16 +36,23 @@ export function openDepot(
   const picker = new ModelPicker();
   const pendingOrders = new Map<number, [number, number]>();
 
-  // Výchozí nástupiště jsou dvě nejbližší k depu
-  const stationsByDistance = (): { id: number; name: string }[] =>
+  // Výchozí nástupiště jsou dvě nejbližší, ke kterým z depa vede kolej; nepropojená jsou na konci seznamu
+  const stationsByDistance = (): { id: number; name: string; connected: boolean }[] =>
     game.world.rail.stations
       .filter((s) => s.kind === undefined)
-      .sort((a, b) => Math.hypot(a.x - depot.x, a.y - depot.y) - Math.hypot(b.x - depot.x, b.y - depot.y));
+      .map((s) => ({ id: s.id, name: s.name, connected: fleet.connectedToDepot(depot, s), x: s.x, y: s.y }))
+      .sort(
+        (a, b) =>
+          Number(b.connected) - Number(a.connected) ||
+          Math.hypot(a.x - depot.x, a.y - depot.y) - Math.hypot(b.x - depot.x, b.y - depot.y),
+      );
 
   const stationSelect = (selected: number | undefined): HTMLSelectElement => {
     const select = h('select', {});
-    for (const s of stationsByDistance())
-      select.append(h('option', { value: String(s.id), selected: s.id === selected }, s.name));
+    for (const s of stationsByDistance()) {
+      const label = s.connected ? s.name : `${s.name} (bez koleje z depa)`;
+      select.append(h('option', { value: String(s.id), selected: s.id === selected }, label));
+    }
     return select;
   };
 

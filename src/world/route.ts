@@ -169,3 +169,45 @@ export function extendThroughStation(rail: RailNetwork, path: Segment[], station
     result.push({ x: nx, y: ny, piece, entry: opposite(last.exit), exit: last.exit });
   }
 }
+
+// Souvislé kolejové sítě: číslo sítě pro každou dlaždici s kolejí, jinak −1. Sousední dlaždice patří k sobě,
+// když kus koleje jedné vede přes společnou hranu a druhá má kus z protější hrany (bez ohledu na úhel odbočení,
+// stačí to na rozpoznání nepropojených nástupišť).
+export function railNetworks(rail: RailNetwork): Int32Array {
+  const { map } = rail;
+  const { width, height } = map;
+  const label = new Int32Array(width * height).fill(-1);
+  const edges = (x: number, y: number): number => {
+    let mask = 0;
+    PIECES.forEach(([a, b], piece) => {
+      if (rail.has(x, y, piece)) mask |= (1 << a) | (1 << b);
+    });
+    return mask;
+  };
+  const stack: number[] = [];
+  let next = 0;
+  for (let start = 0; start < label.length; start++) {
+    if (label[start] >= 0 || rail.pieces[start] === 0) continue;
+    label[start] = next;
+    stack.push(start);
+    while (stack.length > 0) {
+      const i = stack.pop()!;
+      const x = i % width;
+      const y = Math.floor(i / width);
+      const mine = edges(x, y);
+      for (let edge = 0; edge < 4; edge++) {
+        if (!(mine & (1 << edge))) continue;
+        const [dx, dy] = EDGE_DELTA[edge];
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!map.inBounds(nx, ny)) continue;
+        const j = ny * width + nx;
+        if (label[j] >= 0 || !(edges(nx, ny) & (1 << opposite(edge)))) continue;
+        label[j] = next;
+        stack.push(j);
+      }
+    }
+    next++;
+  }
+  return label;
+}

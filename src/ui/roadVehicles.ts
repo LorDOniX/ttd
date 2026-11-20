@@ -13,6 +13,7 @@ import {
 } from '../game/roadVehicles';
 import { modelThumb } from '../render/icons';
 import type { Depot, Station } from '../world/rail';
+import { vehicleViewport } from './vehicleViewport';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -109,6 +110,13 @@ export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: Roa
   const id = `vehicle-${vehicle.id}`;
   const { roadFleet } = game;
   const choice = { station: null as number | null };
+  const viewport = vehicleViewport(
+    () => {
+      const p = roadFleet.position(vehicle);
+      return p && { x: p.x, y: 0, z: p.y };
+    },
+    () => (vehicle.state === 'depot' ? 'V garáži' : null),
+  );
   const render = (): HTMLElement => {
     const model = roadVehicleModel(vehicle);
     const today = game.clock.day;
@@ -165,6 +173,7 @@ export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: Roa
     return h(
       'div',
       { className: 'form' },
+      viewport.element,
       table,
       actions,
       h('h4', {}, 'Jízdní řád'),
@@ -180,7 +189,10 @@ export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: Roa
   const unsubscribe = [game.events.on('vehiclesChanged', refresh), game.clock.events.on('day', refresh)];
   windows.open(id, vehicle.name, render(), {
     width: 360,
-    onClose: () => unsubscribe.forEach((off) => off()),
+    onClose: () => {
+      unsubscribe.forEach((off) => off());
+      viewport.dispose();
+    },
     locate: () => {
       const p = roadFleet.position(vehicle);
       if (p) links.focus(p.x, p.y);

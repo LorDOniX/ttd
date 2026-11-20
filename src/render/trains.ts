@@ -5,7 +5,7 @@ import { CARGOS } from '../game/cargo';
 import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
 import { pointAt } from '../world/route';
-import { inView } from './camera';
+import { inView, type ViewFrustums } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
 import type { CabPose } from './firstPerson';
 import { BRIDGE_DECK } from './rail';
@@ -78,7 +78,7 @@ export class TrainsView {
   ) {}
 
   // Vozy mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
-  update(frustum: THREE.Frustum, night = false): void {
+  update(frustum: ViewFrustums, night = false): void {
     const alive = new Set(this.fleet.trains.map((t) => t.id));
     for (const [id, view] of this.views) {
       if (!alive.has(id)) {
@@ -160,7 +160,7 @@ export class TrainsView {
     return view;
   }
 
-  private place(train: Train, view: TrainView, frustum: THREE.Frustum): void {
+  private place(train: Train, view: TrainView, frustum: ViewFrustums): void {
     // Vagony se plní od lokomotivy
     const loaded = Math.ceil(train.passengers / WAGON_CAPACITY);
     view.loads.forEach((load, i) => {

@@ -12,12 +12,14 @@ import { BuildTools, type PointerTile } from '../ui/buildTools';
 import { openCityCar } from '../ui/cityCar';
 import { openDepot } from '../ui/depot';
 import { openNewsLog, openSaveLoad, openSettings, openTown } from '../ui/dialogs';
-import { h } from '../ui/dom';
+import { h, isDevHost } from '../ui/dom';
 import { openFinance } from '../ui/finance';
 import { FirstPersonMode, createPegmanDock } from '../ui/firstPerson';
 import { Hud, type ToolbarActions } from '../ui/hud';
 import { openMinimap } from '../ui/minimap';
 import { Shortcuts } from '../ui/shortcuts';
+import { setViewportHost } from '../ui/vehicleViewport';
+import { createSceneControls } from '../ui/sceneControls';
 import { openTileInfo } from '../ui/tileInfo';
 import { openTrain, openTrainList } from '../ui/trainWindow';
 import { openRoadDepot, openRoadVehicle, openVehicleList } from '../ui/roadVehicles';
@@ -98,8 +100,12 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     setVisible: (visible: boolean) => terrain.setGridVisible(visible),
   };
   const focus = (x: number, z: number): void => isoCamera.focus(x, z);
+  // Okénka vozidel v jejich oknech kreslí scéna hry, kliknutím do nich se mapa přesune na vozidlo
+  setViewportHost({ miniViews: view.miniViews, focus });
+  const scene = createSceneControls(view);
   // Pohled z kabiny a průzkum pěšky: skryje HUD a okna, klávesy patří chůzi
   const firstPerson = new FirstPersonMode(container, game, view, {
+    scene,
     enter: () => {
       buildTools.setTool(null);
       shortcuts.enabled = false;
@@ -174,7 +180,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
         { visible: () => hud.fpsVisible, setVisible: (on: boolean) => hud.setFpsVisible(on) },
         seedText,
         shortcuts.help(),
-        { mode: view.selectedSeasonMode, setMode: (mode) => view.setSeasonMode(mode) },
+        { mode: scene.season(), setMode: (mode) => scene.setSeason(mode) },
       ),
     openFinance: () => openFinance(windows, game),
     openRailBuild: () => buildTools.openRailWindow(),
@@ -191,7 +197,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
         focus,
         buildDetour: () => buildTools.toggleTool('road'),
       }),
-    toggleNight: () => view.toggleNightMode(),
+    scene,
     openTrainList: () => openTrainList(windows, game, links),
     openVehicleList: () => openVehicleList(windows, game, vehicleLinks),
     openAircraftList: () => openAircraftList(windows, game, aircraftLinks),
@@ -201,7 +207,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
   };
   const hud = new Hud(container, game, actions);
   // Při vývoji na localhostu je FPS vidět hned, v nastavení jde vypnout
-  if (['localhost', '127.0.0.1'].includes(location.hostname)) hud.setFpsVisible(true);
+  if (isDevHost()) hud.setFpsVisible(true);
   for (const [id, button] of hud.windowButtons) windows.setAnchor(id, button);
   let infoCursorActive = false;
   buildTools.onToolChange = (tool) => {

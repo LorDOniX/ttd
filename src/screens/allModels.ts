@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { assetModels } from 'virtual:asset-model-catalog';
 import { loadModel, type Kit } from '../assets';
 import { h } from '../ui/dom';
@@ -96,7 +97,174 @@ function modelParts(model: THREE.Object3D): THREE.Group[] {
   return parts;
 }
 
+const PALETTE_CELL = 8;
+
+// Barvy ve vrcholech (letiště, přístav a další sestavy z kódu) se převedou na paletu jako u Kenney kitů:
+// malou texturu s políčkem pro každou barvu a UV každého vrcholu uprostřed jeho políčka. Model pak jde
+// přetexturovat jako ostatní a textura stáhnout zvlášť.
+function bakeVertexColors(root: THREE.Object3D, name: string): void {
+  const meshes: THREE.Mesh[] = [];
+  root.traverse((child) => {
+    if (
+      child instanceof THREE.Mesh &&
+      child.geometry.getAttribute('color') &&
+      !(child.material as THREE.MeshStandardMaterial).map
+    ) {
+      meshes.push(child);
+    }
+  });
+  if (meshes.length === 0) return;
+  const colors = new Map<string, number>();
+  const color = new THREE.Color();
+  for (const mesh of meshes) {
+    const attribute = mesh.geometry.getAttribute('color');
+    for (let i = 0; i < attribute.count; i++) {
+      const key = color.fromBufferAttribute(attribute as THREE.BufferAttribute, i).getHexString();
+      if (!colors.has(key)) colors.set(key, colors.size);
+    }
+  }
+  const columns = Math.max(1, Math.ceil(Math.sqrt(colors.size)));
+  const rows = Math.ceil(colors.size / columns);
+  const canvas = document.createElement('canvas');
+  canvas.width = columns * PALETTE_CELL;
+  canvas.height = rows * PALETTE_CELL;
+  const context = canvas.getContext('2d')!;
+  for (const [hex, index] of colors) {
+    context.fillStyle = `#${hex}`;
+    context.fillRect(
+      (index % columns) * PALETTE_CELL,
+      Math.floor(index / columns) * PALETTE_CELL,
+      PALETTE_CELL,
+      PALETTE_CELL,
+    );
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.name = `${name}-paleta`;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.flipY = false;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  const material = new THREE.MeshStandardMaterial({ name: 'paleta', map: texture, roughness: 0.9, metalness: 0 });
+  for (const mesh of meshes) {
+    const geometry = mesh.geometry.clone();
+    const attribute = geometry.getAttribute('color') as THREE.BufferAttribute;
+    const uv = new Float32Array(attribute.count * 2);
+    for (let i = 0; i < attribute.count; i++) {
+      const index = colors.get(color.fromBufferAttribute(attribute, i).getHexString())!;
+      // glTF i textura bez převrácení mají v = 0 nahoře
+      uv[i * 2] = ((index % columns) + 0.5) / columns;
+      uv[i * 2 + 1] = (Math.floor(index / columns) + 0.5) / rows;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.deleteAttribute('color');
+    mesh.geometry = geometry;
+    mesh.material = material;
+  }
+}
+
+// glTF zná jen PBR materiály: matné Lambertovy materiály hry se převedou se zachovanou barvou a texturou
+function toStandardMaterials(root: THREE.Object3D): void {
+  const converted = new Map<THREE.Material, THREE.Material>();
+  const convert = (material: THREE.Material): THREE.Material => {
+    if (!(material instanceof THREE.MeshLambertMaterial)) return material;
+    let standard = converted.get(material);
+    if (!standard) {
+      standard = new THREE.MeshStandardMaterial({
+        name: material.name,
+        color: material.color,
+        map: material.map,
+        vertexColors: material.vertexColors,
+        transparent: material.transparent,
+        opacity: material.opacity,
+        side: material.side,
+        roughness: 0.9,
+        metalness: 0,
+      });
+      converted.set(material, standard);
+    }
+    return standard;
+  };
+  root.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.material = Array.isArray(child.material) ? child.material.map(convert) : convert(child.material);
+    }
+  });
+}
+
+// Kopie modelu k exportu v původních souřadnicích hry (náhled ho posouvá na zem), s texturou místo barev ve vrcholech
+function exportCopy(model: THREE.Object3D, name: string): THREE.Object3D {
+  const copy = model.clone(true);
+  copy.position.set(0, 0, 0);
+  copy.rotation.set(0, 0, 0);
+  copy.scale.setScalar(1);
+  copy.name = name;
+  toStandardMaterials(copy);
+  bakeVertexColors(copy, name);
+  return copy;
+}
+
+const TEXTURE_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap'] as const;
+
+// Všechny textury modelu (bez opakování) s názvem slotu, např. map = barevná textura
+function modelTextures(root: THREE.Object3D): { texture: THREE.Texture; slot: string }[] {
+  const found = new Map<THREE.Texture, string>();
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+      for (const slot of TEXTURE_SLOTS) {
+        const texture = (material as Partial<Record<(typeof TEXTURE_SLOTS)[number], THREE.Texture | null>>)[slot];
+        if (texture?.image && !found.has(texture)) found.set(texture, slot);
+      }
+    }
+  });
+  return [...found].map(([texture, slot]) => ({ texture, slot }));
+}
+
+function safeName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]+/g, '-');
+}
+
+function saveBlob(blob: Blob, fileName: string): void {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+// Model jako samostatný GLB (geometrie, pojmenované díly i textury uvnitř souboru), např. k přemodelování
+async function downloadGlb(copy: THREE.Object3D, name: string): Promise<void> {
+  const data = await new GLTFExporter().parseAsync(copy, { binary: true });
+  saveBlob(new Blob([data as ArrayBuffer], { type: 'model/gltf-binary' }), `${safeName(name)}.glb`);
+}
+
+// Textury modelu jako PNG v původním rozlišení (u více textur s názvem slotu)
+async function downloadTextures(copy: THREE.Object3D, name: string): Promise<number> {
+  const textures = modelTextures(copy);
+  for (const [i, { texture, slot }] of textures.entries()) {
+    const image = texture.image as CanvasImageSource & { width: number; height: number };
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    canvas.getContext('2d')!.drawImage(image, 0, 0);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) continue;
+    const suffix =
+      textures.length > 1 ? `-${slot}${i > 0 && textures[i - 1].slot === slot ? `-${i}` : ''}` : '-textura';
+    saveBlob(blob, `${safeName(name)}${suffix}.png`);
+  }
+  return textures.length;
+}
+
 type ViewerMode = 'assembled' | 'exploded';
+
+const GALLERY_PAGES: [string, string][] = [
+  ['all-models', 'Modely assetů'],
+  ['game-assets', 'Modely použité ve hře'],
+];
 
 // Popup s velkým otáčelitelným náhledem modelu na čtvercové mřížce, sestaveným nebo rozloženým na díly
 function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: GalleryModel) => void } {
@@ -123,6 +291,22 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
     assembled: h('button', { type: 'button' }, 'Sestavený'),
     exploded: h('button', { type: 'button' }, 'Rozložený na díly'),
   };
+  const exportButton = h(
+    'button',
+    {
+      type: 'button',
+      title: 'Stáhnout model jako GLB i s texturou a pojmenovanými díly (1 jednotka = 1 dlaždice u sestav hry)',
+    },
+    '⬇ GLB',
+  );
+  const texturesButton = h(
+    'button',
+    {
+      type: 'button',
+      title: 'Stáhnout textury modelu jako PNG (u sestav hry paleta barev, stejná jako uvnitř exportovaného GLB)',
+    },
+    '⬇ Textury',
+  );
   const close = h('button', { type: 'button', className: 'model-viewer__close' }, '×');
   close.setAttribute('aria-label', 'Zavřít');
   const stage = h('div', { className: 'model-viewer__stage' }, renderer.domElement);
@@ -133,7 +317,14 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
       'header',
       { className: 'model-viewer__header' },
       h('div', { className: 'model-viewer__title' }, title, subtitle),
-      h('div', { className: 'model-viewer__modes' }, modeButtons.assembled, modeButtons.exploded),
+      h(
+        'div',
+        { className: 'model-viewer__modes' },
+        modeButtons.assembled,
+        modeButtons.exploded,
+        exportButton,
+        texturesButton,
+      ),
       close,
     ),
     stage,
@@ -141,6 +332,7 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
   );
 
   let model: THREE.Object3D | null = null;
+  let modelName = '';
   let mode: ViewerMode = 'assembled';
   let request = 0;
 
@@ -220,6 +412,27 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
       show();
     });
   }
+  exportButton.addEventListener('click', () => {
+    if (!model) return;
+    exportButton.disabled = true;
+    downloadGlb(exportCopy(model, modelName), modelName)
+      .catch((error: unknown) => {
+        info.textContent = `Export se nepovedl: ${error instanceof Error ? error.message : String(error)}`;
+      })
+      .finally(() => (exportButton.disabled = false));
+  });
+  texturesButton.addEventListener('click', () => {
+    if (!model) return;
+    texturesButton.disabled = true;
+    downloadTextures(exportCopy(model, modelName), modelName)
+      .then((count) => {
+        if (count === 0) info.textContent = 'Model nemá žádnou texturu.';
+      })
+      .catch((error: unknown) => {
+        info.textContent = `Export textur se nepovedl: ${error instanceof Error ? error.message : String(error)}`;
+      })
+      .finally(() => (texturesButton.disabled = false));
+  });
   close.addEventListener('click', () => dialog.close());
   dialog.addEventListener('click', (event) => {
     if (event.target === dialog) dialog.close();
@@ -233,6 +446,7 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
   const open = (entry: GalleryModel): void => {
     const current = ++request;
     title.textContent = entry.name;
+    modelName = entry.name;
     subtitle.textContent = entry.category ? `${entry.category} · ${entry.kit}` : entry.kit;
     info.textContent = 'Načítám…';
     model = null;
@@ -359,8 +573,23 @@ export function runModelGallery(
   const header = h(
     'header',
     { className: 'model-gallery__header' },
-    h('a', { className: 'model-gallery__back', href: '/' }, '← Zpět do hry'),
+    h('a', { className: 'model-gallery__back', href: import.meta.env.BASE_URL }, '← Zpět do hry'),
     h('h1', {}, title),
+    // Přepínání mezi pomocnými stránkami
+    h(
+      'nav',
+      { className: 'model-gallery__pages' },
+      ...GALLERY_PAGES.map(([path, label]) =>
+        h(
+          'a',
+          {
+            href: `${import.meta.env.BASE_URL}${path}`,
+            className: location.pathname.endsWith(`/${path}`) ? 'is-active' : '',
+          },
+          label,
+        ),
+      ),
+    ),
     count,
     h('div', { className: 'model-gallery__filters' }, search, kitFilter),
   );
