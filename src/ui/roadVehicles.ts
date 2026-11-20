@@ -14,6 +14,8 @@ import {
 import { modelThumb } from '../render/icons';
 import type { Depot, Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
+import { openOrders, type OrdersSource } from './vehicleOrders';
+import { liveWindow, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -55,61 +57,100 @@ export function vehicleStateText(game: Game, vehicle: RoadVehicle): string {
   }
 }
 
-// Seznam zastávek s posunem, odebráním a přidáním; změny platí hned
-function ordersEditor(game: Game, vehicle: RoadVehicle, choice: { station: number | null }): HTMLElement {
+function roadOrders(game: Game, vehicle: RoadVehicle, links: VehicleLinks): OrdersSource {
   const { roadFleet } = game;
-  const orders = vehicle.orders ?? [];
-  const apply = (next: number[]): void => {
-    const error = roadFleet.setOrders(vehicle, next);
-    if (error) game.news(error);
+  return {
+    id: `vehicle-orders-${vehicle.id}`,
+    title: `${vehicle.name} – jízdní řád`,
+    vehicleName: () => vehicle.name,
+    stopNoun: 'zastávku aut',
+    orders: () => vehicle.orders ?? [],
+    current: () => (vehicle.state === 'depot' ? -1 : vehicle.target),
+    fullLoad: (stationId) => vehicle.fullLoad.includes(stationId),
+    stationName: (stationId) => roadFleet.stationName(stationId),
+    stations: () => roadStops(game),
+    accepts: (station) => (station.kind === 'road' ? null : 'Auta zastavují jen na zastávkách aut.'),
+    setOrders: (orders) => roadFleet.setOrders(vehicle, orders),
+    toggleFullLoad: (stationId) => roadFleet.toggleFullLoad(vehicle, stationId),
+    canSkip: () => vehicle.state !== 'depot',
+    skipTo: (index) => roadFleet.skipTo(vehicle, index),
+    problem: (orders) => roadFleet.ordersError(orders),
+    hint: 'Auto objíždí zastávky dokola, na každé vyloží a naloží náklad. Zastavuje jen na zastávkách aut.',
+    focusStation: (stationId) => {
+      const station = game.world.rail.stations.find((s) => s.id === stationId);
+      if (station) links.focus(station.x + 0.5, station.y + 0.5);
+    },
+    subscribe: (refresh) => [game.events.on('vehiclesChanged', refresh), game.clock.events.on('day', refresh)],
+    exists: () => roadFleet.vehicles.includes(vehicle),
   };
-  const moved = (i: number, j: number): number[] => {
-    const next = [...orders];
-    [next[i], next[j]] = [next[j], next[i]];
-    return next;
-  };
-  const heading = vehicle.state !== 'depot' && vehicle.target >= 0 ? vehicle.target : -1;
-  const rows = orders.map((stationId, i) => {
-    const full = smallButton(
-      'Do plna',
-      () => roadFleet.toggleFullLoad(vehicle, stationId),
-      false,
-      'Auto na této zastávce počká, dokud nebude plné',
-    );
-    full.classList.toggle('small-button--active', vehicle.fullLoad.includes(stationId));
-    return h(
-      'div',
-      { className: i === heading ? 'orders__row orders__row--current' : 'orders__row' },
-      h('span', {}, `${i + 1}. ${roadFleet.stationName(stationId)}`),
-      smallButton('↑', () => apply(moved(i, i - 1)), i === 0, 'Posunout výš'),
-      smallButton('↓', () => apply(moved(i, i + 1)), i === orders.length - 1, 'Posunout níž'),
-      smallButton('✕', () => apply(orders.filter((_, k) => k !== i)), false, 'Odebrat zastávku'),
-      full,
-    );
-  });
-  const stops = roadStops(game).sort((a, b) => a.name.localeCompare(b.name, 'cs'));
-  const select = h('select', {});
-  for (const s of stops) select.append(h('option', { value: String(s.id), selected: s.id === choice.station }, s.name));
-  select.addEventListener('change', () => (choice.station = Number(select.value)));
-  const add = smallButton('Přidat', () => apply([...orders, Number(select.value)]), stops.length === 0);
-  return h(
-    'div',
-    { className: 'orders' },
-    ...(rows.length > 0 ? rows : [h('div', { className: 'form__hint' }, 'Žádné zastávky.')]),
-    h('div', { className: 'train__actions' }, select, add),
-    h(
-      'div',
-      { className: 'form__hint' },
-      'Auto objíždí zastávky dokola, na každé vyloží a naloží náklad. Zastavuje jen na zastávkách aut.',
-    ),
-  );
 }
 
-// Okno auta: stav, náklad, hospodaření, jízdní řád a akce
-export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: RoadVehicle, links: VehicleLinks): void {
-  const id = `vehicle-${vehicle.id}`;
+function roadDetails(game: Game, vehicle: RoadVehicle, links: VehicleLinks): HTMLElement {
   const { roadFleet } = game;
-  const choice = { station: null as number | null };
+  const model = roadVehicleModel(vehicle);
+  const today = game.clock.day;
+  const old = isOldVehicle(vehicle, today);
+  const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
+    h('tr', {}, h('td', {}, label), h('td', { className }, value));
+  const table = h(
+    'table',
+    { className: 'table' },
+    row('Model', `${model.name} (${model.year})`),
+    row('Náklad', formatVehicleLoad(vehicle), 'num'),
+    row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
+    row(
+      'Stáří',
+      `${formatYears(vehicleAge(vehicle, today))} z ${ROAD_VEHICLE_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
+      old ? 'num warning' : 'num',
+    ),
+    row('Provoz ročně', formatMoney(0 - vehicleRunningCost(vehicle, today)), 'num'),
+    row('Příjmy letos', formatMoney(vehicle.income), 'num'),
+    row('Provoz letos', formatMoney(0 - vehicle.costs), 'num'),
+    row('Zisk letos', formatMoney(vehicle.income - vehicle.costs), 'num strong'),
+    row('Zisk loni', formatMoney(vehicle.lastIncome - vehicle.lastCosts), 'num'),
+    row('Prodejní cena', formatMoney(vehicleSellPrice(vehicle, today)), 'num'),
+  );
+  const garage = smallButton('Otevřít garáž', () => {
+    const depot = roadFleet.depot(vehicle);
+    if (depot) links.openRoadDepot(depot);
+  });
+  return h('div', { className: 'form' }, table, h('div', { className: 'train__actions' }, garage));
+}
+
+function roadStatus(game: Game, vehicle: RoadVehicle): VehicleStatus {
+  const text = vehicleStateText(game, vehicle);
+  if (vehicle.state === 'depot') {
+    const orders = vehicle.orders;
+    if (!orders || orders.length < 2) return { text: `${text} – zadejte jízdní řád`, moving: false };
+    return {
+      text: `${text} – klikněte pro výjezd`,
+      moving: false,
+      action: {
+        title: 'Vypravit auto z garáže podle jízdního řádu',
+        run: () => {
+          const error = game.roadFleet.start(vehicle, orders);
+          if (error) game.news(error);
+        },
+      },
+    };
+  }
+  return { text, moving: vehicle.state === 'running' };
+}
+
+// Okno auta podle OpenTTD: živý pohled, tlačítka vpravo, stav dole; řád a podrobnosti ve vlastních oknech
+export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: RoadVehicle, links: VehicleLinks): void {
+  const { roadFleet } = game;
+  const subscribe = (refresh: () => void): (() => void)[] => [
+    game.events.on('vehiclesChanged', refresh),
+    game.clock.events.on('day', refresh),
+  ];
+  const exists = (): boolean => roadFleet.vehicles.includes(vehicle);
+  const locate = (): void => {
+    const p = roadFleet.position(vehicle);
+    if (p) links.focus(p.x, p.y);
+  };
+  const ordersId = `vehicle-orders-${vehicle.id}`;
+  const detailsId = `vehicle-details-${vehicle.id}`;
   const viewport = vehicleViewport(
     () => {
       const p = roadFleet.position(vehicle);
@@ -117,86 +158,55 @@ export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: Roa
     },
     () => (vehicle.state === 'depot' ? 'V garáži' : null),
   );
-  const render = (): HTMLElement => {
-    const model = roadVehicleModel(vehicle);
-    const today = game.clock.day;
-    const old = isOldVehicle(vehicle, today);
-    const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
-      h('tr', {}, h('td', {}, label), h('td', { className }, value));
-    const table = h(
-      'table',
-      { className: 'table' },
-      row('Model', `${model.name} (${model.year})`),
-      row('Stav', vehicleStateText(game, vehicle)),
-      row('Náklad', formatVehicleLoad(vehicle), 'num'),
-      row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
-      row(
-        'Stáří',
-        `${formatYears(vehicleAge(vehicle, today))} z ${ROAD_VEHICLE_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
-        old ? 'num warning' : 'num',
-      ),
-      row('Provoz ročně', formatMoney(0 - vehicleRunningCost(vehicle, today)), 'num'),
-      row('Příjmy letos', formatMoney(vehicle.income), 'num'),
-      row('Provoz letos', formatMoney(0 - vehicle.costs), 'num'),
-      row('Zisk letos', formatMoney(vehicle.income - vehicle.costs), 'num strong'),
-      row('Zisk loni', formatMoney(vehicle.lastIncome - vehicle.lastCosts), 'num'),
-      row('Prodejní cena', formatMoney(vehicleSellPrice(vehicle, today)), 'num'),
-    );
-    const actions = h(
-      'div',
-      { className: 'train__actions' },
-      smallButton(
-        'Do garáže',
-        () => roadFleet.sendToDepot(vehicle),
-        vehicle.state === 'depot' || vehicle.target === -1,
-      ),
-      smallButton('Otevřít garáž', () => {
-        const depot = roadFleet.depot(vehicle);
-        if (depot) links.openRoadDepot(depot);
-      }),
-      smallButton(
-        '🎥 Z kabiny',
-        () => links.ride(vehicle),
-        vehicle.state === 'depot',
-        'Pohled z kabiny řidiče, obraz jede s autem',
-      ),
-    );
-    if (vehicle.state === 'depot' && vehicle.orders) {
-      const orders = vehicle.orders;
-      actions.append(
-        smallButton('Vyjet', () => {
-          const error = roadFleet.start(vehicle, orders);
-          if (error) game.news(error);
-        }),
-      );
-    }
-    return h(
-      'div',
-      { className: 'form' },
-      viewport.element,
-      table,
-      actions,
-      h('h4', {}, 'Jízdní řád'),
-      ordersEditor(game, vehicle, choice),
-    );
-  };
-
-  const refresh = (): void => {
-    if (!windows.isOpen(id)) return;
-    if (!roadFleet.vehicles.includes(vehicle)) windows.close(id);
-    else windows.update(id, render());
-  };
-  const unsubscribe = [game.events.on('vehiclesChanged', refresh), game.clock.events.on('day', refresh)];
-  windows.open(id, vehicle.name, render(), {
-    width: 360,
-    onClose: () => {
-      unsubscribe.forEach((off) => off());
-      viewport.dispose();
-    },
-    locate: () => {
-      const p = roadFleet.position(vehicle);
-      if (p) links.focus(p.x, p.y);
-    },
+  openVehicleWindow(windows, {
+    id: `vehicle-${vehicle.id}`,
+    title: vehicle.name,
+    viewport,
+    locate,
+    subscribe,
+    exists,
+    status: () => roadStatus(game, vehicle),
+    buttons: () => [
+      { icon: '⌖', title: 'Vycentrovat hlavní pohled na auto', onClick: locate },
+      vehicle.state === 'depot'
+        ? {
+            icon: '⌂',
+            title: 'Otevřít garáž',
+            onClick: () => {
+              const depot = roadFleet.depot(vehicle);
+              if (depot) links.openRoadDepot(depot);
+            },
+          }
+        : {
+            icon: '⌂',
+            title: 'Poslat do garáže',
+            onClick: () => roadFleet.sendToDepot(vehicle),
+            disabled: vehicle.target === -1,
+            active: vehicle.target === -1,
+          },
+      {
+        icon: '☰',
+        title: 'Jízdní řád',
+        onClick: () => openOrders(windows, roadOrders(game, vehicle, links)),
+        active: windows.isOpen(ordersId),
+      },
+      {
+        icon: 'ℹ',
+        title: 'Podrobnosti a hospodaření',
+        onClick: () =>
+          liveWindow(windows, detailsId, `${vehicle.name} – podrobnosti`, () => roadDetails(game, vehicle, links), {
+            subscribe,
+            exists,
+          }),
+        active: windows.isOpen(detailsId),
+      },
+      {
+        icon: '🎥',
+        title: 'Pohled z kabiny řidiče',
+        onClick: () => links.ride(vehicle),
+        disabled: vehicle.state === 'depot',
+      },
+    ],
   });
 }
 

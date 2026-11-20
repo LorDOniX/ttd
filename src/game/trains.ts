@@ -413,6 +413,19 @@ export class Fleet {
     }
   }
 
+  // Přeskočí na zastávku řádu jako „Přeskočit“ v OpenTTD; stojící ve stanici hned odjede
+  skipTo(train: Train, index: number): void {
+    const { orders } = train;
+    if (!orders || index < 0 || index >= orders.length || train.state === 'depot' || train.renewing) return;
+    if (train.state === 'loading') {
+      if (train.target >= 0 && orders[train.target] === orders[index]) return;
+      // Při odjezdu se cíl posune na následující zastávku
+      train.target = (index - 1 + orders.length) % orders.length;
+    } else train.target = index;
+    this.replan(train);
+    this.changed();
+  }
+
   sendToDepot(train: Train): void {
     if (train.state === 'depot') return;
     train.target = -1;

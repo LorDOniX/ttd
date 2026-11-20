@@ -144,6 +144,20 @@ describe('silniční vozidla', () => {
     expect(a.ratings.passengers.lastVisit).toBeGreaterThanOrEqual(0);
   });
 
+  it('Přeskočit: auto na zastávce hned odjede k vybrané zastávce', () => {
+    const { game, a, b, depot } = buildRoadLine();
+    game.roadFleet.buy(depot, model('bus-regal'));
+    const bus = game.roadFleet.vehicles[0];
+    game.roadFleet.start(bus, [a.id, b.id]);
+    for (let i = 0; i < 20_000 && bus.state !== 'loading'; i++) game.update(200);
+    expect(bus.state).toBe('loading');
+    const here = bus.orders![bus.target];
+    const other = here === a.id ? 1 : 0;
+    game.roadFleet.skipTo(bus, other);
+    expect(bus.state).toBe('running');
+    expect(bus.orders![bus.target]).toBe(bus.orders![other]);
+  });
+
   it('řád potřebuje dvě různé zastávky aut', () => {
     const { game, a, depot } = buildRoadLine();
     game.roadFleet.buy(depot, model('bus-regal'));

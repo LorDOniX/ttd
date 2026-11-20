@@ -241,6 +241,23 @@ describe('jízdní řád', () => {
     expect(ordersError([1, 2, 1, 3])).toBeNull();
   });
 
+  it('Přeskočit: ze stanice hned odjede na vybranou zastávku, za jízdy změní cíl', () => {
+    const { game, a, b, c, depot } = threeStops();
+    const train = buyTrain(game, depot);
+    game.fleet.start(train, [a.id, b.id, c.id]);
+    expect(arrivals(game, train, 1)).toEqual([a.id]);
+    expect(train.state).toBe('loading');
+    game.fleet.skipTo(train, 2);
+    expect(train.state).toBe('running');
+    expect(train.orders![train.target]).toBe(c.id);
+    expect(arrivals(game, train, 1)).toEqual([c.id]);
+    // Za jízdy z C do A: přeskočit A, rovnou do B
+    for (let i = 0; i < 20_000 && train.state !== 'running'; i++) game.update(200);
+    expect(train.orders![train.target]).toBe(a.id);
+    game.fleet.skipTo(train, 1);
+    expect(arrivals(game, train, 1)).toEqual([b.id]);
+  });
+
   it('změna řádu za jízdy zachová cíl, který v řádu zůstal', () => {
     const { game, a, b, c, depot } = threeStops();
     const train = buyTrain(game, depot);

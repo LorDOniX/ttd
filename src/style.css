@@ -1410,3 +1410,185 @@ body.pegman-dragging * {
   border-radius: 4px;
   pointer-events: none;
 }
+
+/* Okno vozidla podle OpenTTD: pohled, sloupec tlačítek vpravo, stavový řádek */
+.vehicle-window {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vehicle-window__top {
+  display: flex;
+  gap: 3px;
+}
+
+.vehicle-window__top > .vehicle-viewport {
+  flex: 1;
+  height: 170px;
+}
+
+.vehicle-window__buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vehicle-window__button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--button-text);
+  background: var(--button);
+  border: 1px solid;
+  border-color: var(--bevel-light) var(--bevel-dark) var(--bevel-dark) var(--bevel-light);
+  cursor: pointer;
+}
+
+.vehicle-window__button:hover:not(:disabled) {
+  background: var(--button-hover);
+}
+
+.vehicle-window__button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.vehicle-window__button--active,
+.vehicle-window__button--active:hover:not(:disabled) {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--bevel-dark) var(--bevel-light) var(--bevel-light) var(--bevel-dark);
+}
+
+.vehicle-window__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  text-align: left;
+  font: inherit;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 1px solid;
+  border-color: var(--bevel-dark) var(--bevel-light) var(--bevel-light) var(--bevel-dark);
+  cursor: pointer;
+}
+
+.vehicle-window__status-text {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vehicle-window__dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #4caf50;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.vehicle-window__dot--stopped {
+  background: #e53935;
+}
+
+/* Okno jízdního řádu podle OpenTTD */
+.ottd-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ottd-orders__list {
+  min-height: 96px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 2px 0;
+  background: var(--surface);
+  border: 1px solid;
+  border-color: var(--bevel-dark) var(--bevel-light) var(--bevel-light) var(--bevel-dark);
+  outline: none;
+}
+
+.ottd-orders__list:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.ottd-orders__row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ottd-orders__row:hover {
+  background: var(--hover);
+}
+
+.ottd-orders__row--selected,
+.ottd-orders__row--selected:hover {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.ottd-orders__row--current .ottd-orders__text {
+  font-weight: 600;
+}
+
+.ottd-orders__marker {
+  flex: none;
+  width: 20px;
+  font-size: 11px;
+}
+
+.ottd-orders__text {
+  flex: 1;
+}
+
+.ottd-orders__flags {
+  opacity: 0.85;
+}
+
+.ottd-orders__bar {
+  display: flex;
+  gap: 2px;
+}
+
+.ottd-orders__bar > * {
+  flex: 1;
+}
+
+.ottd-orders__bar select {
+  flex: 0 0 44px;
+}
+
+/* Výběr zastávky v mapě („Jet do“) */
+.pick-banner {
+  position: absolute;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100000;
+  padding: 4px 12px;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 1px solid;
+  border-color: var(--bevel-light) var(--bevel-dark) var(--bevel-dark) var(--bevel-light);
+  pointer-events: none;
+}
+
+.pick-banner[hidden] {
+  display: none;
+}
+
+.station-picking canvas {
+  cursor: crosshair;
+}

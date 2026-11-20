@@ -150,6 +150,22 @@ describe('letadla', () => {
     expect(plane.airportId).toBe(b.id);
   });
 
+  it('Přeskočit: ze stání hned pojíždí k ranveji, ve vzduchu změní kurz', () => {
+    const { game, a, b } = buildAirLine();
+    const plane = buyPlane(game, a);
+    game.airFleet.start(plane, [b.id, a.id]);
+    for (let i = 0; i < 20_000 && plane.state !== 'loading'; i++) game.update(200);
+    expect(plane.state).toBe('loading');
+    game.airFleet.skipTo(plane, 0);
+    expect(plane.state).toBe('taxi');
+    expect(plane.taxiTo).toBe('runway');
+    for (let i = 0; i < 20_000 && plane.state !== 'flying'; i++) game.update(200);
+    expect(plane.airportId).toBe(b.id);
+    // Ve vzduchu na B: přeskočit zpět na A
+    game.airFleet.skipTo(plane, 1);
+    expect(plane.airportId).toBe(a.id);
+  });
+
   it('když je stání obsazené, druhé letadlo krouží a přistane, až se uvolní', () => {
     const { game, a, b } = buildAirLine();
     const planes = [buyPlane(game, a), buyPlane(game, a), buyPlane(game, a)];

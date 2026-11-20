@@ -17,6 +17,8 @@ import { modelThumb } from '../render/icons';
 import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { vehicleViewport } from './vehicleViewport';
+import { openOrders, type OrdersSource } from './vehicleOrders';
+import { liveWindow, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
@@ -76,76 +78,6 @@ function trainPosition(game: Game, train: Train): [number, number] | null {
   return depot ? [depot.x + 0.5, depot.y + 0.5] : null;
 }
 
-// Seznam zastávek s posunem, odebráním a přidáním; změny platí hned
-function fullLoadButton(game: Game, train: Train, stationId: number): HTMLButtonElement {
-  const b = h('button', {
-    className: 'small-button',
-    textContent: 'Do plna',
-    title: 'Vlak na této zastávce počká, dokud nenaloží všechny vagony u nástupiště',
-  });
-  b.classList.toggle('small-button--active', train.fullLoad.includes(stationId));
-  b.addEventListener('click', () => game.fleet.toggleFullLoad(train, stationId));
-  return b;
-}
-
-// Seznam zastávek s posunem, odebráním a přidáním; změny platí hned
-function ordersEditor(game: Game, train: Train, choice: { station: number | null }): HTMLElement {
-  const orders = train.orders ?? [];
-  const apply = (next: number[]): void => {
-    const error = game.fleet.setOrders(train, next);
-    if (error) game.news(error);
-  };
-  const button = (label: string, title: string, onClick: () => void, disabled = false): HTMLButtonElement => {
-    const b = h('button', { className: 'small-button', textContent: label, title, disabled });
-    b.addEventListener('click', onClick);
-    return b;
-  };
-  const moved = (i: number, j: number): number[] => {
-    const next = [...orders];
-    [next[i], next[j]] = [next[j], next[i]];
-    return next;
-  };
-  const heading = train.state !== 'depot' && train.target >= 0 ? train.target : -1;
-
-  const rows = orders.map((stationId, i) =>
-    h(
-      'div',
-      { className: i === heading ? 'orders__row orders__row--current' : 'orders__row' },
-      h('span', {}, `${i + 1}. ${game.fleet.stationName(stationId)}`),
-      button('↑', 'Posunout výš', () => apply(moved(i, i - 1)), i === 0),
-      button('↓', 'Posunout níž', () => apply(moved(i, i + 1)), i === orders.length - 1),
-      button('✕', 'Odebrat zastávku', () => apply(orders.filter((_, k) => k !== i))),
-      fullLoadButton(game, train, stationId),
-    ),
-  );
-
-  const stations = game.world.rail.stations
-    .filter((s) => s.kind === undefined)
-    .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
-  const select = h('select', {});
-  for (const s of stations) {
-    select.append(h('option', { value: String(s.id), selected: s.id === choice.station }, s.name));
-  }
-  select.addEventListener('change', () => (choice.station = Number(select.value)));
-  const add = button('Přidat', 'Přidat zastávku na konec', () => apply([...orders, Number(select.value)]));
-  add.disabled = stations.length === 0;
-
-  const problem = orders.length > 0 ? (ordersError(orders) ?? game.fleet.routeError(orders)) : null;
-  return h(
-    'div',
-    { className: 'orders' },
-    ...(rows.length > 0 ? rows : [h('div', { className: 'form__hint' }, 'Žádné zastávky.')]),
-    h('div', { className: 'train__actions' }, select, add),
-    h(
-      'div',
-      { className: 'form__hint' },
-      problem ??
-        'Vlak objíždí zastávky dokola, na každé vyloží a naloží náklad. ' +
-          'Se zapnutým „Do plna“ na zastávce počká, dokud nenaloží všechny vagony u nástupiště.',
-    ),
-  );
-}
-
 // Sdílený jízdní řád: připojení k řádu jiného vlaku nebo odpojení od linky
 function sharingEditor(game: Game, train: Train, choice: { train: number | null }): HTMLElement {
   const report = (error: string | null): void => {
@@ -181,12 +113,132 @@ function sharingEditor(game: Game, train: Train, choice: { train: number | null 
   return h('div', { className: 'train__actions' }, select, share);
 }
 
-// Okno vlaku: cíl, náklad, hospodaření, jízdní řád a akce
-export function openTrain(windows: WindowManager, game: Game, train: Train, links: TrainLinks): void {
-  const id = `train-${train.id}`;
-  // Výběr zastávky a vlaku ke sdílení musí přežít obnovení okna
-  const choice = { station: null as number | null };
+// Jízdní řád vlaku pro společné okno řádu
+function trainOrders(game: Game, train: Train, links: TrainLinks): OrdersSource {
+  const { fleet } = game;
   const shareChoice = { train: null as number | null };
+  return {
+    id: `train-orders-${train.id}`,
+    title: `${train.name} – jízdní řád`,
+    vehicleName: () => train.name,
+    stopNoun: 'nástupiště',
+    orders: () => train.orders ?? [],
+    current: () => (train.state === 'depot' ? -1 : train.target),
+    fullLoad: (stationId) => train.fullLoad.includes(stationId),
+    stationName: (stationId) => fleet.stationName(stationId),
+    stations: () => game.world.rail.stations.filter((s) => s.kind === undefined),
+    accepts: (station) => (station.kind === undefined ? null : 'Vlak staví jen na železničních nástupištích.'),
+    setOrders: (orders) => fleet.setOrders(train, orders),
+    toggleFullLoad: (stationId) => fleet.toggleFullLoad(train, stationId),
+    canSkip: () => train.state !== 'depot' && !train.renewing,
+    skipTo: (index) => fleet.skipTo(train, index),
+    problem: (orders) => ordersError(orders) ?? fleet.routeError(orders) ?? shortStationsWarning(game, train),
+    hint:
+      'Vlak objíždí zastávky dokola, na každé vyloží a naloží náklad. ' +
+      'Se zapnutým „Do plna“ na zastávce počká, dokud nenaloží všechny vagony u nástupiště.',
+    focusStation: (stationId) => {
+      const station = game.world.rail.stations.find((s) => s.id === stationId);
+      if (station) links.focus(station.x + 0.5, station.y + 0.5);
+    },
+    extra: () => sharingEditor(game, train, shareChoice),
+    subscribe: (refresh) => [game.events.on('trainsChanged', refresh), game.clock.events.on('day', refresh)],
+    exists: () => fleet.trains.includes(train),
+  };
+}
+
+// Podrobnosti vlaku: model, stáří, hospodaření, obnova
+function trainDetails(game: Game, train: Train, links: TrainLinks): HTMLElement {
+  const model = trainModel(train);
+  const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
+    h('tr', {}, h('td', {}, label), h('td', { className }, value));
+  const speed = (v: number): string => v.toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
+  const today = game.clock.day;
+  const old = isOld(train, today);
+  const warning = shortStationsWarning(game, train);
+  const table = h(
+    'table',
+    { className: 'table' },
+    row('Model', `${model.name} (${model.year})`),
+    row('Náklad', formatLoad(train), 'num'),
+    row(
+      'Délka',
+      `${formatTiles(trainLength(train))} (${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'})`,
+      warning ? 'num warning' : 'num',
+    ),
+    row('Rychlost', `${speed(train.speed)} / ${speed(model.speed)} dlaždic/den`, 'num'),
+    row(
+      'Stáří',
+      `${formatYears(trainAge(train, today))} z ${TRAIN_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
+      old ? 'num warning' : 'num',
+    ),
+    row('Provoz ročně', formatMoney(0 - yearlyRunningCost(train, today)), 'num'),
+    row('Příjmy letos', formatMoney(train.income), 'num'),
+    row('Provoz letos', formatMoney(0 - train.costs), 'num'),
+    row('Zisk letos', formatMoney(train.income - train.costs), 'num strong'),
+    row('Zisk loni', formatMoney(train.lastIncome - train.lastCosts), 'num'),
+    row('Prodejní cena', formatMoney(sellPrice(train, today)), 'num'),
+  );
+  const depot = h('button', { className: 'small-button', textContent: 'Otevřít depo' });
+  depot.addEventListener('click', () => {
+    const d = depotOf(game, train);
+    if (d) links.openDepot(d);
+  });
+  const offer = game.fleet.renewalOffer(train);
+  const renew = h('button', {
+    className: 'small-button',
+    textContent: `Obnovit (${formatMoney(offer.cost)})`,
+    title: `Nová lokomotiva ${offer.model.name}, vagony a jízdní řád zůstanou. Jedoucí vlak zajede do depa a pak pokračuje.`,
+    disabled: train.renewing,
+  });
+  renew.addEventListener('click', () => {
+    const error = game.fleet.requestRenewal(train);
+    if (error) game.news(error);
+  });
+  return h(
+    'div',
+    { className: 'form' },
+    table,
+    ...(warning ? [h('div', { className: 'form__hint warning' }, warning)] : []),
+    h('div', { className: 'train__actions' }, depot, renew),
+  );
+}
+
+function trainStatus(game: Game, train: Train): VehicleStatus {
+  const text = train.renewing ? `${stateText(game, train)} (na obnovu)` : stateText(game, train);
+  if (train.state === 'depot') {
+    const orders = train.orders;
+    if (!orders || orders.length < 2) return { text: `${text} – zadejte jízdní řád`, moving: false };
+    return {
+      text: `${text} – klikněte pro výjezd`,
+      moving: false,
+      action: {
+        title: 'Vypravit vlak z depa podle jízdního řádu',
+        run: () => {
+          const error = game.fleet.start(train, orders);
+          if (error) game.news(error);
+        },
+      },
+    };
+  }
+  const moving = train.state === 'running' && !game.fleet.isBlocked(train);
+  const speed = train.speed.toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
+  return { text: moving ? `${text}, ${speed} dl./den` : text, moving };
+}
+
+// Okno vlaku podle OpenTTD: živý pohled, tlačítka vpravo, stav dole; řád a podrobnosti ve vlastních oknech
+export function openTrain(windows: WindowManager, game: Game, train: Train, links: TrainLinks): void {
+  const { fleet } = game;
+  const subscribe = (refresh: () => void): (() => void)[] => [
+    game.events.on('trainsChanged', refresh),
+    game.clock.events.on('day', refresh),
+  ];
+  const exists = (): boolean => fleet.trains.includes(train);
+  const locate = (): void => {
+    const p = trainPosition(game, train);
+    if (p) links.focus(...p);
+  };
+  const ordersId = `train-orders-${train.id}`;
+  const detailsId = `train-details-${train.id}`;
   // Okénko se při obnově obsahu vkládá znovu tentýž prvek, obraz se tak nepřerušuje
   const viewport = vehicleViewport(
     () => {
@@ -195,96 +247,56 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
     },
     () => (train.state === 'depot' ? 'V depu' : null),
   );
-  const render = (): HTMLElement => {
-    const model = trainModel(train);
-    const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
-      h('tr', {}, h('td', {}, label), h('td', { className }, value));
-    const speed = (v: number): string => v.toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
-    const today = game.clock.day;
-    const old = isOld(train, today);
-    const warning = shortStationsWarning(game, train);
-    const table = h(
-      'table',
-      { className: 'table' },
-      row('Model', `${model.name} (${model.year})`),
-      row('Stav', train.renewing ? `${stateText(game, train)} (na obnovu)` : stateText(game, train)),
-      row('Náklad', formatLoad(train), 'num'),
-      row(
-        'Délka',
-        `${formatTiles(trainLength(train))} (${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'})`,
-        warning ? 'num warning' : 'num',
-      ),
-      row('Rychlost', `${speed(train.speed)} / ${speed(model.speed)} dlaždic/den`, 'num'),
-      row(
-        'Stáří',
-        `${formatYears(trainAge(train, today))} z ${TRAIN_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
-        old ? 'num warning' : 'num',
-      ),
-      row('Provoz ročně', formatMoney(0 - yearlyRunningCost(train, today)), 'num'),
-      row('Příjmy letos', formatMoney(train.income), 'num'),
-      row('Provoz letos', formatMoney(0 - train.costs), 'num'),
-      row('Zisk letos', formatMoney(train.income - train.costs), 'num strong'),
-      row('Zisk loni', formatMoney(train.lastIncome - train.lastCosts), 'num'),
-      row('Prodejní cena', formatMoney(sellPrice(train, today)), 'num'),
-    );
-
-    const toDepot = h('button', { className: 'small-button', textContent: 'Do depa' });
-    toDepot.disabled = train.state === 'depot' || train.target === -1;
-    toDepot.addEventListener('click', () => game.fleet.sendToDepot(train));
-    const depot = h('button', { className: 'small-button', textContent: 'Otevřít depo' });
-    depot.addEventListener('click', () => {
-      const d = depotOf(game, train);
-      if (d) links.openDepot(d);
-    });
-    const offer = game.fleet.renewalOffer(train);
-    const renew = h('button', {
-      className: 'small-button',
-      textContent: `Obnovit (${formatMoney(offer.cost)})`,
-      title: `Nová lokomotiva ${offer.model.name}, vagony a jízdní řád zůstanou. Jedoucí vlak zajede do depa a pak pokračuje.`,
-      disabled: train.renewing,
-    });
-    renew.addEventListener('click', () => {
-      const error = game.fleet.requestRenewal(train);
-      if (error) game.news(error);
-    });
-    const ride = h('button', {
-      className: 'small-button',
-      textContent: '🎥 Z kabiny',
-      title: 'Pohled z kabiny strojvedoucího, obraz jede s vlakem',
-      disabled: train.state === 'depot',
-    });
-    ride.addEventListener('click', () => links.ride(train));
-    return h(
-      'div',
-      { className: 'form' },
-      viewport.element,
-      table,
-      ...(warning ? [h('div', { className: 'form__hint warning' }, warning)] : []),
-      h('div', { className: 'train__actions' }, toDepot, depot, renew, ride),
-      h('h4', {}, 'Jízdní řád'),
-      ordersEditor(game, train, choice),
-      sharingEditor(game, train, shareChoice),
-    );
-  };
-
-  const refresh = (): void => {
-    if (!windows.isOpen(id)) return;
-    if (!game.fleet.trains.includes(train)) windows.close(id);
-    else windows.update(id, render());
-  };
-  const unsubscribe = [game.events.on('trainsChanged', refresh), game.clock.events.on('day', refresh)];
-  const options = {
-    width: 360,
-    onClose: () => {
-      unsubscribe.forEach((off) => off());
-      viewport.dispose();
-    },
-    locate: () => {
-      const p = trainPosition(game, train);
-      if (p) links.focus(...p);
-    },
-  };
-  windows.open(id, train.name, render(), options);
+  openVehicleWindow(windows, {
+    id: `train-${train.id}`,
+    title: train.name,
+    viewport,
+    locate,
+    subscribe,
+    exists,
+    status: () => trainStatus(game, train),
+    buttons: () => [
+      { icon: '⌖', title: 'Vycentrovat hlavní pohled na vlak', onClick: locate },
+      train.state === 'depot'
+        ? {
+            icon: '⌂',
+            title: 'Otevřít depo',
+            onClick: () => {
+              const d = depotOf(game, train);
+              if (d) links.openDepot(d);
+            },
+          }
+        : {
+            icon: '⌂',
+            title: 'Poslat do depa',
+            onClick: () => fleet.sendToDepot(train),
+            disabled: train.target === -1,
+            active: train.target === -1,
+          },
+      {
+        icon: '☰',
+        title: 'Jízdní řád',
+        onClick: () => openOrders(windows, trainOrders(game, train, links)),
+        active: windows.isOpen(ordersId),
+      },
+      {
+        icon: 'ℹ',
+        title: 'Podrobnosti a hospodaření',
+        onClick: () =>
+          liveWindow(windows, detailsId, `${train.name} – podrobnosti`, () => trainDetails(game, train, links), {
+            subscribe,
+            exists,
+          }),
+        active: windows.isOpen(detailsId),
+      },
+      {
+        icon: '🎥',
+        title: 'Pohled z kabiny strojvedoucího',
+        onClick: () => links.ride(train),
+        disabled: train.state === 'depot',
+      },
+    ],
+  });
 }
 
 // Seznam všech vlaků, filtrovatelný podle nákladu a linky; kliknutím na řádek se otevře okno vlaku

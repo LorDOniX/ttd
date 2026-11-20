@@ -55,6 +55,13 @@ export class WindowManager {
     return this.windows.has(id);
   }
 
+  // Přenese otevřené okno dopředu; false, když otevřené není
+  raise(id: string): boolean {
+    const win = this.windows.get(id);
+    if (win) this.bringToFront(win.el);
+    return win !== undefined;
+  }
+
   setAnchor(id: string, anchor: HTMLElement): void {
     this.anchors.set(id, anchor);
   }

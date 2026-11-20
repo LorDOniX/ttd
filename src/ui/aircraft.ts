@@ -14,6 +14,8 @@ import { Game, formatMoney } from '../game/game';
 import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
+import { openOrders, type OrdersSource } from './vehicleOrders';
+import { liveWindow, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -69,66 +71,115 @@ export function aircraftStateText(game: Game, plane: Aircraft): string {
   }
 }
 
-// Seznam letišť řádu s posunem, odebráním a přidáním; změny platí hned
-function ordersEditor(game: Game, plane: Aircraft, choice: { airport: number | null }): HTMLElement {
+function airOrders(game: Game, plane: Aircraft, links: AircraftLinks): OrdersSource {
   const { airFleet } = game;
-  const orders = plane.orders ?? [];
-  const apply = (next: number[]): void => {
-    const error = airFleet.setOrders(plane, next);
-    if (error) game.news(error);
+  return {
+    id: `aircraft-orders-${plane.id}`,
+    title: `${plane.name} – letový řád`,
+    vehicleName: () => plane.name,
+    stopNoun: 'letiště',
+    orders: () => plane.orders ?? [],
+    current: () => {
+      if (plane.state === 'hangar') return -1;
+      // Na stání je cíl už posunutý na další letiště; aktuální je to, kde letadlo stojí
+      const here = plane.orders?.indexOf(plane.airportId) ?? -1;
+      return plane.state === 'loading' && here >= 0 ? here : plane.target;
+    },
+    fullLoad: (airportId) => plane.fullLoad.includes(airportId),
+    stationName: (airportId) => airFleet.stationName(airportId),
+    stations: () => airports(game).filter((a) => canUseAirport(aircraftModel(plane), a.airport)),
+    accepts: (station) => {
+      if (station.kind !== 'air') return 'Letadla létají jen mezi letišti.';
+      const model = aircraftModel(plane);
+      return canUseAirport(model, station.airport) ? null : `${model.name} nemůže přistát na malém letišti.`;
+    },
+    setOrders: (orders) => airFleet.setOrders(plane, orders),
+    toggleFullLoad: (airportId) => airFleet.toggleFullLoad(plane, airportId),
+    canSkip: () => plane.state !== 'hangar' && !plane.toHangar,
+    skipTo: (index) => airFleet.skipTo(plane, index),
+    problem: (orders) => airFleet.ordersError(plane, orders),
+    hint:
+      'Letadlo létá po letištích dokola, na každém vyloží a naloží náklad.' +
+      (aircraftModel(plane).large ? ' Velké letadlo přistává jen na velkých letištích.' : ''),
+    focusStation: (airportId) => {
+      const airport = airFleet.airport(airportId);
+      if (airport) links.focus(airport.x + 1, airport.y + 1);
+    },
+    subscribe: (refresh) => [game.events.on('aircraftChanged', refresh), game.clock.events.on('day', refresh)],
+    exists: () => airFleet.aircraft.includes(plane),
   };
-  const moved = (i: number, j: number): number[] => {
-    const next = [...orders];
-    [next[i], next[j]] = [next[j], next[i]];
-    return next;
-  };
-  const heading = plane.state !== 'hangar' ? plane.target : -1;
-  const rows = orders.map((airportId, i) => {
-    const full = smallButton(
-      'Do plna',
-      () => airFleet.toggleFullLoad(plane, airportId),
-      false,
-      'Letadlo na tomto letišti počká, dokud nebude plné',
-    );
-    full.classList.toggle('small-button--active', plane.fullLoad.includes(airportId));
-    return h(
-      'div',
-      { className: i === heading ? 'orders__row orders__row--current' : 'orders__row' },
-      h('span', {}, `${i + 1}. ${airFleet.stationName(airportId)}`),
-      smallButton('↑', () => apply(moved(i, i - 1)), i === 0, 'Posunout výš'),
-      smallButton('↓', () => apply(moved(i, i + 1)), i === orders.length - 1, 'Posunout níž'),
-      smallButton('✕', () => apply(orders.filter((_, k) => k !== i)), false, 'Odebrat letiště'),
-      full,
-    );
-  });
-  const model = aircraftModel(plane);
-  const usable = airports(game)
-    .filter((a) => canUseAirport(model, a.airport))
-    .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
-  const select = h('select', {});
-  for (const a of usable)
-    select.append(h('option', { value: String(a.id), selected: a.id === choice.airport }, a.name));
-  select.addEventListener('change', () => (choice.airport = Number(select.value)));
-  const add = smallButton('Přidat', () => apply([...orders, Number(select.value)]), usable.length === 0);
-  return h(
-    'div',
-    { className: 'orders' },
-    ...(rows.length > 0 ? rows : [h('div', { className: 'form__hint' }, 'Žádná letiště.')]),
-    h('div', { className: 'train__actions' }, select, add),
-    h(
-      'div',
-      { className: 'form__hint' },
-      'Letadlo létá po letištích dokola, na každém vyloží a naloží náklad. ' +
-        (model.large ? 'Velké letadlo přistává jen na velkých letištích.' : ''),
-    ),
-  );
 }
 
-// Okno letadla: stav, náklad, hospodaření, letový řád a akce
-export function openAircraft(windows: WindowManager, game: Game, plane: Aircraft, links: AircraftLinks): void {
-  const id = `aircraft-${plane.id}`;
+function airDetails(game: Game, plane: Aircraft, links: AircraftLinks): HTMLElement {
   const { airFleet } = game;
-  const choice = { airport: null as number | null };
+  const model = aircraftModel(plane);
+  const today = game.clock.day;
+  const old = isOldAircraft(plane, today);
+  const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
+    h('tr', {}, h('td', {}, label), h('td', { className }, value));
+  const table = h(
+    'table',
+    { className: 'table' },
+    row('Model', `${model.name} (${model.year})`),
+    row('Náklad', formatAircraftLoad(plane), 'num'),
+    row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
+    row(
+      'Stáří',
+      `${formatYears(aircraftAge(plane, today))} z ${AIRCRAFT_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
+      old ? 'num warning' : 'num',
+    ),
+    row('Provoz ročně', formatMoney(0 - aircraftRunningCost(plane, today)), 'num'),
+    row('Příjmy letos', formatMoney(plane.income), 'num'),
+    row('Provoz letos', formatMoney(0 - plane.costs), 'num'),
+    row('Zisk letos', formatMoney(plane.income - plane.costs), 'num strong'),
+    row('Zisk loni', formatMoney(plane.lastIncome - plane.lastCosts), 'num'),
+    row('Prodejní cena', formatMoney(aircraftSellPrice(plane, today)), 'num'),
+  );
+  const hangar = smallButton('Otevřít hangár', () => {
+    const airport = airFleet.airport(plane.state === 'hangar' ? plane.depotId : plane.airportId);
+    if (airport) links.openHangar(airport);
+  });
+  return h('div', { className: 'form' }, table, h('div', { className: 'train__actions' }, hangar));
+}
+
+function airStatus(game: Game, plane: Aircraft): VehicleStatus {
+  const text = aircraftStateText(game, plane);
+  if (plane.state === 'hangar') {
+    const orders = plane.orders;
+    if (!orders || orders.length < 2) return { text: `${text} – zadejte letový řád`, moving: false };
+    return {
+      text: `${text} – klikněte pro odlet`,
+      moving: false,
+      action: {
+        title: 'Vypravit letadlo z hangáru podle letového řádu',
+        run: () => {
+          const error = game.airFleet.start(plane, orders);
+          if (error) game.news(error);
+        },
+      },
+    };
+  }
+  return { text, moving: plane.state !== 'loading' && plane.state !== 'waiting' };
+}
+
+// Okno letadla podle OpenTTD: živý pohled, tlačítka vpravo, stav dole; řád a podrobnosti ve vlastních oknech
+export function openAircraft(windows: WindowManager, game: Game, plane: Aircraft, links: AircraftLinks): void {
+  const { airFleet } = game;
+  const subscribe = (refresh: () => void): (() => void)[] => [
+    game.events.on('aircraftChanged', refresh),
+    game.clock.events.on('day', refresh),
+  ];
+  const exists = (): boolean => airFleet.aircraft.includes(plane);
+  const locate = (): void => {
+    const p = airFleet.position(plane);
+    if (p) links.focus(p.x, p.y);
+  };
+  const ordersId = `aircraft-orders-${plane.id}`;
+  const detailsId = `aircraft-details-${plane.id}`;
+  const openHangar = (): void => {
+    const airport = airFleet.airport(plane.state === 'hangar' ? plane.depotId : plane.airportId);
+    if (airport) links.openHangar(airport);
+  };
   const viewport = vehicleViewport(
     () => {
       const p = airFleet.position(plane);
@@ -136,82 +187,48 @@ export function openAircraft(windows: WindowManager, game: Game, plane: Aircraft
     },
     () => (plane.state === 'hangar' ? 'V hangáru' : null),
   );
-  const render = (): HTMLElement => {
-    const model = aircraftModel(plane);
-    const today = game.clock.day;
-    const old = isOldAircraft(plane, today);
-    const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
-      h('tr', {}, h('td', {}, label), h('td', { className }, value));
-    const table = h(
-      'table',
-      { className: 'table' },
-      row('Model', `${model.name} (${model.year})`),
-      row('Stav', aircraftStateText(game, plane)),
-      row('Náklad', formatAircraftLoad(plane), 'num'),
-      row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
-      row(
-        'Stáří',
-        `${formatYears(aircraftAge(plane, today))} z ${AIRCRAFT_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
-        old ? 'num warning' : 'num',
-      ),
-      row('Provoz ročně', formatMoney(0 - aircraftRunningCost(plane, today)), 'num'),
-      row('Příjmy letos', formatMoney(plane.income), 'num'),
-      row('Provoz letos', formatMoney(0 - plane.costs), 'num'),
-      row('Zisk letos', formatMoney(plane.income - plane.costs), 'num strong'),
-      row('Zisk loni', formatMoney(plane.lastIncome - plane.lastCosts), 'num'),
-      row('Prodejní cena', formatMoney(aircraftSellPrice(plane, today)), 'num'),
-    );
-    const actions = h(
-      'div',
-      { className: 'train__actions' },
-      smallButton('Do hangáru', () => airFleet.sendToHangar(plane), plane.state === 'hangar' || plane.toHangar),
-      smallButton('Otevřít hangár', () => {
-        const airport = airFleet.airport(plane.state === 'hangar' ? plane.depotId : plane.airportId);
-        if (airport) links.openHangar(airport);
-      }),
-      smallButton(
-        '🎥 Z kokpitu',
-        () => links.ride(plane),
-        plane.state === 'hangar',
-        'Pohled z kokpitu, obraz letí s letadlem',
-      ),
-    );
-    if (plane.state === 'hangar' && plane.orders) {
-      const orders = plane.orders;
-      actions.append(
-        smallButton('Vyletět', () => {
-          const error = airFleet.start(plane, orders);
-          if (error) game.news(error);
-        }),
-      );
-    }
-    return h(
-      'div',
-      { className: 'form' },
-      viewport.element,
-      table,
-      actions,
-      h('h4', {}, 'Letový řád'),
-      ordersEditor(game, plane, choice),
-    );
-  };
-
-  const refresh = (): void => {
-    if (!windows.isOpen(id)) return;
-    if (!airFleet.aircraft.includes(plane)) windows.close(id);
-    else windows.update(id, render());
-  };
-  const unsubscribe = [game.events.on('aircraftChanged', refresh), game.clock.events.on('day', refresh)];
-  windows.open(id, plane.name, render(), {
-    width: 360,
-    onClose: () => {
-      unsubscribe.forEach((off) => off());
-      viewport.dispose();
-    },
-    locate: () => {
-      const p = airFleet.position(plane);
-      if (p) links.focus(p.x, p.y);
-    },
+  openVehicleWindow(windows, {
+    id: `aircraft-${plane.id}`,
+    title: plane.name,
+    viewport,
+    locate,
+    subscribe,
+    exists,
+    status: () => airStatus(game, plane),
+    buttons: () => [
+      { icon: '⌖', title: 'Vycentrovat hlavní pohled na letadlo', onClick: locate },
+      plane.state === 'hangar'
+        ? { icon: '⌂', title: 'Otevřít hangár', onClick: openHangar }
+        : {
+            icon: '⌂',
+            title: 'Poslat do hangáru',
+            onClick: () => airFleet.sendToHangar(plane),
+            disabled: plane.toHangar,
+            active: plane.toHangar,
+          },
+      {
+        icon: '☰',
+        title: 'Letový řád',
+        onClick: () => openOrders(windows, airOrders(game, plane, links)),
+        active: windows.isOpen(ordersId),
+      },
+      {
+        icon: 'ℹ',
+        title: 'Podrobnosti a hospodaření',
+        onClick: () =>
+          liveWindow(windows, detailsId, `${plane.name} – podrobnosti`, () => airDetails(game, plane, links), {
+            subscribe,
+            exists,
+          }),
+        active: windows.isOpen(detailsId),
+      },
+      {
+        icon: '🎥',
+        title: 'Pohled z kokpitu',
+        onClick: () => links.ride(plane),
+        disabled: plane.state === 'hangar',
+      },
+    ],
   });
 }
 

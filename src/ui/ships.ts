@@ -13,6 +13,8 @@ import {
 import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
+import { openOrders, type OrdersSource } from './vehicleOrders';
+import { liveWindow, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -60,61 +62,111 @@ export function shipStateText(game: Game, ship: Ship): string {
   }
 }
 
-// Seznam přístavů řádu s posunem, odebráním a přidáním; změny platí hned
-function ordersEditor(game: Game, ship: Ship, choice: { port: number | null }): HTMLElement {
+function shipOrders(game: Game, ship: Ship, links: ShipLinks): OrdersSource {
   const { shipFleet } = game;
-  const orders = ship.orders ?? [];
-  const apply = (next: number[]): void => {
-    const error = shipFleet.setOrders(ship, next);
-    if (error) game.news(error);
-  };
-  const moved = (i: number, j: number): number[] => {
-    const next = [...orders];
-    [next[i], next[j]] = [next[j], next[i]];
-    return next;
-  };
-  const heading = ship.state !== 'depot' ? ship.target : -1;
-  const rows = orders.map((portId, i) => {
-    const full = smallButton(
-      'Do plna',
-      () => shipFleet.toggleFullLoad(ship, portId),
-      false,
-      'Loď v tomto přístavu počká, dokud nebude plná',
-    );
-    full.classList.toggle('small-button--active', ship.fullLoad.includes(portId));
-    return h(
-      'div',
-      { className: i === heading ? 'orders__row orders__row--current' : 'orders__row' },
-      h('span', {}, `${i + 1}. ${shipFleet.stationName(portId)}`),
-      smallButton('↑', () => apply(moved(i, i - 1)), i === 0, 'Posunout výš'),
-      smallButton('↓', () => apply(moved(i, i + 1)), i === orders.length - 1, 'Posunout níž'),
-      smallButton('✕', () => apply(orders.filter((_, k) => k !== i)), false, 'Odebrat přístav'),
-      full,
-    );
-  });
-  const all = ports(game).sort((a, b) => a.name.localeCompare(b.name, 'cs'));
-  const select = h('select', {});
-  for (const p of all) select.append(h('option', { value: String(p.id), selected: p.id === choice.port }, p.name));
-  select.addEventListener('change', () => (choice.port = Number(select.value)));
-  const add = smallButton('Přidat', () => apply([...orders, Number(select.value)]), all.length === 0);
-  return h(
-    'div',
-    { className: 'orders' },
-    ...(rows.length > 0 ? rows : [h('div', { className: 'form__hint' }, 'Žádné přístavy.')]),
-    h('div', { className: 'train__actions' }, select, add),
-    h(
-      'div',
-      { className: 'form__hint' },
+  return {
+    id: `ship-orders-${ship.id}`,
+    title: `${ship.name} – plavební řád`,
+    vehicleName: () => ship.name,
+    stopNoun: 'přístav',
+    orders: () => ship.orders ?? [],
+    current: () => {
+      if (ship.state === 'depot') return -1;
+      // V přístavu je cíl už posunutý na další přístav; aktuální je ten, kde loď kotví
+      const here = ship.orders?.indexOf(ship.portId) ?? -1;
+      return ship.state === 'loading' && here >= 0 ? here : ship.target;
+    },
+    fullLoad: (portId) => ship.fullLoad.includes(portId),
+    stationName: (portId) => shipFleet.stationName(portId),
+    stations: () => ports(game),
+    accepts: (station) => (station.kind === 'water' ? null : 'Lodě plují jen mezi přístavy.'),
+    setOrders: (orders) => shipFleet.setOrders(ship, orders),
+    toggleFullLoad: (portId) => shipFleet.toggleFullLoad(ship, portId),
+    canSkip: () => ship.state !== 'depot' && !ship.toDepot,
+    skipTo: (index) => shipFleet.skipTo(ship, index),
+    problem: (orders) => shipFleet.ordersError(orders),
+    hint:
       'Loď objíždí přístavy dokola, v každém vyloží a naloží náklad. Pluje jen po souvislé vodě a pod mosty ' +
-        'neproplouvá. V zimě voda zamrzá a lodě stojí v ledu až do jara.',
-    ),
-  );
+      'neproplouvá. V zimě voda zamrzá a lodě stojí v ledu až do jara.',
+    focusStation: (portId) => {
+      const port = shipFleet.port(portId);
+      if (port) links.focus(port.x + 0.5, port.y + 0.5);
+    },
+    subscribe: (refresh) => [game.events.on('shipsChanged', refresh), game.clock.events.on('day', refresh)],
+    exists: () => shipFleet.ships.includes(ship),
+  };
 }
 
-export function openShip(windows: WindowManager, game: Game, ship: Ship, links: ShipLinks): void {
-  const id = `ship-${ship.id}`;
+function shipDetails(game: Game, ship: Ship, links: ShipLinks): HTMLElement {
   const { shipFleet } = game;
-  const choice = { port: null as number | null };
+  const model = shipModel(ship);
+  const today = game.clock.day;
+  const old = isOldShip(ship, today);
+  const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
+    h('tr', {}, h('td', {}, label), h('td', { className }, value));
+  const table = h(
+    'table',
+    { className: 'table' },
+    row('Model', `${model.name} (${model.year})`),
+    row('Náklad', formatShipLoad(ship), 'num'),
+    row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
+    row(
+      'Stáří',
+      `${formatYears(shipAge(ship, today))} z ${SHIP_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
+      old ? 'num warning' : 'num',
+    ),
+    row('Provoz ročně', formatMoney(0 - shipRunningCost(ship, today)), 'num'),
+    row('Příjmy letos', formatMoney(ship.income), 'num'),
+    row('Provoz letos', formatMoney(0 - ship.costs), 'num'),
+    row('Zisk letos', formatMoney(ship.income - ship.costs), 'num strong'),
+    row('Zisk loni', formatMoney(ship.lastIncome - ship.lastCosts), 'num'),
+    row('Prodejní cena', formatMoney(shipSellPrice(ship, today)), 'num'),
+  );
+  const yard = smallButton('Otevřít loděnici', () => {
+    const port = shipFleet.port(ship.state === 'depot' ? ship.depotId : ship.portId);
+    if (port) links.openShipyard(port);
+  });
+  return h('div', { className: 'form' }, table, h('div', { className: 'train__actions' }, yard));
+}
+
+function shipStatus(game: Game, ship: Ship): VehicleStatus {
+  const text = shipStateText(game, ship);
+  if (ship.state === 'depot') {
+    const orders = ship.orders;
+    if (!orders || orders.length < 2) return { text: `${text} – zadejte plavební řád`, moving: false };
+    return {
+      text: `${text} – klikněte pro vyplutí`,
+      moving: false,
+      action: {
+        title: 'Vyplout z loděnice podle plavebního řádu',
+        run: () => {
+          const error = game.shipFleet.start(ship, orders);
+          if (error) game.news(error);
+        },
+      },
+    };
+  }
+  return { text, moving: ship.state === 'sailing' && !game.shipFleet.frozen };
+}
+
+// Okno lodi podle OpenTTD: živý pohled, tlačítka vpravo, stav dole; řád a podrobnosti ve vlastních oknech
+export function openShip(windows: WindowManager, game: Game, ship: Ship, links: ShipLinks): void {
+  const { shipFleet } = game;
+  const subscribe = (refresh: () => void): (() => void)[] => [
+    game.events.on('shipsChanged', refresh),
+    game.clock.events.on('day', refresh),
+  ];
+  const exists = (): boolean => shipFleet.ships.includes(ship);
+  const locate = (): void => {
+    const p = shipFleet.position(ship);
+    if (p) links.focus(p.x, p.y);
+  };
+  const ordersId = `ship-orders-${ship.id}`;
+  const detailsId = `ship-details-${ship.id}`;
+  const openYard = (): void => {
+    const port = shipFleet.port(ship.state === 'depot' ? ship.depotId : ship.portId);
+    if (port) links.openShipyard(port);
+  };
   const viewport = vehicleViewport(
     () => {
       const p = shipFleet.position(ship);
@@ -122,76 +174,48 @@ export function openShip(windows: WindowManager, game: Game, ship: Ship, links: 
     },
     () => (ship.state === 'depot' ? 'V loděnici' : null),
   );
-  const render = (): HTMLElement => {
-    const model = shipModel(ship);
-    const today = game.clock.day;
-    const old = isOldShip(ship, today);
-    const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
-      h('tr', {}, h('td', {}, label), h('td', { className }, value));
-    const table = h(
-      'table',
-      { className: 'table' },
-      row('Model', `${model.name} (${model.year})`),
-      row('Stav', shipStateText(game, ship)),
-      row('Náklad', formatShipLoad(ship), 'num'),
-      row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
-      row(
-        'Stáří',
-        `${formatYears(shipAge(ship, today))} z ${SHIP_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
-        old ? 'num warning' : 'num',
-      ),
-      row('Provoz ročně', formatMoney(0 - shipRunningCost(ship, today)), 'num'),
-      row('Příjmy letos', formatMoney(ship.income), 'num'),
-      row('Provoz letos', formatMoney(0 - ship.costs), 'num'),
-      row('Zisk letos', formatMoney(ship.income - ship.costs), 'num strong'),
-      row('Zisk loni', formatMoney(ship.lastIncome - ship.lastCosts), 'num'),
-      row('Prodejní cena', formatMoney(shipSellPrice(ship, today)), 'num'),
-    );
-    const actions = h(
-      'div',
-      { className: 'train__actions' },
-      smallButton('Do loděnice', () => shipFleet.sendToDepot(ship), ship.state === 'depot' || ship.toDepot),
-      smallButton('Otevřít loděnici', () => {
-        const port = shipFleet.port(ship.state === 'depot' ? ship.depotId : ship.portId);
-        if (port) links.openShipyard(port);
-      }),
-      smallButton('🎥 Z můstku', () => links.ride(ship), ship.state === 'depot', 'Pohled z můstku, obraz pluje s lodí'),
-    );
-    if (ship.state === 'depot' && ship.orders) {
-      const orders = ship.orders;
-      actions.append(
-        smallButton('Vyplout', () => {
-          const error = shipFleet.start(ship, orders);
-          if (error) game.news(error);
-        }),
-      );
-    }
-    return h(
-      'div',
-      { className: 'form' },
-      viewport.element,
-      table,
-      actions,
-      h('h4', {}, 'Plavební řád'),
-      ordersEditor(game, ship, choice),
-    );
-  };
-  const refresh = (): void => {
-    if (!windows.isOpen(id)) return;
-    if (!shipFleet.ships.includes(ship)) windows.close(id);
-    else windows.update(id, render());
-  };
-  const unsubscribe = [game.events.on('shipsChanged', refresh), game.clock.events.on('day', refresh)];
-  windows.open(id, ship.name, render(), {
-    width: 360,
-    onClose: () => {
-      unsubscribe.forEach((off) => off());
-      viewport.dispose();
-    },
-    locate: () => {
-      const p = shipFleet.position(ship);
-      if (p) links.focus(p.x, p.y);
-    },
+  openVehicleWindow(windows, {
+    id: `ship-${ship.id}`,
+    title: ship.name,
+    viewport,
+    locate,
+    subscribe,
+    exists,
+    status: () => shipStatus(game, ship),
+    buttons: () => [
+      { icon: '⌖', title: 'Vycentrovat hlavní pohled na loď', onClick: locate },
+      ship.state === 'depot'
+        ? { icon: '⌂', title: 'Otevřít loděnici', onClick: openYard }
+        : {
+            icon: '⌂',
+            title: 'Poslat do loděnice',
+            onClick: () => shipFleet.sendToDepot(ship),
+            disabled: ship.toDepot,
+            active: ship.toDepot,
+          },
+      {
+        icon: '☰',
+        title: 'Plavební řád',
+        onClick: () => openOrders(windows, shipOrders(game, ship, links)),
+        active: windows.isOpen(ordersId),
+      },
+      {
+        icon: 'ℹ',
+        title: 'Podrobnosti a hospodaření',
+        onClick: () =>
+          liveWindow(windows, detailsId, `${ship.name} – podrobnosti`, () => shipDetails(game, ship, links), {
+            subscribe,
+            exists,
+          }),
+        active: windows.isOpen(detailsId),
+      },
+      {
+        icon: '🎥',
+        title: 'Pohled z můstku',
+        onClick: () => links.ride(ship),
+        disabled: ship.state === 'depot',
+      },
+    ],
   });
 }
 

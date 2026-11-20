@@ -409,6 +409,21 @@ export class RoadFleet {
     return null;
   }
 
+  // Přeskočí na zastávku řádu; auto na zastávce hned odjede
+  skipTo(vehicle: RoadVehicle, index: number): void {
+    const { orders } = vehicle;
+    if (!orders || index < 0 || index >= orders.length || vehicle.state === 'depot') return;
+    if (vehicle.state === 'loading') {
+      if (vehicle.target >= 0 && orders[vehicle.target] === orders[index]) return;
+      vehicle.target = (index - 1 + orders.length) % orders.length;
+      this.depart(vehicle);
+    } else {
+      vehicle.target = index;
+      this.replan(vehicle);
+    }
+    this.changed();
+  }
+
   toggleFullLoad(vehicle: RoadVehicle, stationId: number): void {
     const i = vehicle.fullLoad.indexOf(stationId);
     if (i >= 0) vehicle.fullLoad.splice(i, 1);

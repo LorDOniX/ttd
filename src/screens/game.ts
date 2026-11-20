@@ -34,6 +34,7 @@ import { industryAt, type Industry } from '../world/industry';
 import { openIndustry } from '../ui/industry';
 import { openStation } from '../ui/station';
 import { openTrafficOverview } from '../ui/traffic';
+import { onStationPickChange, pickStationAt, stationPick, stopStationPick } from '../ui/stationPicker';
 import type { Depot, Station } from '../world/rail';
 import { hashSeed } from '../world/rng';
 import type { Town } from '../world/town';
@@ -108,6 +109,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     scene,
     enter: () => {
       buildTools.setTool(null);
+      stopStationPick();
       shortcuts.enabled = false;
       cursor.show(null);
       clickStart = null;
@@ -210,14 +212,28 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
   if (isDevHost()) hud.setFpsVisible(true);
   for (const [id, button] of hud.windowButtons) windows.setAnchor(id, button);
   let infoCursorActive = false;
+  // Výběr zastávky z okna jízdního řádu („Jet do“): lišta s nápovědou a jiný kurzor nad mapou
+  const pickBanner = h('div', { className: 'pick-banner', hidden: true });
+  container.append(pickBanner);
+  onStationPickChange((pick) => {
+    if (pick) buildTools.setTool(null);
+    pickBanner.hidden = !pick;
+    pickBanner.textContent = pick ? `${pick.prompt} · Esc ukončí výběr` : '';
+    container.classList.toggle('station-picking', pick !== null);
+  });
   buildTools.onToolChange = (tool) => {
+    if (tool) stopStationPick();
     const infoActive = tool === 'info';
     if (infoActive !== infoCursorActive) cursor.setEnabled(infoActive);
     infoCursorActive = infoActive;
     hud.setInfoActive(tool === 'info');
     view.setLabelsInteractive(tool === null);
   };
-  view.onLabelClick = ({ kind, id, rect }) =>
+  view.onLabelClick = ({ kind, id, rect }) => {
+    if (stationPick()) {
+      pickStationAt(kind === 'station' ? world.rail.stations.find((s) => s.id === id) : undefined);
+      return;
+    }
     windows.openAbove(rect, () => {
       if (kind === 'town') links.openTown(towns[id]);
       const station = kind === 'station' ? world.rail.stations.find((s) => s.id === id) : undefined;
@@ -225,6 +241,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
       const industry = kind === 'industry' ? world.industries.find((i) => i.id === id) : undefined;
       if (industry) links.openIndustry(industry);
     });
+  };
 
   const { clock } = game;
   const shortcuts = new Shortcuts([
@@ -269,7 +286,11 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
       codes: ['Escape'],
       key: 'Esc',
       label: 'Zrušit nástroj, jinak zavřít horní okno',
-      run: () => (buildTools.tool ? buildTools.setTool(null) : windows.closeTop()),
+      run: () => {
+        if (stationPick()) stopStationPick();
+        else if (buildTools.tool) buildTools.setTool(null);
+        else windows.closeTop();
+      },
     },
     { codes: ['Delete'], key: 'Delete', label: 'Zavřít všechna okna', run: () => windows.closeAll() },
   ]);
@@ -343,6 +364,11 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     const moved = Math.hypot(e.clientX - clickStart.x, e.clientY - clickStart.y);
     clickStart = null;
     if (moved > 4) return;
+    if (stationPick()) {
+      const picked = tileAt(e.clientX, e.clientY);
+      pickStationAt(picked ? world.rail.stationAt(picked.x, picked.y) : undefined);
+      return;
+    }
     const trainId = view.trainAt(e.clientX, e.clientY);
     const train = game.fleet.trains.find((t) => t.id === trainId);
     if (train) {

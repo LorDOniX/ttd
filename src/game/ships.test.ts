@@ -81,6 +81,18 @@ describe('lodě', () => {
     expect(game.thisYear.passengers).toBeGreaterThan(0);
   });
 
+  it('Přeskočit: kotvící loď hned vypluje, plující změní cíl', () => {
+    const { game, a, b } = buildWaterLine();
+    const ship = buyShip(game, a);
+    game.shipFleet.start(ship, [a.id, b.id]);
+    expect(ship.state).toBe('loading');
+    game.shipFleet.skipTo(ship, 1);
+    expect(ship.state).toBe('sailing');
+    expect(ship.portId).toBe(b.id);
+    game.shipFleet.skipTo(ship, 0);
+    expect(ship.portId).toBe(a.id);
+  });
+
   it('do jiného jezera řád nepovolí', () => {
     const { game, a } = buildWaterLine();
     const { map } = game.world;

@@ -257,6 +257,18 @@ export class AirFleet {
     return null;
   }
 
+  // Přeskočí na letiště řádu: na stání hned odjede, ve vzduchu změní kurz
+  skipTo(plane: Aircraft, index: number): void {
+    const { orders } = plane;
+    if (!orders || index < 0 || index >= orders.length || plane.state === 'hangar' || plane.toHangar) return;
+    plane.target = index;
+    if (plane.state === 'loading') this.depart(plane);
+    else if ((plane.state === 'flying' || plane.state === 'holding') && orders[index] !== plane.airportId) {
+      this.flyFrom(plane, orders[index]);
+    }
+    this.changed();
+  }
+
   toggleFullLoad(plane: Aircraft, airportId: number): void {
     const i = plane.fullLoad.indexOf(airportId);
     if (i >= 0) plane.fullLoad.splice(i, 1);

@@ -255,6 +255,19 @@ export class ShipFleet {
     return null;
   }
 
+  // Přeskočí na přístav řádu: kotvící loď hned vypluje, plující změní kurz (v ledu jen změní cíl)
+  skipTo(ship: Ship, index: number): void {
+    const { orders } = ship;
+    if (!orders || index < 0 || index >= orders.length || ship.state === 'depot' || ship.toDepot) return;
+    if (ship.state === 'loading' && orders[index] === ship.portId) return;
+    ship.target = index;
+    if (!this.frozen) {
+      if (ship.state === 'loading') this.depart(ship);
+      else if (orders[index] !== ship.portId) this.sailTo(ship, orders[index]);
+    }
+    this.changed();
+  }
+
   toggleFullLoad(ship: Ship, portId: number): void {
     const i = ship.fullLoad.indexOf(portId);
     if (i >= 0) ship.fullLoad.splice(i, 1);
