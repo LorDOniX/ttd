@@ -3,8 +3,10 @@ import {
   AIRPORT_TYPES,
   RATING_START,
   ROAD_VEHICLE_MODELS,
+  SERVICE_INTERVAL_DAYS,
   SHIP_MODELS,
   STATION_LENGTH,
+  TRAIN_MODELS,
 } from './balance';
 import type { Aircraft } from './aircraft';
 import type { Ship } from './ships';
@@ -17,16 +19,19 @@ import {
   type Cargo,
   type CargoRating,
   type FreightStock,
+  type TransferPacket,
+  type Transfers,
 } from './cargo';
 import { Game, emptyYear, type ViewState, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Job } from './construction';
 import type { RoadVehicle } from './roadVehicles';
-import type { Train } from './trains';
+import { isBreakdownSetting } from './reliability';
+import { cleanFlags, type OrderFlags, type Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
 import { GameMap, TileType } from '../world/map';
-import { RailNetwork, PIECES, stationTiles, type Depot, type Station } from '../world/rail';
+import { RailNetwork, PIECES, stationTiles, type Depot, type Edge, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
@@ -52,6 +57,8 @@ export interface SaveData {
     nextStationId: number;
     nextDepotId: number;
     signals?: number[];
+    // Jednosměrná návěstidla: [dlaždice, hrana výjezdu]
+    signalDirs?: [number, number][];
     roadDepots?: Depot[];
   };
   fleet: { trains: Train[]; nextId: number };
@@ -66,6 +73,7 @@ export interface SaveData {
     history: YearRecord[];
     rngState: number;
     autoRenew?: boolean;
+    breakdowns?: string;
   };
   clock: { date: GameDate; day: number; dayProgress: number };
   // Starší uložení pohled kamery ani rozpracovanou výstavbu nemají
@@ -132,6 +140,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       nextStationId: rail.nextStationId,
       nextDepotId: rail.nextDepotId,
       signals: [...rail.signals],
+      signalDirs: [...rail.signalDirs],
       roadDepots: rail.roadDepots,
     },
     fleet: { trains: fleet.trains, nextId: fleet.nextId },
@@ -146,11 +155,35 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       history: game.history,
       rngState: game.rng.state,
       autoRenew: game.autoRenew,
+      breakdowns: game.breakdowns,
     },
     ...(game.view ? { view: game.view } : {}),
     ...(game.construction.busy ? { construction: [...game.construction.pending] } : {}),
     clock: { date: clock.date, day: clock.day, dayProgress: clock.dayProgress },
   };
+}
+
+// Nejvyšší spolehlivost modelu vlaku; neznámý model jako první
+function modelReliability(train: Train): number {
+  return TRAIN_MODELS.find((m) => m.id === train.modelId)?.reliability ?? TRAIN_MODELS[0].reliability;
+}
+
+// Náklad z překládek; neplatné balíky se zahodí, starší uložení žádný nemají
+function restoreTransfers(value: unknown): Transfers {
+  const transfers: Transfers = {};
+  if (!isObject(value)) return transfers;
+  for (const cargo of CARGO_TYPES) {
+    const list = value[cargo];
+    if (!Array.isArray(list)) continue;
+    const packets = list.filter(
+      (p): p is TransferPacket =>
+        isObject(p) &&
+        [p.amount, p.boardedAt, p.tiles, p.feeder].every((n) => typeof n === 'number' && Number.isFinite(n)) &&
+        (p.amount as number) > 0,
+    );
+    if (packets.length > 0) transfers[cargo] = packets;
+  }
+  return transfers;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -283,6 +316,7 @@ export function restoreGame(data: SaveData): Game {
         tracks: s.tracks ?? 1,
         freight: restoreFreight(s.freight, legacyCoal(s)),
         ratings: restoreRatings(s.ratings, s),
+        transfers: restoreTransfers(s.transfers),
       };
       // Verze 11 a starší měly jedno hodnocení pro všechen náklad
       for (const key of ['rating', 'lastVisit', 'lastSpeed']) delete (station as Record<string, unknown>)[key];
@@ -310,6 +344,10 @@ export function restoreGame(data: SaveData): Game {
   for (const tile of data.rail.signals ?? []) {
     if (Number.isInteger(tile) && tile >= 0 && tile < width * height) rail.signals.add(tile);
   }
+  for (const entry of Array.isArray(data.rail.signalDirs) ? data.rail.signalDirs : []) {
+    const [tile, dir] = Array.isArray(entry) ? entry : [-1, -1];
+    if (rail.signals.has(tile) && Number.isInteger(dir) && dir >= 0 && dir < 4) rail.signalDirs.set(tile, dir as Edge);
+  }
 
   const world: World = {
     seed: data.seed,
@@ -325,6 +363,7 @@ export function restoreGame(data: SaveData): Game {
   const game = new Game(world);
   game.companyName = data.game.companyName;
   game.autoRenew = data.game.autoRenew === true;
+  game.breakdowns = isBreakdownSetting(data.game.breakdowns) ? data.game.breakdowns : 'normal';
   game.money = data.game.money;
   game.loan = data.game.loan;
   // Přepravený náklad starší uložení nezná nebo zná jen uhlí
@@ -337,15 +376,38 @@ export function restoreGame(data: SaveData): Game {
   game.clock.dayProgress = data.clock.dayProgress;
   // Starší uložení nezná stáří vlaků; nejstarší možný je vlak koupený na začátku hry
   game.fleet.trains.push(
-    ...data.fleet.trains.map((t) => ({
-      ...t,
-      builtDay: t.builtDay ?? 0,
-      agingWarned: t.agingWarned ?? false,
-      renewing: t.renewing ?? false,
-      cargo: isCargo(t.cargo) ? t.cargo : ('passengers' as const),
-      fullLoad: Array.isArray(t.fullLoad) ? t.fullLoad.filter((id) => Number.isInteger(id)) : [],
-      orderGroup: Number.isInteger(t.orderGroup) ? t.orderGroup : null,
-    })),
+    ...data.fleet.trains.map((saved) => {
+      // Starší uložení mají místo voleb příkazů jen seznam zastávek s čekáním na plné naložení
+      const { fullLoad, ...t } = saved as Train & { fullLoad?: unknown };
+      const legacyFull = Array.isArray(fullLoad) ? fullLoad : [];
+      const savedFlags: unknown[] = Array.isArray(t.orderFlags) ? t.orderFlags : [];
+      const orderFlags: OrderFlags[] = (Array.isArray(t.orders) ? t.orders : []).map((id, i) => {
+        const flags = savedFlags[i];
+        if (isObject(flags)) return cleanFlags(flags as OrderFlags);
+        return legacyFull.includes(id) ? { load: 'full' } : {};
+      });
+      return {
+        ...t,
+        builtDay: t.builtDay ?? 0,
+        agingWarned: t.agingWarned ?? false,
+        renewing: t.renewing ?? false,
+        cargo: isCargo(t.cargo) ? t.cargo : ('passengers' as const),
+        orderFlags,
+        serviceUntil: Number.isFinite(t.serviceUntil) ? t.serviceUntil : undefined,
+        feeder: Number.isFinite(t.feeder) ? t.feeder : 0,
+        // Starší uložení údržbu neznají: vlak je jako po servisu
+        reliability: Number.isFinite(t.reliability) ? Math.min(1, Math.max(0, t.reliability)) : modelReliability(t),
+        lastService: Number.isFinite(t.lastService) ? t.lastService : data.clock.day,
+        serviceInterval: Number.isFinite(t.serviceInterval) ? t.serviceInterval : SERVICE_INTERVAL_DAYS,
+        brokenDays: Number.isFinite(t.brokenDays) ? Math.max(0, t.brokenDays) : 0,
+        breakdowns: Number.isInteger(t.breakdowns) ? t.breakdowns : 0,
+        servicing:
+          isObject(t.servicing) && Number.isInteger(t.servicing.depotId) && Number.isInteger(t.servicing.resume)
+            ? { depotId: t.servicing.depotId, resume: t.servicing.resume }
+            : undefined,
+        orderGroup: Number.isInteger(t.orderGroup) ? t.orderGroup : null,
+      };
+    }),
   );
   game.fleet.nextId = data.fleet.nextId;
   game.fleet.nextGroupId = Math.max(0, ...game.fleet.trains.map((t) => t.orderGroup ?? 0)) + 1;

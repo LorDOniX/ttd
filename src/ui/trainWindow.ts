@@ -1,10 +1,11 @@
-import { TRAIN_LIFETIME_YEARS } from '../game/balance';
+import { SERVICE_INTERVAL_STEP, TRAIN_LIFETIME_YEARS } from '../game/balance';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
 import {
   formatLoad,
   isOld,
   nextStop,
+  orderFlags,
   ordersError,
   sellPrice,
   trainAge,
@@ -23,16 +24,19 @@ import { h } from './dom';
 import type { WindowManager } from './windows';
 
 export function stateText(game: Game, train: Train): string {
-  const target = train.target === -1 ? 'depo' : train.orders ? game.fleet.stationName(train.orders[train.target]) : '';
+  if (train.brokenDays > 0)
+    return `Porucha – oprava ještě ${Math.ceil(train.brokenDays)} ${train.brokenDays > 1 ? 'dny' : 'den'}`;
+  if (train.servicing && train.state === 'running') return `Jede na servis: Depo ${train.servicing.depotId + 1}`;
+  const target = train.target === -1 ? 'depo' : train.orders ? game.fleet.orderName(train, train.target) : '';
   switch (train.state) {
     case 'depot':
-      return 'V depu';
+      return train.serviceUntil !== undefined ? 'Servis v depu' : 'V depu';
     case 'running':
       return game.fleet.isBlocked(train) ? `Čeká na volnou trať: ${target}` : `Jede: ${target}`;
     case 'loading':
       if (game.fleet.isFillingUp(train)) return `Nakládá do plna: ${formatLoad(train)}`;
       return `Ve stanici, další cíl: ${
-        train.target === -1 ? 'depo' : train.orders ? game.fleet.stationName(train.orders[nextStop(train)]) : ''
+        train.target === -1 ? 'depo' : train.orders ? game.fleet.orderName(train, nextStop(train)) : ''
       }`;
     case 'lost':
       return `Nemůže najít cestu: ${target}`;
@@ -124,18 +128,33 @@ function trainOrders(game: Game, train: Train, links: TrainLinks): OrdersSource 
     stopNoun: 'nástupiště',
     orders: () => train.orders ?? [],
     current: () => (train.state === 'depot' ? -1 : train.target),
-    fullLoad: (stationId) => train.fullLoad.includes(stationId),
+    fullLoad: (stationId) => fleet.waitsForFullLoad(train, stationId),
     stationName: (stationId) => fleet.stationName(stationId),
     stations: () => game.world.rail.stations.filter((s) => s.kind === undefined),
     accepts: (station) => (station.kind === undefined ? null : 'Vlak staví jen na železničních nástupištích.'),
     setOrders: (orders) => fleet.setOrders(train, orders),
+    flags: {
+      get: (index) => orderFlags(train, index),
+      set: (index, patch) => fleet.setOrderFlags(train, index, patch),
+      setOrders: (orders, flags) => fleet.setOrders(train, orders, flags),
+      depots: () => game.world.rail.depots.map((d) => ({ id: d.id, name: `Depo ${d.id + 1}` })),
+      depotName: (depotId) => `depa ${depotId + 1}`,
+      focusDepot: (depotId) => {
+        const depot = fleet.depotById(depotId);
+        if (depot) links.focus(depot.x + 0.5, depot.y + 0.5);
+      },
+    },
     toggleFullLoad: (stationId) => fleet.toggleFullLoad(train, stationId),
     canSkip: () => train.state !== 'depot' && !train.renewing,
     skipTo: (index) => fleet.skipTo(train, index),
-    problem: (orders) => ordersError(orders) ?? fleet.routeError(orders) ?? shortStationsWarning(game, train),
+    problem: (orders) =>
+      ordersError(orders, train.orderFlags) ??
+      fleet.routeError(orders, train.orderFlags) ??
+      shortStationsWarning(game, train),
     hint:
-      'Vlak objíždí zastávky dokola, na každé vyloží a naloží náklad. ' +
-      'Se zapnutým „Do plna“ na zastávce počká, dokud nenaloží všechny vagony u nástupiště.',
+      'Vlak objíždí příkazy dokola. U vybraného příkazu nastavíte nakládání (do plna, nenakládat), ' +
+      'vykládání (vyložit vše, překládka pro další vozidlo, nevykládat) nebo „Projet“ bez zastavení. ' +
+      '„Servis v depu“ přidá zajížďku do depa.',
     focusStation: (stationId) => {
       const station = game.world.rail.stations.find((s) => s.id === stationId);
       if (station) links.focus(station.x + 0.5, station.y + 0.5);
@@ -144,6 +163,35 @@ function trainOrders(game: Game, train: Train, links: TrainLinks): OrdersSource 
     subscribe: (refresh) => [game.events.on('trainsChanged', refresh), game.clock.events.on('day', refresh)],
     exists: () => fleet.trains.includes(train),
   };
+}
+
+// Interval servisu s tlačítky −/+ jako v okně podrobností vozidla v OpenTTD
+function serviceRow(game: Game, train: Train): HTMLTableRowElement {
+  const step = (delta: number, label: string, title: string): HTMLButtonElement => {
+    const b = h('button', { className: 'small-button', title }, label);
+    b.addEventListener('click', (e) =>
+      game.fleet.setServiceInterval(train, train.serviceInterval + delta * (e.shiftKey ? 5 : 1)),
+    );
+    return b;
+  };
+  const off = game.breakdowns === 'none';
+  return h(
+    'tr',
+    {},
+    h('td', {}, 'Servis'),
+    h(
+      'td',
+      { className: 'num' },
+      h(
+        'span',
+        { className: 'service-interval' },
+        step(-SERVICE_INTERVAL_STEP, '−', 'Častěji (Shift po 50 dnech)'),
+        ` každých ${train.serviceInterval} dní `,
+        step(SERVICE_INTERVAL_STEP, '+', 'Méně často (Shift po 50 dnech)'),
+      ),
+      off ? h('div', { className: 'form__hint' }, 'Poruchy jsou vypnuté, vlak na servis nejezdí.') : '',
+    ),
+  );
 }
 
 // Podrobnosti vlaku: model, stáří, hospodaření, obnova
@@ -171,6 +219,17 @@ function trainDetails(game: Game, train: Train, links: TrainLinks): HTMLElement 
       `${formatYears(trainAge(train, today))} z ${TRAIN_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
       old ? 'num warning' : 'num',
     ),
+    row(
+      'Spolehlivost',
+      `${Math.round(train.reliability * 100)} % (max ${Math.round(model.reliability * 100)} %)`,
+      train.reliability < model.reliability - 0.25 ? 'num warning' : 'num',
+    ),
+    row(
+      'Poslední servis',
+      `před ${Math.max(0, Math.floor(game.clock.now - train.lastService))} dny · poruch od něj ${train.breakdowns}`,
+      'num',
+    ),
+    serviceRow(game, train),
     row('Provoz ročně', formatMoney(0 - yearlyRunningCost(train, today)), 'num'),
     row('Příjmy letos', formatMoney(train.income), 'num'),
     row('Provoz letos', formatMoney(0 - train.costs), 'num'),

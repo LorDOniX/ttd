@@ -1,5 +1,12 @@
 import { STATION_LENGTH, type AirportType } from '../game/balance';
-import { emptyFreight, newRatings, type Cargo, type CargoRating, type FreightStock } from '../game/cargo';
+import {
+  emptyFreight,
+  newRatings,
+  type Cargo,
+  type CargoRating,
+  type FreightStock,
+  type Transfers,
+} from '../game/cargo';
 import { GameMap, TileType, type TilePos } from './map';
 
 export enum Edge {
@@ -91,6 +98,8 @@ export interface Station extends StationShape {
   freight: FreightStock;
   // Hodnocení zvlášť pro každý druh nákladu jako v OpenTTD
   ratings: Record<Cargo, CargoRating>;
+  // Náklad z překládek, který čeká na další vozidlo (starší uložení ho nemají)
+  transfers?: Transfers;
   // Zastávka aut na silnici nebo letiště; bez údaje železniční nástupiště
   kind?: 'road' | 'air' | 'water';
   // Velikost letiště (jen u kind 'air')
@@ -138,6 +147,8 @@ export class RailNetwork {
   readonly roadDepots: Depot[] = [];
   // Dlaždice s návěstidlem (index y * šířka + x); dělí trať na úseky, před kterými vlak smí čekat
   readonly signals = new Set<number>();
+  // Jednosměrná návěstidla: dlaždice → hrana, kterou vlak smí dlaždici opustit; bez záznamu obousměrné
+  readonly signalDirs = new Map<number, Edge>();
   // Id se nerecyklují, aby odkazy (např. trasy vlaků) po demolici neukazovaly jinam
   nextStationId = 0;
   nextDepotId = 0;
@@ -189,11 +200,20 @@ export class RailNetwork {
     if (type === TileType.Water) this.map.set(x, y, TileType.Bridge);
   }
 
+  // Odebere jeden kus koleje; bez posledního kusu se z dlaždice stane zase tráva, silnice nebo voda
+  removePiece(x: number, y: number, piece: number): void {
+    const i = y * this.map.width + x;
+    this.pieces[i] &= ~(1 << piece);
+    this.revision++;
+    if (this.pieces[i] === 0) this.removeTrack(x, y);
+  }
+
   // Odebere všechny kusy koleje z dlaždice
   removeTrack(x: number, y: number): void {
     this.pieces[y * this.map.width + x] = 0;
     this.revision++;
     this.signals.delete(y * this.map.width + x);
+    this.signalDirs.delete(y * this.map.width + x);
     const type = this.map.get(x, y);
     if (type === TileType.Rail) this.map.set(x, y, TileType.Grass);
     if (type === TileType.Crossing) this.map.set(x, y, TileType.Road);
@@ -381,11 +401,34 @@ export class RailNetwork {
     return this.map.isType(x, y, TileType.Rail) && this.pieceCount(x, y) === 1 && !this.hasSignal(x, y);
   }
 
-  addSignal(x: number, y: number): void {
+  // dir = hrana, kterou smí vlak dlaždici opustit (jednosměrné návěstidlo), bez ní obousměrné
+  addSignal(x: number, y: number, dir?: Edge): void {
     this.signals.add(y * this.map.width + x);
+    this.setSignalDir(x, y, dir);
   }
 
   removeSignal(x: number, y: number): void {
     this.signals.delete(y * this.map.width + x);
+    this.signalDirs.delete(y * this.map.width + x);
+  }
+
+  signalDir(x: number, y: number): Edge | undefined {
+    return this.signalDirs.get(y * this.map.width + x);
+  }
+
+  setSignalDir(x: number, y: number, dir: Edge | undefined): void {
+    const i = y * this.map.width + x;
+    if (dir === undefined) this.signalDirs.delete(i);
+    else this.signalDirs.set(i, dir);
+    // Jednosměrka mění, kudy smějí vlaky jet
+    this.revision++;
+  }
+
+  // Smí vlak projet kusem koleje ven hranou exit? Jednosměrné návěstidlo pustí po svém kusu jen po směru
+  allowsExit(x: number, y: number, piece: number, exit: Edge): boolean {
+    const dir = this.signalDirs.get(y * this.map.width + x);
+    if (dir === undefined) return true;
+    const [a, b] = PIECES[piece];
+    return (a !== dir && b !== dir) || exit === dir;
   }
 }

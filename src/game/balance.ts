@@ -20,7 +20,7 @@ export const PLATFORM_TILE_COST = 25_000;
 export const STATION_LENGTH = 3;
 // Největší nástupiště postavené tažením
 export const MAX_STATION_LENGTH = 7;
-export const MAX_STATION_TRACKS = 4;
+export const MAX_STATION_TRACKS = 7;
 export const DEPOT_COST = 50_000;
 export const SIGNAL_COST = 5_000;
 export const ROAD_TILE_COST = 3_000;
@@ -44,6 +44,15 @@ export interface TrainModel {
   price: number;
   speed: number;
   runningCost: number;
+  // Nejvyšší spolehlivost (po servisu), 0–1; novější modely jsou spolehlivější
+  reliability: number;
+}
+
+// Převod rychlosti na km/h pro zobrazení: 0,0469 dlaždice/den na km/h jako u silničních vozidel
+export const TILES_PER_DAY_PER_KMH = 0.0469;
+
+export function speedKmh(tilesPerDay: number): number {
+  return Math.round(tilesPerDay / TILES_PER_DAY_PER_KMH);
 }
 
 export const TRAIN_MODELS: readonly TrainModel[] = [
@@ -56,6 +65,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     price: 250_000,
     speed: 3.0,
     runningCost: 30_000,
+    reliability: 0.78,
   },
   {
     id: 'steam-express',
@@ -66,6 +76,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     price: 300_000,
     speed: 3.6,
     runningCost: 37_500,
+    reliability: 0.8,
   },
   {
     id: 'diesel',
@@ -76,6 +87,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     price: 360_000,
     speed: 4.3,
     runningCost: 47_000,
+    reliability: 0.84,
   },
   {
     id: 'diesel-box',
@@ -86,6 +98,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     price: 432_000,
     speed: 5.2,
     runningCost: 59_000,
+    reliability: 0.86,
   },
   {
     id: 'electric',
@@ -96,6 +109,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     price: 518_000,
     speed: 6.2,
     runningCost: 73_000,
+    reliability: 0.89,
   },
   {
     id: 'electric-double',
@@ -106,6 +120,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     price: 622_000,
     speed: 7.5,
     runningCost: 92_000,
+    reliability: 0.91,
   },
   {
     id: 'electric-city',
@@ -116,6 +131,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     price: 746_000,
     speed: 9.0,
     runningCost: 114_000,
+    reliability: 0.93,
   },
   {
     id: 'bullet',
@@ -126,6 +142,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     price: 896_000,
     speed: 10.8,
     runningCost: 143_000,
+    reliability: 0.95,
   },
 ];
 
@@ -689,6 +706,26 @@ export const SHIP_MODELS: readonly ShipModel[] = [
 ];
 
 export const SHIP_LIFETIME_YEARS = 30;
+
+// Spolehlivost a poruchy (jako v OpenTTD): servis po intervalu vrátí spolehlivost na maximum modelu
+export const SERVICE_INTERVAL_DAYS = 150;
+export const MIN_SERVICE_INTERVAL_DAYS = 30;
+export const MAX_SERVICE_INTERVAL_DAYS = 800;
+export const SERVICE_INTERVAL_STEP = 10;
+// Úbytek spolehlivosti za den; za 150 dní bez servisu zhruba o 20 procentních bodů
+export const RELIABILITY_DECAY_PER_DAY = 0.0014;
+// Vozidlo po životnosti se opotřebovává rychleji
+export const OLD_VEHICLE_DECAY_FACTOR = 2;
+// Denní šance na poruchu = BREAKDOWN_RATE × (1 − spolehlivost)²; při spolehlivosti 75 % zhruba jednou za 200 dní
+export const BREAKDOWN_RATE = 0.08;
+export const REDUCED_BREAKDOWN_FACTOR = 0.4;
+// Jak dlouho porouchaný vlak stojí
+export const BREAKDOWN_DAYS = 4;
+// Nejdelší cesta k depu na automatický servis (dlaždice); dál vlak servis odloží
+export const SERVICE_MAX_ROUTE = 48;
+
+// Překládka: vozidlo, které náklad přeloží, dostane virtuálně tento podíl jízdného za svou část cesty
+export const FEEDER_SHARE = 0.75;
 
 export const WAGON_PRICE = 50_000;
 export const WAGON_CAPACITY = 30;

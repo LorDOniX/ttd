@@ -32,9 +32,12 @@ export function makeTown(id: number, x: number, y: number, population = 3000): T
   };
 }
 
+// Prázdná hra; poruchy jsou vypnuté, aby testy jiných věcí nezávisely na náhodě (testy poruch je zapnou)
 export function emptyGame(size = 64, towns: Town[] = []): Game {
   const map = new GameMap(size, size);
-  return new Game({ seed: 1, map, towns, rail: new RailNetwork(map), industries: [] });
+  const game = new Game({ seed: 1, map, towns, rail: new RailNetwork(map), industries: [] });
+  game.breakdowns = 'none';
+  return game;
 }
 
 // Závod 3×3 s levým horním rohem v (x, y); těžební vyrábí 120 t měsíčně

@@ -12,6 +12,7 @@ import {
   ROAD_STOP_COST,
   ROAD_TILE_COST,
   SIGNAL_COST,
+  STATION_LENGTH,
   TRACK_PIECE_COST,
   type AirportType,
 } from '../game/balance';
@@ -19,7 +20,15 @@ import { CARGOS } from '../game/cargo';
 import { roadPieceCost, stationCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoneyShort } from '../game/game';
 import { catchmentArea } from '../game/passengers';
-import { iconElement, industryIcon, sceneIcon, type SceneIcon } from '../render/icons';
+import {
+  depotIcon,
+  iconElement,
+  industryIcon,
+  sceneIcon,
+  signalIcon,
+  stationIcon,
+  type SceneIcon,
+} from '../render/icons';
 import type { BuildPreview } from '../render/preview';
 import { roadConnects } from '../render/roads';
 import { INDUSTRY_TYPES, industrySiteProblem, industryTiles, type IndustryKind } from '../world/industry';
@@ -28,16 +37,24 @@ import { portAt } from '../world/port';
 import { TileType, type TilePos } from '../world/map';
 import {
   EDGE_DELTA,
+  EDGE_MID,
   Edge,
   PIECES,
-  defaultStationShape,
-  isCorner,
   stationTiles,
   opposite,
   type Axis,
   type StationShape,
 } from '../world/rail';
-import { diagonalPath, findTrackPath, pieceAtCursor, singlePieceStep, type PathStep } from '../world/railPath';
+import {
+  autorailLine,
+  autorailPlan,
+  depotLinks,
+  pieceAtCursor,
+  removablePieceAt,
+  singlePieceStep,
+  withDepotLinks,
+  type AutorailPlan,
+} from '../world/railPath';
 import { findRoadPath, roadEdgeAtCursor, singleRoadSteps, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
 import type { WindowManager } from './windows';
@@ -69,6 +86,36 @@ export interface PointerTile extends TilePos {
   fy: number;
 }
 
+// Stav kláves Ctrl/Cmd (odebírání kolejí) a Shift (jen odhad ceny) jako v OpenTTD
+export interface Modifiers {
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+}
+
+// Nástroje s oknem voleb (orientace depa, rozměry nástupiště)
+type OptionTool = 'depot' | 'road-depot' | 'station' | 'signal';
+const OPTIONS_WINDOW = 'build-options';
+
+function optionTool(tool: BuildTool | null): tool is OptionTool {
+  return tool === 'depot' || tool === 'road-depot' || tool === 'station' || tool === 'signal';
+}
+
+const EDGE_NAMES = ['sever', 'východ', 'jih', 'západ'];
+
+function plural(n: number, one: string, few: string, many: string): string {
+  return n === 1 ? one : n >= 2 && n <= 4 ? few : many;
+}
+
+// Návěstidlo k postavení: dir = hrana výjezdu u jednosměrného
+interface SignalItem extends TilePos {
+  dir?: Edge;
+}
+
+// Hustota návěstidel při tažení (každých N dlaždic) jako v OpenTTD
+const MIN_SIGNAL_DENSITY = 1;
+const MAX_SIGNAL_DENSITY = 20;
+
 // Největší strana obdélníku pro demolici
 const MAX_DEMOLISH_SIZE = 64;
 
@@ -95,8 +142,32 @@ export class BuildTools {
   private entrance: Edge = Edge.E;
   // Upřednostněná strana přístavu k vodě (R)
   private dock: Edge = Edge.S;
+  // Depo (i garáž) se natočí samo ke kolejím/silnici; volbou orientace v okně se vypne
+  private depotAuto = true;
+  // Nástupiště: pevný rozměr z okna, nebo tažením (Drag & Drop)
+  private stationLength = STATION_LENGTH;
+  private stationTracks = 1;
+  private stationDrag = false;
+  // Návěstidla: jednosměrná a hustota při tažení
+  private signalOneWay = false;
+  private signalDensity = 4;
+  private showCoverage = true;
+  private removeMode = false;
+  private estimateMode = false;
+  // Tlačítka okna voleb a jejich stav (obnovuje se při každé změně)
+  private optionButtons: { el: HTMLButtonElement; active: () => boolean; disabled?: () => boolean }[] = [];
+  private optionInfo: HTMLElement | null = null;
+  private signalDensityValue: HTMLElement | null = null;
+  // Okno voleb se při přepnutí nástroje zavírá a otevírá znovu (kvůli titulku), nástroj přitom nevypne
+  private reopeningOptions = false;
+  private readonly onOptionsClose = (): void => {
+    this.optionButtons = [];
+    this.optionInfo = null;
+    this.signalDensityValue = null;
+    if (!this.reopeningOptions && optionTool(this.tool)) this.setTool(null);
+  };
   private dragStart: PointerTile | null = null;
-  private path: PathStep[] | null = null;
+  private path: AutorailPlan | null = null;
   private roadPath: RoadStep[] | null = null;
   private hover: PointerTile | null = null;
   private readonly tooltip = h('div', { className: 'tooltip' });
@@ -116,6 +187,23 @@ export class BuildTools {
     game.events.on('railChanged', () => {
       if (this.tool && !this.dragStart) this.refresh();
     });
+    const onKey = (e: KeyboardEvent): void => this.setModifiers(e);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    window.addEventListener('blur', () => this.setModifiers({ ctrlKey: false, metaKey: false, shiftKey: false }));
+  }
+
+  // Ctrl/Cmd přepne koleje na odebírání, Shift ukáže jen cenu; náhled se obnoví hned po stisku
+  setModifiers(mods: Modifiers): void {
+    const remove = mods.ctrlKey || mods.metaKey;
+    const estimate = mods.shiftKey;
+    if (remove === this.removeMode && estimate === this.estimateMode) return;
+    this.removeMode = remove;
+    this.estimateMode = estimate;
+    if (this.tool === 'track') {
+      if (this.dragStart) this.updatePath();
+      this.refresh();
+    }
   }
 
   openRailWindow(): void {
@@ -132,12 +220,12 @@ export class BuildTools {
         ],
         ['station', '🚉', 'Nástupiště', 'N', `${formatMoneyShort(PLATFORM_TILE_COST)} / dílek`],
         ['depot', '🏭', 'Depo', 'D', formatMoneyShort(DEPOT_COST)],
-        ['signal', '🚦', 'Návěstidlo', 'B', `${formatMoneyShort(SIGNAL_COST)}, znovu = odstranit`],
+        ['signal', '🚦', 'Návěstidla', 'B', `${formatMoneyShort(SIGNAL_COST)} / kus`],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
-      'Koleje a demolice: táhněte levým tlačítkem, kliknutím položíte jeden dílek koleje ' +
-        '(podle polohy kurzoru rovný nebo v rohu dlaždice zatáčku). Tažení z rohu dlaždice staví diagonálu. ' +
-        'Nástupiště: kliknutím 1×3, tažením větší. ' +
+      'Koleje (autorail jako v OpenTTD): kliknutím položíte dílek pod kurzorem (u rohu dlaždice zatáčku), ' +
+        'tažením rovný úsek nebo úhlopříčku podle směru tažení. Ctrl/Cmd odebírá koleje, Shift ukáže jen cenu. ' +
+        'Depo se samo napojí na kolej před vjezdem. Nástupiště: rozměr a orientace v okně, nebo Drag & Drop. ' +
         'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. R – otočit, Esc – zrušit nástroj.',
     );
   }
@@ -279,13 +367,237 @@ export class BuildTools {
   }
 
   setTool(tool: BuildTool | null): void {
+    const previous = this.tool;
     this.tool = tool;
     this.dragStart = null;
     this.path = null;
     this.roadPath = null;
+    if (optionTool(tool)) {
+      if (tool !== previous || !this.windows.isOpen(OPTIONS_WINDOW)) this.openOptions(tool);
+    } else if (this.windows.isOpen(OPTIONS_WINDOW)) {
+      this.windows.close(OPTIONS_WINDOW);
+    }
     this.renderButtons();
     this.refresh();
     this.onToolChange(tool);
+  }
+
+  // Okno voleb jako v OpenTTD: orientace depa, nebo orientace a rozměry nástupiště
+  private openOptions(tool: OptionTool): void {
+    const titles: Record<OptionTool, string> = {
+      station: 'Výběr nástupiště',
+      depot: 'Orientace depa',
+      'road-depot': 'Orientace garáže',
+      signal: 'Návěstidla',
+    };
+    const title = titles[tool];
+    if (this.windows.isOpen(OPTIONS_WINDOW)) {
+      this.reopeningOptions = true;
+      this.windows.close(OPTIONS_WINDOW);
+      this.reopeningOptions = false;
+    }
+    this.optionButtons = [];
+    this.optionInfo = null;
+    const content =
+      tool === 'station' ? this.stationOptions() : tool === 'signal' ? this.signalOptions() : this.depotOptions(tool);
+    this.windows.open(OPTIONS_WINDOW, title, content, { onClose: this.onOptionsClose });
+    this.renderButtons();
+  }
+
+  private optionButton(
+    content: (string | HTMLElement)[],
+    title: string,
+    onClick: () => void,
+    active: () => boolean,
+    className = 'option-button',
+    disabled?: () => boolean,
+  ): HTMLButtonElement {
+    const b = h('button', { className, title }, ...content);
+    b.addEventListener('click', () => {
+      onClick();
+      this.renderButtons();
+      this.refresh();
+    });
+    this.optionButtons.push({ el: b, active, disabled });
+    return b;
+  }
+
+  private depotOptions(tool: 'depot' | 'road-depot'): HTMLElement {
+    const what = tool === 'depot' ? 'depa' : 'garáže';
+    const grid = h('div', { className: 'option-grid option-grid--2' });
+    // Pořadí jako v OpenTTD: dva vjezdy nahoře, dva dole
+    for (const edge of [Edge.N, Edge.E, Edge.W, Edge.S]) {
+      grid.append(
+        this.optionButton(
+          [iconElement(depotIcon(tool, edge), '🏭', 'option-button__icon')],
+          `Vjezd ${what} na ${EDGE_NAMES[edge]}`,
+          () => {
+            this.entrance = edge;
+            this.depotAuto = false;
+          },
+          () => !this.depotAuto && this.entrance === edge,
+          'option-button option-button--image',
+        ),
+      );
+    }
+    const auto = this.optionButton(
+      ['Natočit automaticky'],
+      tool === 'depot' ? 'Vjezd ke kolejím na sousední dlaždici' : 'Vjezd k sousední silnici',
+      () => (this.depotAuto = !this.depotAuto),
+      () => this.depotAuto,
+    );
+    const hint = h(
+      'div',
+      { className: 'form__hint' },
+      tool === 'depot'
+        ? 'Když před vjezdem vede kolej kolmo, depo se na ni samo napojí výhybkami. R – otočit.'
+        : 'Garáž se staví vedle silnice vjezdem k ní. R – otočit.',
+    );
+    return h('div', { className: 'form build-options' }, grid, auto, hint);
+  }
+
+  // Okno návěstidel jako v OpenTTD: druh a hustota při tažení
+  private signalOptions(): HTMLElement {
+    const kinds = h(
+      'div',
+      { className: 'option-grid option-grid--2' },
+      this.optionButton(
+        [iconElement(signalIcon(false), '🚦', 'option-button__icon option-button__icon--small'), 'Obousměrné'],
+        'Cestové návěstidlo pro oba směry: vlak si před ním zarezervuje volnou cestu',
+        () => (this.signalOneWay = false),
+        () => !this.signalOneWay,
+        'option-button option-button--image option-button--column',
+      ),
+      this.optionButton(
+        [iconElement(signalIcon(true), '🚦', 'option-button__icon option-button__icon--small'), 'Jednosměrné'],
+        'Jednosměrné cestové návěstidlo: proti šipce vlak nikdy nepojede (dvoukolejné tratě)',
+        () => (this.signalOneWay = true),
+        () => this.signalOneWay,
+        'option-button option-button--image option-button--column',
+      ),
+    );
+    const value = h('strong', { className: 'option-value' }, String(this.signalDensity));
+    const density = h(
+      'div',
+      { className: 'option-stepper' },
+      h('span', {}, 'Hustota při tažení'),
+      this.optionButton(
+        ['−'],
+        'Řidší',
+        () => (this.signalDensity = Math.max(MIN_SIGNAL_DENSITY, this.signalDensity - 1)),
+        () => false,
+        'option-button option-button--number',
+      ),
+      value,
+      this.optionButton(
+        ['+'],
+        'Hustší',
+        () => (this.signalDensity = Math.min(MAX_SIGNAL_DENSITY, this.signalDensity + 1)),
+        () => false,
+        'option-button option-button--number',
+      ),
+      h('span', {}, 'dlaždic'),
+    );
+    this.signalDensityValue = value;
+    const hint = h(
+      'div',
+      { className: 'form__hint' },
+      'Klik na kolej postaví návěstidlo (jednosměrné ve směru ke kurzoru), klik na existující ho otočí ' +
+        '(obousměrné → jedním směrem → druhým). Tažením po trati postaví návěstidla po zvolené hustotě. ' +
+        'Ctrl/Cmd odstraní. Návěstidla dělí trať na úseky; před každým si vlak najde volnou cestu.',
+    );
+    return h(
+      'div',
+      { className: 'form build-options' },
+      h('div', { className: 'option-label' }, 'Druh'),
+      kinds,
+      density,
+      hint,
+    );
+  }
+
+  private stationOptions(): HTMLElement {
+    const section = (label: string): HTMLElement => h('div', { className: 'option-label' }, label);
+    const orient = h('div', { className: 'option-grid option-grid--2' });
+    for (const axis of ['x', 'y'] as Axis[]) {
+      orient.append(
+        this.optionButton(
+          [iconElement(stationIcon(axis), '🚉', 'option-button__icon')],
+          axis === 'x' ? 'Nástupiště podél osy X' : 'Nástupiště podél osy Y',
+          () => (this.axis = axis),
+          () => this.axis === axis,
+          'option-button option-button--image',
+        ),
+      );
+    }
+    const numbers = (max: number, get: () => number, set: (n: number) => void, title: string): HTMLElement => {
+      const row = h('div', { className: 'option-row' });
+      for (let n = 1; n <= max; n++) {
+        row.append(
+          this.optionButton(
+            [String(n)],
+            `${title} ${n}`,
+            () => {
+              set(n);
+              this.stationDrag = false;
+            },
+            () => !this.stationDrag && get() === n,
+            'option-button option-button--number',
+            () => this.stationDrag,
+          ),
+        );
+      }
+      return row;
+    };
+    const tracks = numbers(
+      MAX_STATION_TRACKS,
+      () => this.stationTracks,
+      (n) => (this.stationTracks = n),
+      'Počet kolejí',
+    );
+    const length = numbers(
+      MAX_STATION_LENGTH,
+      () => this.stationLength,
+      (n) => (this.stationLength = n),
+      'Délka nástupiště',
+    );
+    const drag = this.optionButton(
+      ['Drag & Drop'],
+      'Rozměr nástupiště určí tažení myší',
+      () => (this.stationDrag = !this.stationDrag),
+      () => this.stationDrag,
+    );
+    const coverage = h(
+      'div',
+      { className: 'option-grid option-grid--2' },
+      this.optionButton(
+        ['Vyp'],
+        'Nezobrazovat dosah',
+        () => (this.showCoverage = false),
+        () => !this.showCoverage,
+      ),
+      this.optionButton(
+        ['Zap'],
+        'Zobrazit dosah',
+        () => (this.showCoverage = true),
+        () => this.showCoverage,
+      ),
+    );
+    this.optionInfo = h('div', { className: 'option-info' });
+    return h(
+      'div',
+      { className: 'form build-options' },
+      section('Orientace'),
+      orient,
+      section('Počet kolejí'),
+      tracks,
+      section('Délka nástupiště'),
+      length,
+      drag,
+      section('Zobrazení dosahu'),
+      coverage,
+      this.optionInfo,
+    );
   }
 
   // Zkratka: nástroj zapne i se zavřeným oknem (otevře ho), opakovaně vypne
@@ -302,22 +614,37 @@ export class BuildTools {
 
   rotate(): void {
     if (this.tool === 'station' || airportTool(this.tool)) this.axis = this.axis === 'x' ? 'y' : 'x';
-    if (this.tool === 'depot' || this.tool === 'road-depot') this.entrance = (this.entrance + 1) % 4;
+    if (this.tool === 'depot' || this.tool === 'road-depot') {
+      // Otočení vychází z toho, jak je depo pod kurzorem právě natočené
+      if (this.hover)
+        this.entrance = this.tool === 'depot' ? this.depotEntrance(this.hover) : this.roadDepotEntrance(this.hover);
+      this.entrance = (this.entrance + 1) % 4;
+      this.depotAuto = false;
+    }
     if (this.tool === 'port') this.dock = (this.dock + 1) % 4;
     if (this.tool === 'industry') this.industryRotation = (this.industryRotation + 1) % 4;
+    this.renderButtons();
     this.refresh();
   }
 
-  pointerDown(tile: PointerTile | null): void {
+  pointerDown(tile: PointerTile | null, mods?: Modifiers): void {
+    if (mods) this.setModifiers(mods);
     if (!tile || !this.tool) return;
     this.hover = tile;
     if (this.tool === 'info') {
       this.onInspect(tile);
       return;
     }
-    if (this.tool === 'signal') {
-      this.report(this.game.construction.toggleSignal(tile.x, tile.y));
-    } else if (this.tool === 'track' || this.tool === 'road' || this.tool === 'demolish' || this.tool === 'station') {
+    if (this.tool === 'station' && !this.stationDrag) {
+      const shape = this.stationShape();
+      if (shape) this.report(this.game.construction.buildStation(shape));
+    } else if (
+      this.tool === 'track' ||
+      this.tool === 'road' ||
+      this.tool === 'demolish' ||
+      this.tool === 'station' ||
+      this.tool === 'signal'
+    ) {
       this.dragStart = tile;
       this.updatePath();
     } else if (this.tool === 'road-stop') {
@@ -339,7 +666,8 @@ export class BuildTools {
     this.refresh();
   }
 
-  pointerMove(tile: PointerTile | null, clientX: number, clientY: number): void {
+  pointerMove(tile: PointerTile | null, clientX: number, clientY: number, mods?: Modifiers): void {
+    if (mods) this.setModifiers(mods);
     this.tooltip.style.left = `${clientX + 16}px`;
     this.tooltip.style.top = `${clientY + 16}px`;
     const previous = this.hover;
@@ -348,13 +676,19 @@ export class BuildTools {
     // Na jedné dlaždici se u kolejí může změnit jen vybraný kus a u silnice hrana podle polohy kurzoru
     const cursorPart = (t: PointerTile): number | null =>
       this.tool === 'track' ? pieceAtCursor(t.fx, t.fy) : roadEdgeAtCursor(t.fx, t.fy);
+    // U návěstidla rozhoduje poloha kurzoru o směru jednosměrky
+    if (this.tool === 'signal' && (this.dragStart || this.signalOneWay)) {
+      if (this.dragStart) this.updatePath();
+      this.refresh();
+      return;
+    }
     const samePiece =
       (this.tool !== 'track' && this.tool !== 'road') ||
       !tile ||
       !previous ||
       cursorPart(tile) === cursorPart(previous);
-    // Délka diagonály se mění i uvnitř dlaždice, podle průmětu kurzoru na ni
-    if (sameTile && samePiece && !this.draggingDiagonal()) return;
+    // Délka úhlopříčky se při tažení mění i uvnitř dlaždice, podle průmětu kurzoru na ni
+    if (sameTile && samePiece && !(this.tool === 'track' && this.dragStart)) return;
     if (this.dragStart) this.updatePath();
     this.refresh();
   }
@@ -362,8 +696,13 @@ export class BuildTools {
   pointerUp(): void {
     if (!this.dragStart) return;
     const { construction } = this.game;
-    if (this.tool === 'track' && this.path) construction.buildTrack(this.path);
+    if (this.tool === 'track' && this.path && !this.estimateMode) {
+      if (this.removeMode) this.report(construction.removeTrack(this.path.steps));
+      else if (this.path.steps.some((s) => s.isNew)) construction.buildTrack(this.path.steps);
+      else if (this.path.blocked.length > 0) this.report('Sem kolej položit nelze.');
+    }
     if (this.tool === 'road' && this.roadPath) construction.buildRoad(this.roadPath);
+    if (this.tool === 'signal') this.applySignals();
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
     if (this.tool === 'station') {
       const shape = this.stationShape();
@@ -402,23 +741,94 @@ export class BuildTools {
     return `${n} ${pieces}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoneyShort(cost)}`;
   }
 
-  private draggingDiagonal(): boolean {
-    return (
-      this.tool === 'track' && this.dragStart !== null && isCorner(pieceAtCursor(this.dragStart.fx, this.dragStart.fy))
-    );
+  // Jediný kus koleje na dlaždici, kam jde návěstidlo, nebo -1
+  private signalPiece(x: number, y: number): number {
+    const { rail, map } = this.game.world;
+    if (!map.isType(x, y, TileType.Rail) || rail.pieceCount(x, y) !== 1) return -1;
+    return PIECES.findIndex((_, p) => rail.has(x, y, p));
   }
 
-  // Tažení z rohu dlaždice staví diagonálu, jinak trasu mezi dlaždicemi;
-  // tažení na stejné dlaždici (nebo klik) staví jediný kus podle polohy kurzoru
-  private trackPath(start: PointerTile, target: PointerTile): PathStep[] | null {
-    const { rail } = this.game.world;
-    if (this.draggingDiagonal()) {
-      const diagonal = diagonalPath(rail, start, target);
-      if (!diagonal || diagonal.length > 1) return diagonal;
+  // Návěstidla, kterých se týká kliknutí nebo tažení: jedno pod kurzorem, nebo podél tažené přímky po hustotě
+  private signalPlan(): { items: SignalItem[]; single: boolean } {
+    const start = this.dragStart ?? this.hover;
+    const end = this.hover ?? start;
+    if (!start || !end) return { items: [], single: true };
+    if (start.x === end.x && start.y === end.y) {
+      const piece = this.signalPiece(end.x, end.y);
+      if (piece < 0 || !this.signalOneWay) return { items: [{ x: end.x, y: end.y }], single: true };
+      // Jednosměrné míří k té hraně kusu, ke které je kurzor blíž
+      const [a, b] = PIECES[piece];
+      const dist = (e: Edge): number => Math.hypot(EDGE_MID[e][0] - end.fx, EDGE_MID[e][1] - end.fy);
+      return { items: [{ x: end.x, y: end.y, dir: dist(a) <= dist(b) ? a : b }], single: true };
     }
-    if (start.x !== target.x || start.y !== target.y) return findTrackPath(rail, start, target);
-    const step = this.hover && singlePieceStep(rail, start, this.hover.fx, this.hover.fy);
-    return step ? [step] : null;
+    const line = autorailLine(start, end);
+    const items: SignalItem[] = [];
+    line.forEach((p, i) => {
+      if (i % this.signalDensity !== 0) return;
+      const piece = this.signalPiece(p.x, p.y);
+      if (piece < 0 && !this.removeMode) return;
+      if (this.removeMode) {
+        items.push({ x: p.x, y: p.y });
+        return;
+      }
+      // Směr tažení: hrana kusu k další dlaždici přímky (u poslední pryč od předchozí)
+      const [a, b] = PIECES[piece];
+      const toward = (q: TilePos | undefined): Edge | undefined =>
+        q ? [a, b].find((e) => p.x + EDGE_DELTA[e][0] === q.x && p.y + EDGE_DELTA[e][1] === q.y) : undefined;
+      let dir = toward(line[i + 1]);
+      if (dir === undefined) {
+        const back = toward(line[i - 1]);
+        dir = back === undefined ? undefined : back === a ? b : a;
+      }
+      items.push({ x: p.x, y: p.y, dir: this.signalOneWay ? dir : undefined });
+    });
+    // Odstraňuje se každé návěstidlo na přímce, ne jen po hustotě
+    if (this.removeMode) {
+      return { items: line.filter((p) => this.game.world.rail.hasSignal(p.x, p.y)), single: false };
+    }
+    return { items, single: false };
+  }
+
+  private applySignals(): void {
+    const { construction } = this.game;
+    const { rail } = this.game.world;
+    const { items, single } = this.signalPlan();
+    if (this.estimateMode || items.length === 0) return;
+    if (single) {
+      const { x, y } = items[0];
+      if (rail.hasSignal(x, y)) {
+        this.report(this.removeMode ? construction.removeSignal(x, y) : construction.cycleSignal(x, y));
+      } else if (!this.removeMode) {
+        this.report(construction.buildSignals(items));
+      }
+      return;
+    }
+    if (this.removeMode) {
+      for (const s of items) construction.removeSignal(s.x, s.y);
+      return;
+    }
+    this.report(construction.buildSignals(items));
+  }
+
+  // Autorail: kliknutí (tažení na stejné dlaždici) staví kus pod kurzorem, tažení přímku nebo úhlopříčku;
+  // s Ctrl/Cmd totéž odebírá
+  private trackPath(start: PointerTile, target: PointerTile): AutorailPlan | null {
+    const { rail } = this.game.world;
+    if (start.x !== target.x || start.y !== target.y) {
+      const plan = autorailPlan(rail, start, target, this.removeMode ? 'remove' : 'build');
+      return plan.steps.length > 0 || plan.blocked.length > 0 ? plan : null;
+    }
+    return this.singleTrack(target);
+  }
+
+  private singleTrack(tile: PointerTile): AutorailPlan | null {
+    const { rail } = this.game.world;
+    if (this.removeMode) {
+      const step = removablePieceAt(rail, tile);
+      return step ? { steps: [step], blocked: [] } : null;
+    }
+    const step = singlePieceStep(rail, tile, tile.fx, tile.fy);
+    return step ? { steps: withDepotLinks(rail, [step]), blocked: [] } : null;
   }
 
   // Obdélník mezi začátkem tažení a kurzorem, bez tažení jen dlaždice pod kurzorem
@@ -435,17 +845,18 @@ export class BuildTools {
     return tiles;
   }
 
-  // Bez tažení výchozí 1×3 pod kurzorem; tažením obdélník, delší strana určí směr kolejí
+  // Pevný rozměr z okna se středem pod kurzorem; v Drag & Drop obdélník tažení, orientace z okna
   private stationShape(): StationShape | null {
-    const start = this.dragStart;
-    const end = this.hover ?? start;
-    if (!start || !end || (start.x === end.x && start.y === end.y)) {
-      const tile = end ?? this.hover;
-      return tile ? defaultStationShape(tile.x, tile.y, this.axis) : null;
+    const tile = this.hover ?? this.dragStart;
+    if (!tile) return null;
+    if (!this.stationDrag) {
+      return { x: tile.x, y: tile.y, axis: this.axis, length: this.stationLength, tracks: this.stationTracks };
     }
+    const start = this.dragStart ?? tile;
+    const end = tile;
+    const axis = this.axis;
     const sizeX = Math.abs(end.x - start.x) + 1;
     const sizeY = Math.abs(end.y - start.y) + 1;
-    const axis: Axis = sizeX > sizeY ? 'x' : sizeY > sizeX ? 'y' : this.axis;
     const length = Math.min(axis === 'x' ? sizeX : sizeY, MAX_STATION_LENGTH);
     const tracks = Math.min(axis === 'x' ? sizeY : sizeX, MAX_STATION_TRACKS);
     const [w, hgt] = axis === 'x' ? [length, tracks] : [tracks, length];
@@ -458,23 +869,33 @@ export class BuildTools {
       : { x: x0 + across, y: y0 + along, axis, length, tracks };
   }
 
-  // Depo se natočí vjezdem ke kolejím na sousední dlaždici, jinak podle R
+  // Automaticky se depo natočí vjezdem ke kolejím: nejdřív ke koleji, která k němu už vede,
+  // pak ke koleji vedoucí kolmo (napojí se výhybkami); při shodě rozhodne naposledy zvolený směr
   private depotEntrance(tile: TilePos): Edge {
+    if (!this.depotAuto) return this.entrance;
     const { rail } = this.game.world;
-    for (let edge = 0; edge < 4; edge++) {
+    let best = this.entrance;
+    let bestScore = 0;
+    for (let i = 0; i < 4; i++) {
+      const edge = ((this.entrance + i) % 4) as Edge;
       const [dx, dy] = EDGE_DELTA[edge];
       const back = opposite(edge);
-      const connects = PIECES.some(
+      const direct = PIECES.some(
         ([a, b], piece) => (a === back || b === back) && rail.has(tile.x + dx, tile.y + dy, piece),
       );
-      if (connects) return edge;
+      const score = direct ? 2 : depotLinks(rail, tile.x, tile.y, edge).length > 0 ? 1 : 0;
+      if (score > bestScore) {
+        best = edge;
+        bestScore = score;
+      }
     }
-    return this.entrance;
+    return best;
   }
 
   // Garáž se natočí vjezdem k sousední silnici; u více silnic rozhodne R, bez silnice jen R
   private roadDepotEntrance(tile: TilePos): Edge {
     const { map } = this.game.world;
+    if (!this.depotAuto) return this.entrance;
     const roads = [0, 1, 2, 3].filter((edge) =>
       map.isType(tile.x + EDGE_DELTA[edge][0], tile.y + EDGE_DELTA[edge][1], TileType.Road),
     );
@@ -498,7 +919,28 @@ export class BuildTools {
     return parts.length > 0 ? parts.join(' · ') : 'mimo dosah města a průmyslu';
   }
 
+  // Přijímá / dodává do okna nástupiště jako v OpenTTD
+  private stationInfo(shape: StationShape | null): void {
+    if (!this.optionInfo) return;
+    if (!shape) {
+      this.optionInfo.replaceChildren();
+      return;
+    }
+    const { passengers, freight } = this.game;
+    const { shares, buildings } = passengers.coverage(shape);
+    const accepts = [
+      ...(buildings > 0 ? ['cestující'] : []),
+      ...freight.acceptedIn(shape, buildings).map((t) => CARGOS[t].noun),
+    ];
+    const supplies = [...(shares.size > 0 ? ['cestující'] : []), ...freight.produced(shape).map((t) => CARGOS[t].noun)];
+    this.optionInfo.replaceChildren(
+      h('div', {}, 'Přijímá: ', h('b', {}, accepts.join(', ') || 'nic')),
+      h('div', {}, 'Dodává: ', h('b', {}, supplies.join(', ') || 'nic')),
+    );
+  }
+
   private showCatchment(shape: StationShape): void {
+    if (!this.showCoverage) return;
     const { map } = this.game.world;
     const { x0, y0, x1, y1 } = catchmentArea(shape);
     const tiles: TilePos[] = [];
@@ -512,22 +954,85 @@ export class BuildTools {
     for (const buttons of this.buttons.values()) {
       for (const [tool, b] of buttons) b.classList.toggle('build-tool--active', tool === this.tool);
     }
+    if (this.signalDensityValue) this.signalDensityValue.textContent = String(this.signalDensity);
+    for (const { el, active, disabled } of this.optionButtons) {
+      el.classList.toggle('option-button--active', active());
+      el.classList.toggle('option-button--disabled', disabled?.() ?? false);
+    }
     for (const [kind, b] of this.industryButtons ?? []) {
       b.classList.toggle('build-tool--active', this.tool === 'industry' && kind === this.industryKind);
     }
   }
 
-  // Náhled kolejí, vrací text s počtem nových dílků a cenou
-  private showTrack(path: PathStep[]): string {
+  // Náhled kolejí, vrací text s počtem dílků a cenou (při odebírání s vrácenou částkou)
+  private showTrack(plan: AutorailPlan): string {
     const { map } = this.game.world;
-    const fresh = path.filter((s) => s.isNew);
+    const prefix = this.estimateMode ? 'Odhad: ' : '';
+    if (this.removeMode) {
+      const n = plan.steps.length;
+      this.preview.showTrackRemoval(plan.steps);
+      if (n === 0) return 'Není co odebrat';
+      const refund = this.game.construction.trackRemovalRefund(plan.steps);
+      return `${prefix}Odebrat ${n} ${plural(n, 'dílek', 'dílky', 'dílků')} · vrátí ${formatMoneyShort(refund)}`;
+    }
+    const fresh = plan.steps.filter((s) => s.isNew);
     const cost = fresh.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y), 0);
     const bridges = fresh.filter((s) => map.get(s.x, s.y) === TileType.Water).length;
-    this.preview.showTrack(path, cost <= this.game.money);
-    if (fresh.length === 0) return 'Kolej už je postavená';
+    this.preview.showTrack(plan.steps, cost <= this.game.money, plan.blocked);
+    const blocked = plan.blocked.length > 0 ? ' · dál překážka' : '';
+    if (fresh.length === 0)
+      return plan.steps.length > 0 ? `Kolej už je postavená${blocked}` : 'Sem kolej položit nelze';
     const n = fresh.length;
-    const pieces = n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků';
-    return `${n} ${pieces}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoneyShort(cost)}`;
+    return `${prefix}${n} ${plural(n, 'dílek', 'dílky', 'dílků')}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoneyShort(cost)}${blocked}`;
+  }
+
+  // Náhled návěstidel; vrací text pro popisek u kurzoru
+  private showSignals(): string {
+    const { rail } = this.game.world;
+    const { items, single } = this.signalPlan();
+    const prefix = this.estimateMode ? 'Odhad: ' : '';
+    const kind = this.signalOneWay ? 'jednosměrné' : 'obousměrné';
+    if (single && items.length === 1) {
+      const { x, y } = items[0];
+      if (rail.hasSignal(x, y)) {
+        if (this.removeMode) {
+          this.preview.showArea([items[0]], 'demolish');
+          return `${prefix}Odstranit návěstidlo · vrátí ${formatMoneyShort(SIGNAL_COST * DEMOLISH_REFUND)}`;
+        }
+        const piece = this.signalPiece(x, y);
+        const dir = rail.signalDir(x, y);
+        const next =
+          piece < 0
+            ? undefined
+            : dir === undefined
+              ? PIECES[piece][1]
+              : dir === PIECES[piece][1]
+                ? PIECES[piece][0]
+                : undefined;
+        this.preview.showSignals([{ x, y, dir: next }], rail, 'valid');
+        return `Kliknutím otočit na ${next === undefined ? 'obousměrné' : 'jednosměrné'} · Ctrl/Cmd odstraní`;
+      }
+      if (this.removeMode) return 'Tady žádné návěstidlo není';
+      if (!rail.canPlaceSignal(x, y)) {
+        this.preview.showArea([items[0]], 'invalid');
+        return 'Návěstidlo jen na kolej bez výhybky';
+      }
+      this.preview.showSignals(items, rail, this.game.money >= SIGNAL_COST ? 'valid' : 'invalid');
+      return `${prefix}Návěstidlo ${kind} · ${formatMoneyShort(SIGNAL_COST)}`;
+    }
+    if (this.removeMode) {
+      this.preview.showArea(items, 'demolish');
+      const n = items.length;
+      return n === 0
+        ? 'Na přímce žádné návěstidlo není'
+        : `${prefix}Odstranit ${n} ${n === 1 ? 'návěstidlo' : n <= 4 ? 'návěstidla' : 'návěstidel'} · vrátí ${formatMoneyShort(n * SIGNAL_COST * DEMOLISH_REFUND)}`;
+    }
+    const placeable = items.filter((s) => rail.canPlaceSignal(s.x, s.y));
+    const cost = placeable.length * SIGNAL_COST;
+    this.preview.showSignals(placeable, rail, cost <= this.game.money ? 'valid' : 'invalid');
+    const n = placeable.length;
+    if (n === 0) return 'Tažením po koleji bez výhybek postavíte návěstidla';
+    return `${prefix}${n} ${n === 1 ? 'návěstidlo' : n <= 4 ? 'návěstidla' : 'návěstidel'} ${kind} (každých ${this.signalDensity}) · ${formatMoneyShort(cost)}`;
   }
 
   private refresh(): void {
@@ -536,29 +1041,34 @@ export class BuildTools {
     let text = '';
     this.preview.clear();
 
-    if (this.tool === 'track' && this.dragStart) {
-      if (this.path) text = this.showTrack(this.path);
-      else if (tile && (tile.x !== this.dragStart.x || tile.y !== this.dragStart.y)) text = 'Trasu nelze vést';
-      else text = 'Sem kolej položit nelze';
-    } else if (this.tool === 'track' && tile) {
-      // Bez tažení náhled kusu, který postaví kliknutí
-      const step = singlePieceStep(rail, tile, tile.fx, tile.fy);
-      text = step ? this.showTrack([step]) : 'Sem kolej položit nelze';
+    if (this.tool === 'track' && (this.dragStart || tile)) {
+      // Bez tažení náhled kusu, který postaví (nebo s Ctrl odebere) kliknutí
+      const plan = this.dragStart ? this.path : tile && this.singleTrack(tile);
+      if (plan) text = this.showTrack(plan);
+      else text = this.removeMode ? 'Není co odebrat' : 'Sem kolej položit nelze';
     } else if (this.tool === 'station' && tile) {
       const shape = this.stationShape();
+      this.stationInfo(shape);
       if (shape) {
         const ok = rail.canPlaceStation(shape);
         const cost = stationCost(shape);
         this.preview.showStation(shape, ok && this.game.money >= cost);
         this.showCatchment(shape);
+        const size =
+          `${shape.tracks} ${plural(shape.tracks, 'kolej', 'koleje', 'kolejí')} × ` +
+          `${shape.length} ${plural(shape.length, 'dílek', 'dílky', 'dílků')}`;
         text = ok
-          ? `Nástupiště ${shape.tracks}×${shape.length} · ${formatMoneyShort(cost)} · ${this.reachText(shape)}`
-          : 'Sem nástupiště postavit nelze';
+          ? `Nástupiště ${size} · ${formatMoneyShort(cost)} · ${this.reachText(shape)}`
+          : `Nástupiště ${size} – sem postavit nelze`;
       }
     } else if (this.tool === 'depot' && tile) {
       const ok = rail.canPlaceDepot(tile.x, tile.y);
-      this.preview.showDepot(tile.x, tile.y, this.depotEntrance(tile), ok && this.game.money >= DEPOT_COST);
-      text = ok ? formatMoneyShort(DEPOT_COST) : 'Sem depo postavit nelze';
+      const entrance = this.depotEntrance(tile);
+      const { cost, links } = this.game.construction.depotCost(tile.x, tile.y, entrance);
+      this.preview.showDepot(tile.x, tile.y, entrance, ok && this.game.money >= cost, ok ? links : []);
+      text = ok
+        ? `Depo · ${formatMoneyShort(cost)}${links.length > 0 ? ' · napojí se na kolej' : ''}`
+        : 'Sem depo postavit nelze';
     } else if (this.tool === 'port' && tile) {
       const shape = portAt(this.game.world.map, tile, this.dock, (x, y) => rail.isBerth(x, y));
       if (shape) {
@@ -619,17 +1129,7 @@ export class BuildTools {
         text = `${station.name} – dosah nástupiště`;
       }
     } else if (this.tool === 'signal' && tile) {
-      const { x, y } = tile;
-      if (rail.hasSignal(x, y)) {
-        this.preview.showArea([tile], 'demolish');
-        text = `Odstranit návěstidlo · vrátí ${formatMoneyShort(SIGNAL_COST * DEMOLISH_REFUND)}`;
-      } else if (rail.canPlaceSignal(x, y)) {
-        this.preview.showArea([tile], this.game.money >= SIGNAL_COST ? 'valid' : 'invalid');
-        text = `Návěstidlo · ${formatMoneyShort(SIGNAL_COST)}`;
-      } else {
-        this.preview.showArea([tile], 'invalid');
-        text = 'Návěstidlo jen na rovnou kolej bez výhybky';
-      }
+      text = this.showSignals();
     } else if (this.tool === 'industry' && tile) {
       const { map, towns, industries } = this.game.world;
       const site = industrySite(tile);

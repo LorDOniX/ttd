@@ -173,6 +173,107 @@ export interface Carrier {
   boardedAt: number;
   tiles: number;
   income: number;
+  // Virtuální příjem z překládek, který náklad na palubě nese (při doručení se odečte od příjmu vozidla)
+  feeder?: number;
+}
+
+// Volby vykládky a nakládky z příkazu jízdního řádu (jako v OpenTTD)
+export interface ExchangeOptions {
+  // Vyložit vše (i kde se náklad nevykupuje – zůstane na stanici), překládka, nevykládat
+  unload?: 'unload' | 'transfer' | 'none';
+  // Nenakládat
+  load?: 'none';
+}
+
+// Náklad přeložený na stanici: čeká na další vozidlo i se svou historií (stáří, ujeté dlaždice, podíl)
+export interface TransferPacket {
+  amount: number;
+  boardedAt: number;
+  tiles: number;
+  feeder: number;
+}
+
+export type Transfers = Partial<Record<Cargo, TransferPacket[]>>;
+
+// Stanice s překládkou (všechny druhy stanic)
+interface TransferStation {
+  transfers?: Transfers;
+}
+
+// Kolik nákladu daného druhu čeká na stanici z překládky
+export function transferWaiting(station: TransferStation, cargo: Cargo): number {
+  return (station.transfers?.[cargo] ?? []).reduce((sum, p) => sum + p.amount, 0);
+}
+
+// Část virtuálního příjmu z překládek, kterou si odnáší amount jednotek nákladu na palubě
+export function feederShare(carrier: Carrier, amount: number): number {
+  const feeder = carrier.feeder ?? 0;
+  if (feeder <= 0 || carrier.passengers <= 0) return 0;
+  return (feeder * Math.min(amount, carrier.passengers)) / carrier.passengers;
+}
+
+// Překládka: náklad zůstane na stanici i s historií; vozidlo dostane virtuální podíl jízdného (credit),
+// skutečné peníze přijdou až při doručení
+export function transferOut(
+  carrier: Carrier,
+  station: TransferStation,
+  cargo: Cargo,
+  amount: number,
+  credit: number,
+): void {
+  if (amount <= 0) return;
+  const share = feederShare(carrier, amount);
+  const transfers = (station.transfers ??= {});
+  const list = (transfers[cargo] ??= []);
+  list.push({ amount, boardedAt: carrier.boardedAt, tiles: carrier.tiles, feeder: share + credit });
+  carrier.feeder = Math.max(0, (carrier.feeder ?? 0) - share);
+  carrier.passengers -= amount;
+  carrier.income += credit;
+}
+
+// Přidá náklad na palubu; stáří a ujeté dlaždice se průměrují podle množství
+function merge(carrier: Carrier, amount: number, boardedAt: number, tiles: number): void {
+  const total = carrier.passengers + amount;
+  carrier.boardedAt = (carrier.passengers * carrier.boardedAt + amount * boardedAt) / total;
+  carrier.tiles = Math.round((carrier.passengers * carrier.tiles + amount * tiles) / total);
+  carrier.passengers = total;
+}
+
+// Naloží nejdřív náklad z překládky (i s jeho historií), pak nový ze stanice (nejvýš fresh jednotek).
+// Vrací počet naložených jednotek z překládky a nových.
+export function loadCargo(
+  carrier: Carrier,
+  station: TransferStation & { id: number },
+  cargo: Cargo,
+  room: number,
+  fresh: number,
+  now: number,
+): { transferred: number; fresh: number } {
+  if (carrier.passengers <= 0) {
+    carrier.passengers = 0;
+    carrier.boardedAt = now;
+    carrier.tiles = 0;
+    carrier.feeder = 0;
+  }
+  let left = Math.max(0, room);
+  let transferred = 0;
+  const list = station.transfers?.[cargo];
+  while (list && list.length > 0 && left > 0) {
+    const packet = list[0];
+    const n = Math.min(left, packet.amount);
+    const part = (packet.feeder * n) / packet.amount;
+    merge(carrier, n, packet.boardedAt, packet.tiles);
+    carrier.feeder = (carrier.feeder ?? 0) + part;
+    packet.feeder -= part;
+    packet.amount -= n;
+    left -= n;
+    transferred += n;
+    if (packet.amount <= 0) list.shift();
+  }
+  const boarding = Math.max(0, Math.min(left, Math.floor(fresh)));
+  if (boarding > 0) merge(carrier, boarding, now, 0);
+  if (transferred + boarding > 0 || carrier.passengers === 0) carrier.boardedStation = station.id;
+  return { transferred, fresh: boarding };
 }
 
 // Místo u nástupiště (vagony mimo něj nenakládají), celková kapacita a rychlost pro hodnocení stanice

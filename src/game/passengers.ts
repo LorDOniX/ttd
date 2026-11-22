@@ -1,11 +1,20 @@
 import {
   FARE_TIERS,
+  FEEDER_SHARE,
   PASSENGERS_BOOSTED_RESIDENTS,
   PASSENGERS_MAX_WAITING_MONTHS,
   PASSENGERS_MONTHLY_SHARE,
   STATION_CATCHMENT_RADIUS,
 } from './balance';
-import { CARGO_TYPES, type Carrier, type Hold } from './cargo';
+import {
+  CARGO_TYPES,
+  feederShare,
+  loadCargo,
+  transferOut,
+  type Carrier,
+  type ExchangeOptions,
+  type Hold,
+} from './cargo';
 import { formatMoney, type Game } from './game';
 import { inflowFactor, leaveShare, recordVisit, updateRating } from './rating';
 import { TileType } from '../world/map';
@@ -146,47 +155,56 @@ export class Passengers {
     return this.monthlyPassengers(station) * inflowFactor(station.ratings.passengers.rating);
   }
 
-  // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající.
+  // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající (nejdřív z překládky).
   // Vystupuje a nastupuje se jen ve vagonech, které stojí na nástupišti; loadOnly jen doplní (čekání na plné naložení).
+  // Volby příkazu: překládka (cestující zůstanou na stanici, vozidlo dostane podíl), nevykládat, nenakládat.
   // Vrací počet vyložených a naložených cestujících.
-  exchange(train: Carrier, hold: Hold, station: Station, loadOnly = false): number {
+  exchange(train: Carrier, hold: Hold, station: Station, loadOnly = false, options: ExchangeOptions = {}): number {
     const { game } = this;
     const { atPlatform } = hold;
     let unloaded = 0;
-    if (!loadOnly && train.passengers > 0 && train.boardedStation !== station.id) {
+    if (!loadOnly && options.unload !== 'none' && train.passengers > 0 && train.boardedStation !== station.id) {
       unloaded = Math.min(train.passengers, atPlatform);
-      train.passengers -= unloaded;
-      const stayed = train.passengers > 0 ? ` (${train.passengers} nevystoupilo z vagonů mimo nástupiště)` : '';
-      if (unloaded > 0) {
-        const days = game.clock.now - train.boardedAt;
+      const days = game.clock.now - train.boardedAt;
+      if (options.unload === 'transfer') {
+        if (unloaded > 0) {
+          const credit = Math.round(fare(unloaded, train.tiles, days) * FEEDER_SHARE);
+          transferOut(train, station, 'passengers', unloaded, credit);
+          game.news(
+            `${train.name} přeložil ${unloaded} cestujících ve stanici ${station.name} (podíl ${formatMoney(credit)}).`,
+            station,
+          );
+        }
+      } else if (unloaded > 0) {
+        const share = feederShare(train, unloaded);
+        train.feeder = Math.max(0, (train.feeder ?? 0) - share);
+        train.passengers -= unloaded;
+        const stayed = train.passengers > 0 ? ` (${train.passengers} nevystoupilo z vagonů mimo nástupiště)` : '';
         const income = fare(unloaded, train.tiles, days);
         game.earn(income);
         game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
         game.thisYear.passengers += unloaded;
-        train.income += income;
+        // Podíl, který už dostala vozidla před překládkou, se od příjmu tohoto vozidla odečte
+        train.income += income - share;
         game.news(
           `${train.name} přivezl ${unloaded} cestujících do stanice ${station.name}: ` +
             `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${stayed}.`,
           station,
         );
       } else {
-        game.news(`${train.name} stojí ve stanici ${station.name} mimo nástupiště${stayed}.`, station);
+        game.news(`${train.name} stojí ve stanici ${station.name} mimo nástupiště.`, station);
       }
     }
 
     // Vagony u nástupiště se vyprázdnily, pokud se vystupovalo; jinak jsou obsazené nejdřív ony
     const free = unloaded > 0 ? atPlatform : Math.max(0, atPlatform - train.passengers);
-    const capacity = hold.capacity;
-    const boarding = Math.min(free, capacity - train.passengers, Math.floor(station.waiting));
-    const staying = train.passengers;
-    if (boarding > 0 || staying === 0) {
+    let boarding = 0;
+    if (options.load !== 'none') {
       // Kdo nevystoupil, jede dál; jeho cesta se započte poměrně do společné jízdenky
-      const total = staying + boarding;
-      train.boardedAt = total > 0 ? (staying * train.boardedAt + boarding * game.clock.now) / total : game.clock.now;
-      train.tiles = total > 0 ? Math.round((staying * train.tiles) / total) : 0;
-      train.passengers = total;
-      station.waiting -= boarding;
-      train.boardedStation = station.id;
+      const room = Math.min(free, hold.capacity - train.passengers);
+      const loaded = loadCargo(train, station, 'passengers', room, station.waiting, game.clock.now);
+      station.waiting -= loaded.fresh;
+      boarding = loaded.transferred + loaded.fresh;
     }
     for (const town of this.townsInReach(station)) town.served = true;
     recordVisit(station, 'passengers', game.clock.now, hold.speed);

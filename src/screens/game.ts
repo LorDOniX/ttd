@@ -337,7 +337,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
   canvas.addEventListener('pointermove', (e) => {
     const tile = tileAt(e.clientX, e.clientY);
     cursor.show(tile);
-    if (buildTools.tool) buildTools.pointerMove(tile, e.clientX, e.clientY);
+    if (buildTools.tool) buildTools.pointerMove(tile, e.clientX, e.clientY, e);
   });
 
   canvas.addEventListener('pointerleave', () => cursor.show(null));
@@ -348,7 +348,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     if (e.button !== 0) return;
     if (buildTools.tool) {
       canvas.setPointerCapture(e.pointerId);
-      buildTools.pointerDown(tileAt(e.clientX, e.clientY));
+      buildTools.pointerDown(tileAt(e.clientX, e.clientY), e);
       return;
     }
     clickStart = { x: e.clientX, y: e.clientY };

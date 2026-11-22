@@ -25,6 +25,34 @@ interface TrainView {
   lights: THREE.Mesh[];
   // Obrys lokomotivy (výška střechy, vzdálenost čela od středu) pro pohled z kabiny
   cab: { height: number; front: number } | null;
+  // Kouř nad porouchanou lokomotivou; vytvoří se až při první poruše
+  smoke: THREE.Group | null;
+}
+
+const SMOKE_PUFFS = 5;
+const SMOKE_GEOMETRY = new THREE.SphereGeometry(0.07, 8, 6);
+
+// Tmavý kouř stoupající nad porouchanou lokomotivou (jako poruchový kouř v OpenTTD)
+function createSmoke(): THREE.Group {
+  const group = new THREE.Group();
+  for (let i = 0; i < SMOKE_PUFFS; i++) {
+    const puff = new THREE.Mesh(
+      SMOKE_GEOMETRY,
+      new THREE.MeshBasicMaterial({ color: 0x2f3133, transparent: true, opacity: 0.5, depthWrite: false }),
+    );
+    puff.renderOrder = 2;
+    group.add(puff);
+  }
+  return group;
+}
+
+function animateSmoke(smoke: THREE.Group, seconds: number): void {
+  smoke.children.forEach((puff, i) => {
+    const cycle = (seconds * 0.6 + i / SMOKE_PUFFS) % 1;
+    puff.position.set(Math.sin(seconds * 1.3 + i) * cycle * 0.06, cycle * 0.45, Math.cos(seconds + i) * cycle * 0.04);
+    puff.scale.setScalar(0.6 + cycle * 1.8);
+    ((puff as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = (1 - cycle) * 0.5;
+  });
 }
 
 const HEADLIGHTS_GEOMETRY = lightMarkerGeometry(
@@ -136,6 +164,7 @@ export class TrainsView {
       loads: [],
       lights: [],
       cab: null,
+      smoke: null,
     };
     const wagonModels = CARGOS[train.cargo].wagonModels ?? [model.wagonModel];
     const names = [model.model, ...Array.from({ length: train.wagons }, (_, i) => wagonModels[i % wagonModels.length])];
@@ -184,6 +213,19 @@ export class TrainsView {
         !(i === 0 && train.id === this.cabTrain) &&
         this.map.get(Math.floor(x), Math.floor(z)) !== TileType.Depot &&
         inView(frustum, x, y, z, VEHICLE_LENGTH);
+    }
+    const lead = view.vehicles[0];
+    const broken = train.brokenDays > 0 && lead !== undefined && lead.visible;
+    if (broken && !view.smoke) {
+      view.smoke = createSmoke();
+      view.group.add(view.smoke);
+    }
+    if (view.smoke) {
+      view.smoke.visible = broken;
+      if (broken) {
+        view.smoke.position.set(lead.position.x, lead.position.y + 0.3, lead.position.z);
+        animateSmoke(view.smoke, performance.now() / 1000);
+      }
     }
   }
 }

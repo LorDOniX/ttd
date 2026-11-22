@@ -1,10 +1,22 @@
-import { FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDINGS } from './balance';
-import { CARGOS, FREIGHT_TYPES, TOWN_ACCEPTS, type Carrier, type FreightType, type Hold } from './cargo';
+import { FEEDER_SHARE, FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDINGS } from './balance';
+import {
+  CARGOS,
+  FREIGHT_TYPES,
+  TOWN_ACCEPTS,
+  feederShare,
+  loadCargo,
+  transferOut,
+  type Carrier,
+  type ExchangeOptions,
+  type FreightType,
+  type Hold,
+} from './cargo';
 import { formatMoney, type Game } from './game';
 import { catchmentArea, fare, type Area } from './passengers';
 import { inflowFactor, recordVisit } from './rating';
 import { aircraftModel } from './aircraft';
 import { roadVehicleModel } from './roadVehicles';
+import { stationOrders } from './trains';
 import { shipModel } from './ships';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
 import type { Station, StationShape } from '../world/rail';
@@ -62,7 +74,7 @@ export class Freight {
 
   // Náklad se na nástupiště sváží, jen když ho tam odváží některý vlak s vagony na tento náklad
   private servedBy(type: FreightType): Set<number> {
-    const trains = this.game.fleet.trains.filter((t) => t.cargo === type).flatMap((t) => t.orders ?? []);
+    const trains = this.game.fleet.trains.filter((t) => t.cargo === type).flatMap((t) => stationOrders(t));
     const vehicles = this.game.roadFleet.vehicles
       .filter((v) => roadVehicleModel(v).cargo === type)
       .flatMap((v) => v.orders ?? []);
@@ -82,23 +94,44 @@ export class Freight {
     );
   }
 
-  // Vyloží náklad, pokud ho nástupiště vykupuje, a naloží čekající; loadOnly jen doplní. Vrací přeložené tuny.
-  exchange(train: Carrier, hold: Hold, station: Station, type: FreightType, loadOnly = false): number {
+  // Vyloží náklad, pokud ho nástupiště vykupuje, a naloží čekající (nejdřív z překládky); loadOnly jen doplní.
+  // Volby příkazu: vyložit vše (nevykupovaný náklad zůstane na stanici jako překládka), překládka, nevykládat,
+  // nenakládat. Vrací přeložené tuny.
+  exchange(
+    train: Carrier,
+    hold: Hold,
+    station: Station,
+    type: FreightType,
+    loadOnly = false,
+    options: ExchangeOptions = {},
+  ): number {
     const { game } = this;
     const spec = CARGOS[type];
     const { atPlatform } = hold;
     let unloaded = 0;
     const accepted = this.accepted(station).includes(type);
-    if (!loadOnly && train.passengers > 0 && train.boardedStation !== station.id && accepted) {
+    // Bez výkupu se náklad vyloží jen na výslovný příkaz, a to jako překládka
+    const transfer = options.unload === 'transfer' || (options.unload === 'unload' && !accepted);
+    const unloading = options.unload !== 'none' && (accepted || transfer);
+    if (!loadOnly && unloading && train.passengers > 0 && train.boardedStation !== station.id) {
       unloaded = Math.min(train.passengers, atPlatform);
-      train.passengers -= unloaded;
-      if (unloaded > 0) {
-        const days = game.clock.now - train.boardedAt;
+      const days = game.clock.now - train.boardedAt;
+      if (transfer && unloaded > 0) {
+        const credit = Math.round(fare(unloaded, train.tiles, days, spec.fareTiers) * FEEDER_SHARE);
+        transferOut(train, station, type, unloaded, credit);
+        game.news(
+          `${train.name} přeložil ${unloaded} ${spec.unit} ve stanici ${station.name} (podíl ${formatMoney(credit)}).`,
+          station,
+        );
+      } else if (unloaded > 0) {
+        const share = feederShare(train, unloaded);
+        train.feeder = Math.max(0, (train.feeder ?? 0) - share);
+        train.passengers -= unloaded;
         const income = fare(unloaded, train.tiles, days, spec.fareTiers);
         game.earn(income);
         game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
         game.thisYear.freight[type] += unloaded;
-        train.income += income;
+        train.income += income - share;
         // Dodávku dostane první závod v dosahu, který ji přijímá (zboží pro město žádný)
         const consumer = this.industriesInReach(station).find((i) => INDUSTRY_TYPES[i.kind].accepts.includes(type));
         if (consumer) {
@@ -114,16 +147,12 @@ export class Freight {
     }
 
     const free = unloaded > 0 ? atPlatform : Math.max(0, atPlatform - train.passengers);
-    const stock = station.freight[type];
-    const loading = Math.min(free, hold.capacity - train.passengers, Math.floor(stock));
-    const staying = train.passengers;
-    if (loading > 0 || staying === 0) {
-      const total = staying + loading;
-      train.boardedAt = total > 0 ? (staying * train.boardedAt + loading * game.clock.now) / total : game.clock.now;
-      train.tiles = total > 0 ? Math.round((staying * train.tiles) / total) : 0;
-      train.passengers = total;
-      station.freight[type] = stock - loading;
-      train.boardedStation = station.id;
+    let loading = 0;
+    if (options.load !== 'none') {
+      const room = Math.min(free, hold.capacity - train.passengers);
+      const loaded = loadCargo(train, station, type, room, station.freight[type], game.clock.now);
+      station.freight[type] -= loaded.fresh;
+      loading = loaded.transferred + loaded.fresh;
     }
     recordVisit(station, type, game.clock.now, hold.speed);
     game.events.emit('stationsChanged');

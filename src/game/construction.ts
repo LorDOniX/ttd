@@ -21,8 +21,8 @@ import type { World } from '../world/generator';
 import { NO_OWNER, TileType, type GameMap, type TilePos } from '../world/map';
 import { airportShape } from '../world/airport';
 import { canPlacePort, type PortShape } from '../world/port';
-import { stationTiles, type Axis, type Edge, type Station, type StationShape } from '../world/rail';
-import type { PathStep } from '../world/railPath';
+import { PIECES, stationTiles, type Axis, type Edge, type Station, type StationShape } from '../world/rail';
+import { depotLinks, removableTile, type PathStep } from '../world/railPath';
 import type { RoadStep } from '../world/roadPath';
 import { buildingAt, buildingCapacity, demolishBuilding } from '../world/town';
 
@@ -204,12 +204,100 @@ export class Construction {
     return null;
   }
 
+  // Cena depa i se spojkami na kolej vedoucí kolmo před vjezdem
+  depotCost(x: number, y: number, entrance: Edge): { cost: number; links: PathStep[] } {
+    const { map, rail } = this.game.world;
+    const links = depotLinks(rail, x, y, entrance);
+    return { cost: DEPOT_COST + links.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y), 0), links };
+  }
+
+  // Návěstidla podél tažení (nebo jedno kliknutím); dir = jednosměrné s hranou výjezdu, bez něj obousměrné.
+  // Postaví, na co jsou peníze; vrací chybu, když nepostaví žádné
+  buildSignals(items: { x: number; y: number; dir?: Edge }[]): string | null {
+    const { rail } = this.game.world;
+    const placeable = items.filter((s) => rail.canPlaceSignal(s.x, s.y));
+    if (placeable.length === 0) return 'Návěstidlo jde jen na kolej bez výhybky, kde ještě žádné není.';
+    let built = 0;
+    for (const s of placeable) {
+      if (this.game.money < SIGNAL_COST) break;
+      this.game.spend(SIGNAL_COST, 'construction');
+      rail.addSignal(s.x, s.y, s.dir);
+      built++;
+    }
+    if (built > 0) this.game.events.emit('railChanged');
+    return built === 0 ? `Nedostatek peněz (${formatMoney(SIGNAL_COST)}).` : null;
+  }
+
+  // Další směr návěstidla jako v OpenTTD: obousměrné → jedním směrem → druhým směrem → obousměrné
+  cycleSignal(x: number, y: number): string | null {
+    const { rail } = this.game.world;
+    if (!rail.hasSignal(x, y)) return 'Tady žádné návěstidlo není.';
+    const piece = PIECES.findIndex((_, p) => rail.has(x, y, p));
+    if (piece < 0) return null;
+    const [a, b] = PIECES[piece];
+    const dir = rail.signalDir(x, y);
+    rail.setSignalDir(x, y, dir === undefined ? b : dir === b ? a : undefined);
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
+  removeSignal(x: number, y: number): string | null {
+    const { rail } = this.game.world;
+    if (!rail.hasSignal(x, y)) return 'Tady žádné návěstidlo není.';
+    rail.removeSignal(x, y);
+    this.game.refund(SIGNAL_COST * DEMOLISH_REFUND, 'construction');
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
   buildDepot(x: number, y: number, entrance: Edge): string | null {
     const { rail } = this.game.world;
     if (!rail.canPlaceDepot(x, y)) return 'Sem depo postavit nelze.';
-    if (this.game.money < DEPOT_COST) return `Nedostatek peněz (${formatMoney(DEPOT_COST)}).`;
-    this.game.spend(DEPOT_COST, 'construction');
+    const { cost, links } = this.depotCost(x, y, entrance);
+    if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'construction');
     rail.addDepot(x, y, entrance);
+    // Depo se samo napojí na kolej před vjezdem
+    for (const link of links) rail.addPiece(link.x, link.y, link.piece);
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
+  // Kolik se vrátí za odebrané kusy koleje (a návěstidla na dlaždicích, které zůstanou bez koleje)
+  trackRemovalRefund(steps: PathStep[]): number {
+    const { map, rail } = this.game.world;
+    let refund = 0;
+    const left = new Map<string, number>();
+    for (const s of steps) {
+      if (!rail.has(s.x, s.y, s.piece)) continue;
+      refund += trackPieceCost(map, s.x, s.y) * DEMOLISH_REFUND;
+      const key = `${s.x},${s.y}`;
+      const remaining = (left.get(key) ?? rail.pieceCount(s.x, s.y)) - 1;
+      left.set(key, remaining);
+      if (remaining === 0 && rail.hasSignal(s.x, s.y)) refund += SIGNAL_COST * DEMOLISH_REFUND;
+    }
+    return refund;
+  }
+
+  // Odebere jednotlivé kusy koleje (autorail s Ctrl), nástupiště a depa nechá být
+  removeTrack(steps: PathStep[]): string | null {
+    const { rail } = this.game.world;
+    const valid = steps.filter((s) => removableTile(rail, s.x, s.y) && rail.has(s.x, s.y, s.piece));
+    if (valid.length === 0) return 'Není co odebrat.';
+    for (const s of valid) {
+      const blocker = this.game.fleet.demolitionBlocker(s.x, s.y);
+      if (blocker) return blocker;
+    }
+    const refund = this.trackRemovalRefund(valid);
+    // Ze stejné dlaždice ještě čekající stavba by kolej hned vrátila
+    this.queue = this.queue.filter(
+      (job) => job.kind !== 'track' || !valid.some((s) => s.x === job.step.x && s.y === job.step.y),
+    );
+    for (const s of valid) if (rail.has(s.x, s.y, s.piece)) rail.removePiece(s.x, s.y, s.piece);
+    this.game.refund(refund, 'construction');
+    const cx = valid.reduce((sum, t) => sum + t.x, 0) / valid.length + 0.5;
+    const cz = valid.reduce((sum, t) => sum + t.y, 0) / valid.length + 0.5;
+    this.game.events.emit('demolished', refund, cx, cz);
     this.game.events.emit('railChanged');
     return null;
   }

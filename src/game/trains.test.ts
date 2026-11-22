@@ -187,7 +187,7 @@ describe('sdílený jízdní řád', () => {
       [b.id, a.id],
     ]);
     game.fleet.toggleFullLoad(first, a.id);
-    expect(third.fullLoad).toEqual([a.id]);
+    expect(game.fleet.waitsForFullLoad(third, a.id)).toBe(true);
 
     game.fleet.unshareOrders(third);
     game.fleet.setOrders(third, [a.id, b.id]);
@@ -369,5 +369,51 @@ describe('vlak delší než nástupiště', () => {
     const train = buyTrain(game, depot, 5);
     game.fleet.setOrders(train, [a.id, b.id]);
     expect(game.fleet.shortStations(train)).toEqual([]);
+  });
+});
+
+describe('nákup souprav', () => {
+  it('koupí celý vlak najednou a zaplatí lokomotivu i vagony', () => {
+    const { game, depot } = buildLine();
+    const before = game.money;
+    const train = game.fleet.buyTrain(depot, TRAIN_MODELS[0], 'coal', 3) as Train;
+    expect(typeof train).toBe('object');
+    expect(train).toMatchObject({ wagons: 3, cargo: 'coal', state: 'depot' });
+    expect(before - game.money).toBe(TRAIN_MODELS[0].price + 3 * WAGON_PRICE);
+    game.money = 1000;
+    expect(game.fleet.buyTrain(depot, TRAIN_MODELS[0], 'coal', 3)).toMatch(/Nedostatek/);
+  });
+
+  it('vagon s jiným nákladem k vlaku nepřipojí, prázdnému vlaku nastaví náklad', () => {
+    const { game, depot } = buildLine();
+    const train = game.fleet.buyTrain(depot, TRAIN_MODELS[0], 'passengers', 0) as Train;
+    expect(game.fleet.addWagon(train, 'wood')).toBeNull();
+    expect(train.cargo).toBe('wood');
+    expect(game.fleet.addWagon(train, 'coal')).toMatch(/veze dřevo/);
+    expect(train.wagons).toBe(1);
+  });
+
+  it('klon má stejnou soupravu i jízdní řád a stojí v depu', () => {
+    const { game, a, b, depot } = buildLine();
+    const train = game.fleet.buyTrain(depot, TRAIN_MODELS[0], 'passengers', 2) as Train;
+    game.fleet.setOrders(train, [a.id, b.id]);
+    game.fleet.toggleFullLoad(train, a.id);
+    const copy = game.fleet.clone(train, depot) as Train;
+    expect(copy).toMatchObject({ wagons: 2, cargo: 'passengers', state: 'depot', modelId: train.modelId });
+    expect(copy.orders).toEqual([a.id, b.id]);
+    expect(copy.orderFlags).toEqual([{ load: 'full' }, {}]);
+    expect(copy.id).not.toBe(train.id);
+  });
+});
+
+describe('klon se sdíleným řádem', () => {
+  it('připojí se k lince původního vlaku', () => {
+    const { game, a, b, depot } = buildLine();
+    const train = game.fleet.buyTrain(depot, TRAIN_MODELS[0], 'passengers', 1) as Train;
+    game.fleet.setOrders(train, [a.id, b.id]);
+    const copy = game.fleet.clone(train, depot, true) as Train;
+    expect(copy.orderGroup).not.toBeNull();
+    expect(copy.orderGroup).toBe(train.orderGroup);
+    expect(copy.orders).toEqual([a.id, b.id]);
   });
 });

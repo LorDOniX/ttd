@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { loadModel, type Kit } from '../assets';
-import { Edge, PIECES, type Axis } from '../world/rail';
+import { EDGE_DELTA, Edge, PIECES, type Axis } from '../world/rail';
 import type { IndustryKind } from '../world/industry';
 import { normalizedAircraft } from './aircraft';
 import { createAirportObject } from './airports';
@@ -20,7 +20,15 @@ import {
   placeDepot,
 } from './rail';
 import { roadAtlas, roadGeometry } from './roads';
-import { SIGNAL_GREEN, SIGNAL_LAMP, SIGNAL_POLE, SIGNAL_POLE_COLOR } from './signals';
+import {
+  SIGNAL_ARROW,
+  SIGNAL_ARROW_COLOR,
+  SIGNAL_GREEN,
+  SIGNAL_LAMP,
+  SIGNAL_POLE,
+  SIGNAL_POLE_COLOR,
+  signalPlacement,
+} from './signals';
 
 // Obrázek se zmenší na velikost ikony, větší rozlišení drží ostrost i na displejích s vyšší hustotou
 const SIZE = 128;
@@ -203,6 +211,64 @@ export function sceneIcon(icon: SceneIcon): Promise<string> {
   return cached(icon, SCENES[icon]);
 }
 
+// Depo (nebo garáž aut) natočené vjezdem k dané hraně, před vjezdem kus koleje nebo silnice
+export function depotIcon(kind: 'depot' | 'road-depot', entrance: Edge): Promise<string> {
+  return cached(`${kind}/${entrance}`, () => {
+    const [dx, dy] = EDGE_DELTA[entrance];
+    const front = tile();
+    front.position.set(dx, 0, dy);
+    const axis: Axis = entrance % 2 === 0 ? 'y' : 'x';
+    let stub: THREE.Object3D;
+    if (kind === 'depot') {
+      stub = track(axis);
+    } else {
+      stub = road(axis);
+    }
+    stub.position.set(dx, 0, dy);
+    const depot = kind === 'depot' ? createDepotMesh(material) : createRoadDepotMesh(material);
+    placeDepot(depot, 0, 0, entrance);
+    return [tile(), front, stub, depot];
+  });
+}
+
+// Návěstidlo na koleji pro okno návěstidel; jednosměrné se šipkou ve směru jízdy
+export function signalIcon(oneWay: boolean): Promise<string> {
+  return cached(`signal/${oneWay ? 'one' : 'two'}`, () => {
+    const piece = PIECES.findIndex(([p, q]) => p === Edge.W && q === Edge.E);
+    const place = signalPlacement(piece, 0, 0, oneWay ? Edge.E : undefined);
+    const group = new THREE.Group();
+    const pole = new THREE.Mesh(SIGNAL_POLE, new THREE.MeshLambertMaterial({ color: SIGNAL_POLE_COLOR }));
+    const lamp = new THREE.Mesh(SIGNAL_LAMP, new THREE.MeshBasicMaterial({ color: SIGNAL_GREEN }));
+    pole.position.set(place.pole[0], 0, place.pole[1]);
+    lamp.position.copy(pole.position);
+    group.add(pole, lamp);
+    if (place.angle !== null) {
+      const arrow = new THREE.Mesh(SIGNAL_ARROW, new THREE.MeshBasicMaterial({ color: SIGNAL_ARROW_COLOR }));
+      arrow.position.set(place.center[0], 0, place.center[1]);
+      arrow.rotation.y = place.angle;
+      group.add(arrow);
+    }
+    return [tile(), track('x'), group];
+  });
+}
+
+// Nástupiště natočené podél osy, jako volba orientace v okně stanice
+export function stationIcon(axis: Axis): Promise<string> {
+  return cached(`station/${axis}`, () => {
+    const shape = { x: 1, y: 1, axis, length: 3, tracks: 1 };
+    const ground = new THREE.Mesh(
+      new THREE.BoxGeometry(3, TILE_DEPTH, 3).translate(1.5, -TILE_DEPTH / 2, 1.5),
+      new THREE.MeshLambertMaterial({ color: GRASS }),
+    );
+    const view = new TrackView(material);
+    const piece = PIECES.findIndex(([p, q]) =>
+      axis === 'x' ? p === Edge.W && q === Edge.E : p === Edge.N && q === Edge.S,
+    );
+    view.update([0, 1, 2].map((i) => (axis === 'x' ? { x: i, y: 1, piece } : { x: 1, y: i, piece })));
+    return [ground, view.object, createStationObject(shape, material)];
+  });
+}
+
 // Ikona lišty z OpenGFX (assets/ui/toolbar, 40×40 px pro zoom 2×), stejné rozhraní jako vykreslené ikony
 export type ToolbarIcon =
   | 'build-road'
@@ -222,6 +288,86 @@ export function toolbarIcon(name: ToolbarIcon): Promise<string> {
 // Obrázek modelu z kitu (např. lokomotivy nebo auta) bez podkladu
 export function modelIcon(kit: Kit, model: string): Promise<string> {
   return cached(`${kit}/${model}`, async () => [await loadModel(kit, model)]);
+}
+
+// Boční pohled na vozidlo jako v depu OpenTTD: čelo vlevo, mírně shora, ve stejném měřítku pro všechny modely,
+// aby lokomotiva a vagony vedle sebe tvořily soupravu. Rozměry obrázku v jednotkách modelu.
+export interface SideImage {
+  url: string;
+  width: number;
+  height: number;
+}
+
+// Rozlišení bočních obrázků (pixelů na jednotku modelu); zobrazují se zmenšené
+const SIDE_PX_PER_UNIT = 72;
+// Kamera z boku (+X) s mírným nadhledem
+const SIDE_DIRECTION = new THREE.Vector3(1, 0.32, -0.18).normalize();
+const sideCache = new Map<string, Promise<SideImage>>();
+
+function sideSnapshot(object: THREE.Object3D): SideImage {
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x556644, 1.3));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+  sun.position.set(8, 12, 6);
+  scene.add(sun, object);
+  scene.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().expandByObject(object);
+  const center = box.getCenter(new THREE.Vector3());
+  const camera = new THREE.OrthographicCamera();
+  camera.position.copy(center).addScaledVector(SIDE_DIRECTION, 10);
+  camera.lookAt(center);
+  camera.updateMatrixWorld(true);
+  const view = new THREE.Box2();
+  const corner = new THREE.Vector3();
+  for (let i = 0; i < 8; i++) {
+    corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
+    corner.applyMatrix4(camera.matrixWorldInverse);
+    view.expandByPoint(new THREE.Vector2(corner.x, corner.y));
+  }
+  view.expandByScalar(0.04);
+  const size = view.getSize(new THREE.Vector2());
+  camera.left = view.min.x;
+  camera.right = view.max.x;
+  camera.top = view.max.y;
+  camera.bottom = view.min.y;
+  camera.near = -100;
+  camera.far = 100;
+  camera.updateProjectionMatrix();
+
+  const r = iconRenderer();
+  r.setSize(Math.max(1, Math.round(size.x * SIDE_PX_PER_UNIT)), Math.max(1, Math.round(size.y * SIDE_PX_PER_UNIT)));
+  r.render(scene, camera);
+  const url = r.domElement.toDataURL();
+  r.setSize(SIZE, SIZE);
+  return { url, width: size.x, height: size.y };
+}
+
+export function sideIcon(kit: Kit, model: string): Promise<SideImage> {
+  const key = `${kit}/${model}`;
+  let pending = sideCache.get(key);
+  if (!pending) {
+    pending = loadModel(kit, model).then(sideSnapshot);
+    sideCache.set(key, pending);
+  }
+  return pending;
+}
+
+// Obrázek vozidla z boku; scale = pixelů na jednotku modelu na obrazovce (stejné pro celou soupravu)
+export function sideImage(kit: Kit, model: string, scale: number, className = 'side-image'): HTMLImageElement {
+  const img = document.createElement('img');
+  img.className = className;
+  img.alt = '';
+  img.draggable = false;
+  sideIcon(kit, model).then(
+    (side) => {
+      img.style.width = `${Math.round(side.width * scale)}px`;
+      img.style.height = `${Math.round(side.height * scale)}px`;
+      img.src = side.url;
+    },
+    () => {},
+  );
+  return img;
 }
 
 // Celý areál závodu i s povrchem a plotem

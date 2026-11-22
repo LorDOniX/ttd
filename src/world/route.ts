@@ -134,6 +134,8 @@ export function findRoute(
       const [a, b] = PIECES[piece];
       if ((a !== entry && b !== entry) || !rail.has(x, y, piece)) continue;
       const exit = a === entry ? b : a;
+      // Proti jednosměrnému návěstidlu se nejede
+      if (!rail.allowsExit(x, y, piece, exit)) continue;
       const h2 = heading(entry, exit);
       if (!turnAllowed(h, h2)) continue;
       const segment: Segment = { x, y, piece, entry, exit };

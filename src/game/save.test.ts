@@ -78,7 +78,7 @@ describe('uložení a načtení', () => {
     delete data.game.thisYear.freight;
     const copy = restoreGame(parseSave(JSON.stringify(data)));
     expect(copy.fleet.trains[0].cargo).toBe('passengers');
-    expect(copy.fleet.trains[0].fullLoad).toEqual([]);
+    expect(copy.fleet.trains[0].orderFlags.every((f) => f.load === undefined)).toBe(true);
     expect(copy.world.rail.stations.map((s) => s.freight.coal)).toEqual([0, 0]);
     expect(copy.world.industries[0].production).toBe(105);
     expect(copy.world.industries[0].received).toBe(0);

@@ -1,3 +1,4 @@
+import type { OrderFlags } from '../game/trains';
 import type { Station } from '../world/rail';
 import { h } from './dom';
 import { onStationPickChange, startStationPick, stationPick, stopStationPick } from './stationPicker';
@@ -32,11 +33,31 @@ export interface OrdersSource {
   focusStation: (stationId: number) => void;
   // Doplňky pod řádem (sdílení řádu u vlaků)
   extra?: () => HTMLElement | null;
+  // Volby příkazů jako v OpenTTD (zatím jen vlaky): nakládání, vykládání, projet, servis v depu
+  flags?: {
+    get: (index: number) => OrderFlags;
+    set: (index: number, patch: Omit<OrderFlags, 'depot'>) => void;
+    setOrders: (orders: number[], flags: OrderFlags[]) => string | null;
+    depots: () => { id: number; name: string }[];
+    depotName: (depotId: number) => string;
+    focusDepot: (depotId: number) => void;
+  };
   subscribe: (refresh: () => void) => (() => void)[];
   exists: () => boolean;
 }
 
 const END = -1;
+
+// Popisky voleb příkazu za názvem zastávky, jako „[Do plna]“ v OpenTTD
+function flagsText(flags: OrderFlags): string {
+  const parts: string[] = [];
+  if (flags.load === 'full') parts.push('Do plna');
+  if (flags.load === 'none') parts.push('Nenakládat');
+  if (flags.unload === 'unload') parts.push('Vyložit vše');
+  if (flags.unload === 'transfer') parts.push('Překládka');
+  if (flags.unload === 'none') parts.push('Nevykládat');
+  return parts.length > 0 ? `[${parts.join(', ')}]` : '';
+}
 
 function button(label: string, title: string, onClick: () => void, disabled = false): HTMLButtonElement {
   const b = h('button', { className: 'small-button', title, disabled }, label);
@@ -54,18 +75,24 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
   let message: string | null = null;
   let dragFrom: number | null = null;
 
-  const apply = (next: number[]): boolean => {
-    const error = source.setOrders(next);
+  // Volby příkazů po řadě; u vozidel bez voleb prázdné
+  const flagsOf = (): OrderFlags[] => source.orders().map((_, i) => source.flags?.get(i) ?? {});
+  const save = (next: number[], nextFlags: OrderFlags[]): string | null =>
+    source.flags ? source.flags.setOrders(next, nextFlags) : source.setOrders(next);
+
+  const apply = (next: number[], nextFlags: OrderFlags[]): boolean => {
+    const error = save(next, nextFlags);
     message = error;
     if (error) refresh();
     return !error;
   };
 
-  const insert = (stationId: number): string | null => {
+  const insert = (stationId: number, flags: OrderFlags = {}): string | null => {
     const orders = source.orders();
     const at = selected === END ? orders.length : selected;
     const next = [...orders.slice(0, at), stationId, ...orders.slice(at)];
-    const error = source.setOrders(next);
+    const current = flagsOf();
+    const error = save(next, [...current.slice(0, at), flags, ...current.slice(at)]);
     if (error) return error;
     if (selected !== END) selected++;
     message = null;
@@ -93,10 +120,11 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
 
   function render(): HTMLElement {
     const orders = source.orders();
+    const flags = flagsOf();
     if (selected >= orders.length) selected = END;
     const current = source.current();
 
-    const row = (index: number, text: string, flags: string): HTMLElement => {
+    const row = (index: number, text: string, flagText: string): HTMLElement => {
       const el = h(
         'div',
         {
@@ -111,7 +139,7 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
         },
         h('span', { className: 'ottd-orders__marker' }, index !== END && index === current ? '▶▶' : ''),
         h('span', { className: 'ottd-orders__text' }, text),
-        ...(flags ? [h('span', { className: 'ottd-orders__flags' }, flags)] : []),
+        ...(flagText ? [h('span', { className: 'ottd-orders__flags' }, flagText)] : []),
       );
       el.addEventListener('click', () => {
         selected = index;
@@ -124,7 +152,9 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
         return el;
       }
       el.draggable = true;
-      el.addEventListener('dblclick', () => source.focusStation(orders[index]));
+      el.addEventListener('dblclick', () =>
+        flags[index].depot ? source.flags?.focusDepot(orders[index]) : source.focusStation(orders[index]),
+      );
       el.addEventListener('dragstart', (e) => {
         dragFrom = index;
         e.dataTransfer?.setData('text/plain', String(index));
@@ -143,19 +173,32 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
       dragFrom = null;
       if (from === null || from === to || from + 1 === to) return;
       const next = [...orders];
+      const nextFlags = [...flags];
       const [moved] = next.splice(from, 1);
+      const [movedFlags] = nextFlags.splice(from, 1);
       const at = to > from ? to - 1 : to;
       next.splice(at, 0, moved);
-      if (apply(next)) selected = at;
+      nextFlags.splice(at, 0, movedFlags);
+      if (apply(next, nextFlags)) selected = at;
       refresh();
     };
 
     const list = h(
       'div',
       { className: 'ottd-orders__list', tabIndex: 0 },
-      ...orders.map((stationId, i) =>
-        row(i, `${i + 1}: Jet do ${source.stationName(stationId)}`, source.fullLoad(stationId) ? '[Do plna]' : ''),
-      ),
+      ...orders.map((stationId, i) => {
+        if (!source.flags) {
+          return row(
+            i,
+            `${i + 1}: Jet do ${source.stationName(stationId)}`,
+            source.fullLoad(stationId) ? '[Do plna]' : '',
+          );
+        }
+        const f = flags[i];
+        if (f.depot) return row(i, `${i + 1}: Jet do ${source.flags.depotName(stationId)} na servis`, '');
+        const verb = f.via ? 'Projet' : 'Jet do';
+        return row(i, `${i + 1}: ${verb} ${source.stationName(stationId)}`, f.via ? '' : flagsText(f));
+      }),
       row(END, '– – Konec řádu – –', ''),
     );
     list.addEventListener('keydown', (e) => {
@@ -180,6 +223,7 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
       chosen === undefined,
     );
     fullLoad.classList.toggle('small-button--active', chosen !== undefined && source.fullLoad(chosen));
+    const flagBar = source.flags ? flagControls(source.flags) : [fullLoad];
 
     const skipTarget = selected !== END && selected !== current ? selected : (current + 1) % Math.max(1, orders.length);
     const skip = button(
@@ -226,7 +270,11 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
       'div',
       { className: 'ottd-orders' },
       list,
-      h('div', { className: 'ottd-orders__bar' }, fullLoad),
+      h(
+        'div',
+        { className: source.flags ? 'ottd-orders__bar ottd-orders__bar--flags' : 'ottd-orders__bar' },
+        ...flagBar,
+      ),
       h('div', { className: 'ottd-orders__bar ottd-orders__bar--main' }, skip, del, goTo, select),
       h('div', { className: warn ? 'form__hint warning' : 'form__hint' }, note),
       ...(extra ? [extra] : []),
@@ -235,7 +283,72 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
     function remove(): void {
       if (selected === END) return;
       const next = orders.filter((_, k) => k !== selected);
-      if (apply(next)) refresh();
+      const nextFlags = flags.filter((_, k) => k !== selected);
+      if (apply(next, nextFlags)) refresh();
+    }
+
+    // Volby vybraného příkazu jako v OpenTTD: nakládání, vykládání, projet; a přidání servisu v depu
+    function flagControls(api: NonNullable<OrdersSource['flags']>): HTMLElement[] {
+      const index = selected;
+      const f = index !== END ? flags[index] : undefined;
+      const editable = f !== undefined && !f.depot;
+      const choice = <T extends string>(
+        label: string,
+        title: string,
+        value: T,
+        values: [T, string][],
+        change: (value: T) => void,
+      ): HTMLElement => {
+        const select = h('select', { title, disabled: !editable || f?.via === true });
+        for (const [v, text] of values) select.append(h('option', { value: v, selected: v === value }, text));
+        select.addEventListener('change', () => change(select.value as T));
+        return h('label', { className: 'ottd-orders__choice' }, label, select);
+      };
+      const load = choice(
+        'Nakládat',
+        'Jak na vybrané zastávce nakládat',
+        f?.load ?? 'normal',
+        [
+          ['normal', 'běžně'],
+          ['full', 'do plna'],
+          ['none', 'nenakládat'],
+        ],
+        (v) => api.set(index, { load: v === 'normal' ? undefined : v }),
+      );
+      const unload = choice(
+        'Vykládat',
+        'Jak na vybrané zastávce vykládat: překládka nechá náklad na stanici pro další vozidlo',
+        f?.unload ?? 'normal',
+        [
+          ['normal', 'běžně'],
+          ['unload', 'vyložit vše'],
+          ['transfer', 'překládka'],
+          ['none', 'nevykládat'],
+        ],
+        (v) => api.set(index, { unload: v === 'normal' ? undefined : v }),
+      );
+      const via = button(
+        'Projet',
+        'Stanicí projet bez zastavení (nenaloží ani nevyloží)',
+        () => editable && api.set(index, { via: !f?.via }),
+        !editable,
+      );
+      via.classList.toggle('small-button--active', f?.via === true);
+      const depots = api.depots();
+      const depot = h('select', { title: 'Přidat zajížďku do depa na servis', disabled: depots.length === 0 });
+      depot.append(h('option', { value: '', selected: true }, 'Servis v depu ▾'));
+      for (const d of depots) depot.append(h('option', { value: String(d.id) }, d.name));
+      depot.addEventListener('change', () => {
+        const depotId = Number(depot.value);
+        depot.value = '';
+        if (Number.isNaN(depotId)) return;
+        const error = insert(depotId, { depot: true });
+        if (error) {
+          message = error;
+          refresh();
+        }
+      });
+      return [load, unload, via, depot];
     }
   }
 
@@ -247,7 +360,7 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
 
   const unsubscribe = [...source.subscribe(refresh), onStationPickChange(() => refresh())];
   windows.open(id, source.title, render(), {
-    width: 380,
+    width: source.flags ? 430 : 380,
     onClose: () => {
       unsubscribe.forEach((off) => off());
       stopStationPick(id);

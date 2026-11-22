@@ -76,9 +76,9 @@ describe('nákladní doprava uhlí', () => {
     game.fleet.toggleFullLoad(train, a.id);
     game.fleet.toggleFullLoad(train, b.id);
     game.fleet.toggleFullLoad(train, b.id);
-    expect(train.fullLoad).toEqual([a.id]);
+    expect(train.orderFlags).toEqual([{ load: 'full' }, {}]);
     game.fleet.setOrders(train, [b.id]);
-    expect(train.fullLoad).toEqual([]);
+    expect(train.orderFlags).toEqual([{}]);
   });
 
   it('bez elektrárny v dosahu zůstane uhlí ve vlaku', () => {

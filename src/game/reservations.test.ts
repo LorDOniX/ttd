@@ -4,11 +4,14 @@ import { Reservations } from './reservations';
 import type { Game } from './game';
 import type { Train } from './trains';
 import { addBuilding, buildLine, buyTrain, emptyGame, layTrack, makeTown, runDays } from '../test/fixtures';
-import { Edge, defaultStationShape } from '../world/rail';
-import { segmentIndexAt, type Segment } from '../world/route';
+import { Edge, PIECES, defaultStationShape } from '../world/rail';
+import { findRoute, segmentIndexAt, type Segment } from '../world/route';
+import { parseSave, restoreGame, serializeGame } from './save';
 
 const straight = (x0: number, x1: number, y: number): Segment[] =>
   Array.from({ length: x1 - x0 + 1 }, (_, i) => ({ x: x0 + i, y, piece: 1, entry: Edge.W, exit: Edge.E }));
+
+const piece = (a: Edge, b: Edge): number => PIECES.findIndex(([p, q]) => (p === a && q === b) || (p === b && q === a));
 
 function fakeTrain(id: number, path: Segment[], pos: number): Train {
   return { id, path, pos } as Train;
@@ -201,3 +204,143 @@ function singleTrackTiles(game: Game): { x: number; y: number }[] {
   }
   return tiles;
 }
+
+describe('jednosměrná a cestová návěstidla', () => {
+  it('proti jednosměrnému návěstidlu nevede žádná trasa, po směru ano', () => {
+    const game = emptyGame();
+    const { rail } = game.world;
+    layTrack(game, { x: 10, y: 10 }, { x: 20, y: 10 });
+    rail.addSignal(15, 10, Edge.E);
+    expect(rail.allowsExit(15, 10, 1, Edge.E)).toBe(true);
+    expect(rail.allowsExit(15, 10, 1, Edge.W)).toBe(false);
+    const east = findRoute(rail, { x: 10, y: 10, exit: Edge.E, heading: 0 }, (x) => x === 20, { x: 20, y: 10 });
+    expect(east).not.toBeNull();
+    const west = findRoute(rail, { x: 20, y: 10, exit: Edge.W, heading: 4 }, (x) => x === 10, { x: 10, y: 10 });
+    expect(west).toBeNull();
+  });
+
+  it('dvoukolejka s jednosměrkami: vlaky jezdí každý po své koleji a nezablokují se', () => {
+    const townA = makeTown(0, 10, 24);
+    const townB = makeTown(1, 40, 24);
+    const game = emptyGame(64, [townA, townB]);
+    addBuilding(game, townA, 10, 22);
+    addBuilding(game, townB, 40, 22);
+    const { rail } = game.world;
+    const a = rail.addStation({ ...defaultStationShape(10, 20, 'x'), name: 'A', townId: 0 });
+    const b = rail.addStation({ ...defaultStationShape(40, 20, 'x'), name: 'B', townId: 1 });
+    // Kolej y = 20 vede celou cestu, souběžná y = 19 se na obou koncích napojí výhybkami
+    for (let x = 12; x <= 38; x++) rail.addPiece(x, 20, piece(Edge.W, Edge.E));
+    for (let x = 16; x <= 34; x++) rail.addPiece(x, 19, piece(Edge.W, Edge.E));
+    rail.addPiece(15, 19, piece(Edge.E, Edge.S));
+    rail.addPiece(15, 20, piece(Edge.N, Edge.W));
+    rail.addPiece(35, 19, piece(Edge.W, Edge.S));
+    rail.addPiece(35, 20, piece(Edge.N, Edge.E));
+    for (const x of [18, 24, 30]) rail.addSignal(x, 20, Edge.E);
+    for (const x of [20, 26, 32]) rail.addSignal(x, 19, Edge.W);
+    const depot = rail.addDepot(8, 20, Edge.E);
+    game.money = 10_000_000;
+    const trains = [buyTrain(game, depot), buyTrain(game, depot), buyTrain(game, depot)];
+    trains.forEach((t, i) => {
+      if (i > 0) runDays(game, 6);
+      expect(game.fleet.start(t, [a.id, b.id])).toBeNull();
+    });
+    const arrivals = new Map<number, number>();
+    const states = trains.map((t) => t.state);
+    for (let i = 0; i < 40_000; i++) {
+      game.update(200);
+      trains.forEach((t, k) => {
+        if (t.state === 'loading' && states[k] !== 'loading') arrivals.set(t.id, (arrivals.get(t.id) ?? 0) + 1);
+        states[k] = t.state;
+        // Mezi výhybkami jede vlak na východ jen po y = 20 a na západ jen po y = 19
+        const head = t.path[segmentIndexAt(t.path, Math.max(0, t.pos - 1e-6))];
+        if (t.state === 'running' && head && head.x >= 17 && head.x <= 33) {
+          if (head.exit === Edge.E) expect(head.y).toBe(20);
+          if (head.exit === Edge.W) expect(head.y).toBe(19);
+        }
+      });
+    }
+    for (const t of trains) expect(arrivals.get(t.id) ?? 0).toBeGreaterThanOrEqual(8);
+  });
+
+  it('u obsazené koleje nástupiště vlak hned najede na volnou, bez dlouhého čekání', () => {
+    const townA = makeTown(0, 10, 24);
+    const townB = makeTown(1, 40, 24);
+    const game = emptyGame(64, [townA, townB]);
+    addBuilding(game, townA, 10, 22);
+    addBuilding(game, townB, 40, 22);
+    const { rail } = game.world;
+    const a = rail.addStation({ ...defaultStationShape(10, 20, 'x'), name: 'A', townId: 0 });
+    const b = rail.addStation({ ...defaultStationShape(40, 20, 'x'), tracks: 2, name: 'B', townId: 1 });
+    for (let x = 12; x <= 38; x++) rail.addPiece(x, 20, piece(Edge.W, Edge.E));
+    // Odbočka na druhou kolej nástupiště B (y = 19)
+    rail.addPiece(35, 20, piece(Edge.W, Edge.N));
+    rail.addPiece(35, 19, piece(Edge.S, Edge.E));
+    for (let x = 36; x <= 38; x++) rail.addPiece(x, 19, piece(Edge.W, Edge.E));
+    // Návěstidlo před odbočkou: tady vlak volí kolej
+    rail.addSignal(30, 20);
+    // Depo mezi A a B vjezdem k trati, oba vlaky z něj jedou nejdřív na B
+    const depot = rail.addDepot(24, 21, Edge.N);
+    rail.addPiece(24, 20, piece(Edge.S, Edge.E));
+    game.money = 5_000_000;
+    const first = buyTrain(game, depot);
+    const second = buyTrain(game, depot);
+    // První vlak čeká na B na plné naložení uhlí, které tam není – kolej drží pořád
+    game.fleet.setCargo(first, 'coal');
+    // Oba vyjedou naráz, takže si trasu naplánují ke stejné (zatím volné) koleji
+    expect(game.fleet.start(first, [b.id, a.id], [{ load: 'full' }, {}])).toBeNull();
+    expect(game.fleet.start(second, [b.id, a.id])).toBeNull();
+    expect(second.path.at(-1)!.y).toBe(20);
+    let blockedDays = 0;
+    let arrived = false;
+    for (let i = 0; i < 400 && !arrived; i++) {
+      runDays(game, 0.25);
+      // Čekání za prvním vlakem při výjezdu z depa je v pořádku; počítá se stání u obsazeného nástupiště
+      if (first.state === 'loading' && game.fleet.isBlocked(second)) blockedDays += 0.25;
+      arrived = second.state === 'loading';
+    }
+    expect(first.state).toBe('loading');
+    expect(arrived).toBe(true);
+    expect(second.path.at(-1)!.y).not.toBe(first.path.at(-1)!.y);
+    expect(blockedDays).toBeLessThanOrEqual(0.5);
+  });
+
+  it('jednosměrka se uloží a načte', () => {
+    const game = emptyGame();
+    layTrack(game, { x: 10, y: 10 }, { x: 20, y: 10 });
+    game.world.rail.addSignal(15, 10, Edge.W);
+    game.world.rail.addSignal(17, 10);
+    const copy = restoreGame(parseSave(JSON.stringify(serializeGame(game, 'test'))));
+    expect(copy.world.rail.signalDir(15, 10)).toBe(Edge.W);
+    expect(copy.world.rail.signalDir(17, 10)).toBeUndefined();
+    expect(copy.world.rail.hasSignal(17, 10)).toBe(true);
+  });
+});
+
+describe('stavba návěstidel', () => {
+  it('tažením postaví víc najednou, kliknutí otáčí směr a odstranění vrátí půlku', () => {
+    const game = emptyGame();
+    const { rail } = game.world;
+    layTrack(game, { x: 10, y: 10 }, { x: 30, y: 10 });
+    const before = game.money;
+    expect(
+      game.construction.buildSignals([
+        { x: 12, y: 10 },
+        { x: 16, y: 10, dir: Edge.E },
+        { x: 40, y: 40 },
+      ]),
+    ).toBeNull();
+    expect(before - game.money).toBe(2 * SIGNAL_COST);
+    expect(rail.signalDir(16, 10)).toBe(Edge.E);
+    // Obousměrné → jedním směrem → druhým → obousměrné
+    const dirs = [0, 1, 2].map(() => {
+      game.construction.cycleSignal(12, 10);
+      return rail.signalDir(12, 10);
+    });
+    expect(dirs).toEqual([Edge.E, Edge.W, undefined]);
+    const money = game.money;
+    expect(game.construction.removeSignal(16, 10)).toBeNull();
+    expect(game.money - money).toBe(SIGNAL_COST * DEMOLISH_REFUND);
+    expect(rail.signalDir(16, 10)).toBeUndefined();
+    expect(game.construction.buildSignals([{ x: 50, y: 50 }])).toMatch(/bez výhybky/);
+  });
+});

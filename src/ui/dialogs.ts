@@ -2,6 +2,7 @@ import { AIRCRAFT_CREDITS } from './aircraft';
 import { AD_CAMPAIGN_COST, AD_RATING_BOOST } from '../game/balance';
 import { formatDate } from '../game/clock';
 import { SEASON_MODES, type SeasonMode } from '../game/seasons';
+import { BREAKDOWN_LABELS, BREAKDOWN_SETTINGS, isBreakdownSetting } from '../game/reliability';
 import { Game, formatMoney } from '../game/game';
 import { parseSave, serializeGame } from '../game/save';
 import { advertise, fundBuildings, fundBuildingsCost } from '../game/townActions';
@@ -49,6 +50,15 @@ export function openSettings(
   const renewInput = h('input', { type: 'checkbox', checked: game.autoRenew });
   renewInput.addEventListener('change', () => (game.autoRenew = renewInput.checked));
 
+  const breakdownSelect = h(
+    'select',
+    { title: 'Bez poruch vozidla nejezdí ani na servis' },
+    ...BREAKDOWN_SETTINGS.map((b) => h('option', { value: b, selected: b === game.breakdowns }, BREAKDOWN_LABELS[b])),
+  );
+  breakdownSelect.addEventListener('change', () => {
+    if (isBreakdownSetting(breakdownSelect.value)) game.breakdowns = breakdownSelect.value;
+  });
+
   const theme = loadTheme();
   const themeSelect = h(
     'select',
@@ -82,6 +92,7 @@ export function openSettings(
     h('label', { className: 'form__row' }, mistInput, ' Mlha'),
     h('label', { className: 'form__row' }, fpsInput, ' Zobrazit FPS'),
     h('label', { className: 'form__row' }, renewInput, ' Automaticky obnovovat staré vlaky'),
+    h('label', { className: 'form__field' }, 'Poruchy vozidel', breakdownSelect),
     h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),
     h('div', { className: 'form__hint' }, `Seed mapy: ${seed}`),

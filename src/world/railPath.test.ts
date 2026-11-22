@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { DEPOT_COST, TRACK_PIECE_COST } from '../game/balance';
 import { assertContinuous, emptyGame, layTrack } from '../test/fixtures';
 import { TileType } from './map';
 import { Edge, PIECES, defaultStationShape, isCorner } from './rail';
-import { diagonalPath, findTrackPath, pieceAtCursor, singlePieceStep, type PathStep } from './railPath';
+import {
+  autorailLine,
+  autorailPlan,
+  depotLinks,
+  findTrackPath,
+  pieceAtCursor,
+  removablePieceAt,
+  singlePieceStep,
+} from './railPath';
 
 const WE = 1;
 
@@ -89,34 +98,116 @@ describe('hledání trasy kolejí', () => {
     expect(singlePieceStep(world.rail, { x: 30, y: 30 }, 0.5, 0.5)).toBeNull();
   });
 
-  it('tažení z rohu dlaždice staví diagonálu jen z rohových kusů ve směru tažení', () => {
-    const { world } = emptyGame();
-    const corner = (path: PathStep[]): boolean => path.every((s) => isCorner(s.piece));
-    // Z rohu S–V po jeho vlastní ose (1, −1): první kus je zatáčka pod kurzorem
-    const own = diagonalPath(world.rail, { x: 20, y: 20, fx: 0.9, fy: 0.9 }, { x: 25, y: 15, fx: 0.9, fy: 0.9 })!;
-    expect(own).toHaveLength(11);
-    expect(own[0]).toMatchObject({ x: 20, y: 20, piece: pieceAtCursor(0.9, 0.9) });
-    expect(own.at(-1)).toMatchObject({ x: 25, y: 15 });
-    expect(corner(own)).toBe(true);
-    assertContinuous(own);
-    // Z téhož rohu po druhé ose (1, 1) i opačným směrem
-    for (const end of [
-      { x: 25, y: 25, fx: 0.9, fy: 0.9 },
-      { x: 16, y: 16, fx: 0.5, fy: 0.5 },
-    ]) {
-      const path = diagonalPath(world.rail, { x: 20, y: 20, fx: 0.9, fy: 0.9 }, end)!;
-      expect(path.length).toBeGreaterThan(5);
-      expect(corner(path)).toBe(true);
-      assertContinuous(path);
-    }
-    // Tažení ze středu dlaždice diagonálu nestaví
-    expect(diagonalPath(world.rail, { x: 20, y: 20, fx: 0.5, fy: 0.5 }, { x: 25, y: 25, fx: 0.5, fy: 0.5 })).toBeNull();
+  it('autorail: tažení skoro vodorovně staví rovnou kolej v řadě začátku', () => {
+    const line = autorailLine({ x: 10, y: 10, fx: 0.5, fy: 0.5 }, { x: 20, y: 12, fx: 0.5, fy: 0.5 });
+    expect(line).toHaveLength(11);
+    expect(line.every((p) => p.y === 10 && p.piece === WE)).toBe(true);
+    const back = autorailLine({ x: 10, y: 10, fx: 0.5, fy: 0.5 }, { x: 10, y: 4, fx: 0.5, fy: 0.5 });
+    expect(back.map((p) => p.y)).toEqual([10, 9, 8, 7, 6, 5, 4]);
+    expect(back.every((p) => p.piece === 0)).toBe(true);
   });
 
-  it('diagonála přes vodu nevede', () => {
+  it('autorail: šikmé tažení staví úhlopříčku z rohových kusů, i když začne uprostřed dlaždice', () => {
+    for (const [start, end] of [
+      [
+        { x: 20, y: 20, fx: 0.5, fy: 0.5 },
+        { x: 25, y: 25, fx: 0.5, fy: 0.5 },
+      ],
+      [
+        { x: 20, y: 20, fx: 0.7, fy: 0.3 },
+        { x: 26, y: 24, fx: 0.5, fy: 0.5 },
+      ],
+      [
+        { x: 20, y: 20, fx: 0.9, fy: 0.9 },
+        { x: 25, y: 15, fx: 0.9, fy: 0.9 },
+      ],
+      [
+        { x: 20, y: 20, fx: 0.2, fy: 0.2 },
+        { x: 14, y: 26, fx: 0.5, fy: 0.5 },
+      ],
+    ]) {
+      const line = autorailLine(start, end).map((p) => ({ ...p, isNew: true }));
+      expect(line.length).toBeGreaterThan(8);
+      expect(line.every((p) => isCorner(p.piece))).toBe(true);
+      expect(line[0]).toMatchObject({ x: start.x, y: start.y });
+      assertContinuous(line);
+      // Přesně šikmé tažení skončí u kurzoru, jinak se konec přichytí na úhlopříčku
+      const last = line[line.length - 1];
+      const exact = Math.abs(end.x - start.x) === Math.abs(end.y - start.y);
+      expect(Math.abs(last.x - end.x) + Math.abs(last.y - end.y)).toBeLessThanOrEqual(exact ? 1 : 2);
+    }
+    // Poloha kurzoru na začátku vybere jednu ze dvou rovnoběžných řad
+    const upper = autorailLine({ x: 20, y: 20, fx: 0.8, fy: 0.2 }, { x: 24, y: 24, fx: 0.5, fy: 0.5 });
+    const lower = autorailLine({ x: 20, y: 20, fx: 0.2, fy: 0.8 }, { x: 24, y: 24, fx: 0.5, fy: 0.5 });
+    expect(PIECES[upper[0].piece]).toEqual([Edge.N, Edge.E]);
+    expect(PIECES[lower[0].piece]).toEqual([Edge.S, Edge.W]);
+  });
+
+  it('autorail se zastaví na první překážce, zbytek označí', () => {
     const { world } = emptyGame();
-    world.map.set(22, 18, TileType.Water);
-    world.map.set(22, 17, TileType.Water);
-    expect(diagonalPath(world.rail, { x: 20, y: 20, fx: 0.9, fy: 0.9 }, { x: 25, y: 15, fx: 0.9, fy: 0.9 })).toBeNull();
+    world.map.set(15, 10, TileType.Building);
+    const plan = autorailPlan(world.rail, { x: 10, y: 10, fx: 0.5, fy: 0.5 }, { x: 20, y: 10, fx: 0.5, fy: 0.5 });
+    expect(plan.steps.map((s) => s.x)).toEqual([10, 11, 12, 13, 14]);
+    expect(plan.blocked).toHaveLength(6);
+    // Úhlopříčka přes vodu nevede (most jen rovně)
+    world.map.set(22, 22, TileType.Water);
+    const diag = autorailPlan(world.rail, { x: 20, y: 20, fx: 0.5, fy: 0.5 }, { x: 26, y: 26, fx: 0.5, fy: 0.5 });
+    expect(diag.blocked.length).toBeGreaterThan(0);
+    expect(diag.steps.every((s) => world.map.get(s.x, s.y) !== TileType.Water)).toBe(true);
+  });
+
+  it('autorail s Ctrl odebírá jen postavené kusy, dlaždice bez koleje je zase tráva', () => {
+    const game = emptyGame();
+    const { rail, map } = game.world;
+    layTrack(game, { x: 10, y: 10 }, { x: 14, y: 10 });
+    const plan = autorailPlan(rail, { x: 8, y: 10, fx: 0.5, fy: 0.5 }, { x: 12, y: 10, fx: 0.5, fy: 0.5 }, 'remove');
+    expect(plan.steps.map((s) => s.x)).toEqual([10, 11, 12]);
+    expect(game.construction.removeTrack(plan.steps)).toBeNull();
+    expect(map.get(11, 10)).toBe(TileType.Grass);
+    expect(rail.has(13, 10, WE)).toBe(true);
+    expect(removablePieceAt(rail, { x: 13, y: 10, fx: 0.1, fy: 0.1 })).toMatchObject({ piece: WE });
+  });
+
+  it('depem přímka neprojede zadní stěnou, vjezdem se napojí', () => {
+    const { world } = emptyGame();
+    world.rail.addDepot(15, 10, Edge.E);
+    const through = autorailPlan(world.rail, { x: 10, y: 10, fx: 0.5, fy: 0.5 }, { x: 20, y: 10, fx: 0.5, fy: 0.5 });
+    expect(through.steps.map((s) => s.x)).toEqual([10, 11, 12, 13, 14]);
+    const into = autorailPlan(world.rail, { x: 20, y: 10, fx: 0.5, fy: 0.5 }, { x: 15, y: 10, fx: 0.5, fy: 0.5 });
+    expect(into.blocked).toHaveLength(0);
+    expect(into.steps.at(-1)).toMatchObject({ x: 15, isNew: false });
+  });
+
+  it('depo postavené vjezdem ke kolmé koleji se na ni samo napojí výhybkami', () => {
+    const game = emptyGame();
+    const { rail } = game.world;
+    layTrack(game, { x: 11, y: 15 }, { x: 11, y: 25 });
+    const links = depotLinks(rail, 10, 20, Edge.E);
+    expect(links.map((l) => PIECES[l.piece])).toEqual([
+      [Edge.W, Edge.N],
+      [Edge.S, Edge.W],
+    ]);
+    const before = game.money;
+    expect(game.construction.buildDepot(10, 20, Edge.E)).toBeNull();
+    expect(before - game.money).toBe(DEPOT_COST + 2 * TRACK_PIECE_COST);
+    for (const link of links) expect(rail.has(link.x, link.y, link.piece)).toBe(true);
+    // Z depa vede souvislá trasa na kolej oběma směry
+    assertContinuous([{ x: 10, y: 20, piece: WE, isNew: false }, links[0], { x: 11, y: 19, piece: 0, isNew: false }]);
+    // Konec koleje přímo před depem: napojí se jen tam, kam kolej pokračuje
+    const end = emptyGame();
+    layTrack(end, { x: 31, y: 20 }, { x: 31, y: 25 });
+    expect(depotLinks(end.world.rail, 30, 20, Edge.E).map((l) => PIECES[l.piece])).toEqual([[Edge.S, Edge.W]]);
+    // Kolej, která už k vjezdu vede, se nemění
+    layTrack(end, { x: 40, y: 20 }, { x: 45, y: 20 });
+    expect(depotLinks(end.world.rail, 39, 20, Edge.E)).toHaveLength(0);
+  });
+
+  it('kolej položená kolmo před existující depo se na něj napojí', () => {
+    const { world } = emptyGame();
+    world.rail.addDepot(10, 20, Edge.E);
+    const plan = autorailPlan(world.rail, { x: 11, y: 15, fx: 0.5, fy: 0.5 }, { x: 11, y: 25, fx: 0.5, fy: 0.5 });
+    const links = plan.steps.filter((s) => isCorner(s.piece));
+    expect(links).toHaveLength(2);
+    expect(links.every((l) => l.x === 11 && l.y === 20)).toBe(true);
   });
 });

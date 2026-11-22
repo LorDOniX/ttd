@@ -28,6 +28,11 @@ export class Reservations {
     return owner !== undefined && owner !== train.id;
   }
 
+  // Index kusu trasy, po který (bez něj) má vlak rezervováno
+  reached(train: Train): number {
+    return this.reach.get(train.id) ?? 0;
+  }
+
   fullyReserved(train: Train): boolean {
     return (this.reach.get(train.id) ?? 0) >= train.path.length;
   }

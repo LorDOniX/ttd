@@ -1,12 +1,12 @@
 import { stationCost } from '../game/construction';
-import { CARGOS, CARGO_TYPES, type Cargo } from '../game/cargo';
+import { CARGOS, CARGO_TYPES, transferWaiting, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
 import { AIRPORT_TYPES, MAINTENANCE_RATE, TOWN_ACCEPTS_MIN_BUILDINGS } from '../game/balance';
 import { aircraftModel, type Aircraft } from '../game/aircraft';
 import { shipModel, type Ship } from '../game/ships';
 import { ratingParts, targetRating, waitingAmount } from '../game/rating';
 import { roadVehicleModel, type RoadVehicle } from '../game/roadVehicles';
-import { trainModel, type Train } from '../game/trains';
+import { servesStation, trainModel, type Train } from '../game/trains';
 import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { h } from './dom';
@@ -25,7 +25,10 @@ export function stationCargos(game: Game, station: Station): Cargo[] {
 
 function waitingText(station: Station, cargo: Cargo): string {
   const amount = Math.floor(waitingAmount(station, cargo));
-  return cargo === 'passengers' ? `čeká ${amount}` : `${amount} t`;
+  // Náklad z překládky čeká na další vozidlo zvlášť
+  const transfer = Math.floor(transferWaiting(station, cargo));
+  const extra = transfer > 0 ? ` + ${transfer} z překládky` : '';
+  return cargo === 'passengers' ? `čeká ${amount}${extra}` : `${amount} t${extra}`;
 }
 
 // Řádky s přehledem nástupiště pro okno stanice i informace o dlaždici
@@ -41,7 +44,7 @@ export function stationRows(game: Game, station: Station): [string, string][] {
         ? game.airFleet.aircraft.filter((p) => p.orders?.includes(station.id))
         : water
           ? game.shipFleet.ships.filter((s) => s.orders?.includes(station.id))
-          : game.fleet.trains.filter((t) => t.orders?.includes(station.id))
+          : game.fleet.trains.filter((t) => servesStation(t, station.id))
   ).map((t) => t.name);
   const type: [string, string] = road
     ? ['Typ', 'Zastávka aut']
@@ -106,7 +109,7 @@ export function openStation(
   const air = station.kind === 'air';
   const water = station.kind === 'water';
   const render = (): HTMLElement => {
-    const trains = game.fleet.trains.filter((t) => t.orders?.includes(station.id));
+    const trains = game.fleet.trains.filter((t) => servesStation(t, station.id));
     const vehicles = game.roadFleet.vehicles.filter((v) => v.orders?.includes(station.id));
     const aircraft = game.airFleet.aircraft.filter((p) => p.orders?.includes(station.id));
     const ships = game.shipFleet.ships.filter((s) => s.orders?.includes(station.id));

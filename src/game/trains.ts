@@ -11,8 +11,14 @@ import {
   WAGON_CAPACITY,
   WAGON_PRICE,
   WAGON_RUNNING_COST,
+  MAX_SERVICE_INTERVAL_DAYS,
+  MIN_SERVICE_INTERVAL_DAYS,
+  SERVICE_INTERVAL_DAYS,
+  SERVICE_MAX_ROUTE,
   type TrainModel,
 } from './balance';
+import { needsService, newMaintenance, rollBreakdown, service, wearOut, type Maintained } from './reliability';
+import { Rng } from '../world/rng';
 import { formatMoney, type Game } from './game';
 import { CARGOS, isFreight, type Cargo } from './cargo';
 import { Reservations } from './reservations';
@@ -40,12 +46,58 @@ const LOST_RETRY_DAYS = 5;
 // Vlak čekající na obsazenou trať po této době hledá jinou cestu (třeba volnou kolej nástupiště)
 const BLOCKED_REPLAN_DAYS = 3;
 const BLOCKED_WARN_DAYS = 30;
+// Jak často vlak před obsazeným úsekem hledá volnou objížďku (cestová návěstidla jako v OpenTTD)
+const DETOUR_RETRY_DAYS = 0.5;
+// Objížďka smí být nejvýš o tolik delší než původní zbytek cesty (poměr a dlaždice navíc)
+const DETOUR_MAX_RATIO = 1.5;
+const DETOUR_MAX_EXTRA = 12;
 // Vlak čekající na plné naložení zkusí doplnit náklad jednou denně
 const FULL_LOAD_CHECK_DAYS = 1;
+// Servis v depu podle příkazu jízdního řádu
+const SERVICE_DAYS = 1;
 
 export type TrainState = 'depot' | 'running' | 'loading' | 'lost';
 
-export interface Train {
+// Volby příkazu jízdního řádu jako v OpenTTD
+export interface OrderFlags {
+  // Nakládání: čekat do plna, nebo nenakládat (bez údaje běžně)
+  load?: 'full' | 'none';
+  // Vykládání: vyložit vše (i kde se náklad nevykupuje), překládka, nevykládat (bez údaje běžně)
+  unload?: 'unload' | 'transfer' | 'none';
+  // Projet stanicí bez zastavení
+  via?: boolean;
+  // Příkaz „Jet do depa“ na servis; číslo v orders je pak id depa
+  depot?: boolean;
+}
+
+// Volby bez prázdných hodnot (do uložení i pro porovnání)
+export function cleanFlags(flags: OrderFlags): OrderFlags {
+  const clean: OrderFlags = {};
+  if (flags.depot) {
+    clean.depot = true;
+    return clean;
+  }
+  if (flags.load === 'full' || flags.load === 'none') clean.load = flags.load;
+  if (flags.unload === 'unload' || flags.unload === 'transfer' || flags.unload === 'none') clean.unload = flags.unload;
+  if (flags.via) clean.via = true;
+  return clean;
+}
+
+export function orderFlags(train: Train, index: number): OrderFlags {
+  return train.orderFlags[index] ?? {};
+}
+
+// Jezdí vlak podle řádu na toto nástupiště (příkazy do depa se nepočítají)?
+export function servesStation(train: Train, stationId: number): boolean {
+  return (train.orders ?? []).some((id, i) => id === stationId && !orderFlags(train, i).depot);
+}
+
+// Nástupiště z řádu bez příkazů do depa
+export function stationOrders(train: Train): number[] {
+  return (train.orders ?? []).filter((_, i) => !orderFlags(train, i).depot);
+}
+
+export interface Train extends Maintained {
   id: number;
   name: string;
   modelId: string;
@@ -53,10 +105,14 @@ export interface Train {
   // Všechny vagony vlaku vezou stejný druh nákladu
   cargo: Cargo;
   depotId: number;
-  // Zastávky, které vlak objíždí dokola; v depu si je pamatuje pro další výjezd
+  // Příkazy, které vlak objíždí dokola: id nástupiště, u příkazu do depa id depa; v depu si je pamatuje
   orders: number[] | null;
-  // Zastávky (id nástupišť), kde vlak čeká na plné naložení
-  fullLoad: number[];
+  // Volby příkazů po řadě (stejná délka jako orders)
+  orderFlags: OrderFlags[];
+  // Do kdy (herní den) trvá servis v depu podle řádu; pak vlak pokračuje dalším příkazem
+  serviceUntil?: number;
+  // Automatická zajížďka na servis: depo a příkaz řádu, ke kterému vlak po servisu pokračuje
+  servicing?: { depotId: number; resume: number };
   // Linka se sdíleným jízdním řádem; změna řádu platí pro všechny její vlaky
   orderGroup: number | null;
   // Index cíle v orders, -1 = návrat do depa
@@ -79,6 +135,8 @@ export interface Train {
   lastCosts: number;
   // Herní den nákupu nebo poslední obnovy
   builtDay: number;
+  // Virtuální příjem z překládek, který náklad na palubě nese
+  feeder?: number;
   // Hráč už dostal zprávu o konci životnosti
   agingWarned: boolean;
   // Po příjezdu do depa se obnoví a vyjede podle jízdního řádu
@@ -142,11 +200,19 @@ export function nextStop(train: Train): number {
   return train.orders ? (train.target + 1) % train.orders.length : -1;
 }
 
-// Chyba jízdního řádu, nebo null; stejná zastávka nesmí následovat po sobě ani přes konec seznamu
-export function ordersError(orders: number[]): string | null {
-  if (orders.length < 2) return 'Jízdní řád potřebuje aspoň dvě zastávky.';
-  if (orders.some((id, i) => id === orders[(i + 1) % orders.length])) {
-    return 'Stejné nástupiště nesmí následovat hned po sobě.';
+// Chyba jízdního řádu, nebo null; potřebuje aspoň dvě nástupiště a stejný příkaz nesmí následovat
+// po sobě ani přes konec seznamu
+export function ordersError(orders: number[], flags: readonly OrderFlags[] = []): string | null {
+  const isDepot = (i: number): boolean => flags[i]?.depot === true;
+  if (orders.filter((_, i) => !isDepot(i)).length < 2) return 'Jízdní řád potřebuje aspoň dvě zastávky.';
+  const repeated = orders.findIndex((id, i) => {
+    const j = (i + 1) % orders.length;
+    return id === orders[j] && isDepot(i) === isDepot(j);
+  });
+  if (repeated >= 0) {
+    return isDepot(repeated)
+      ? 'Stejné depo nesmí následovat hned po sobě.'
+      : 'Stejné nástupiště nesmí následovat hned po sobě.';
   }
   return null;
 }
@@ -160,8 +226,15 @@ export class Fleet {
   readonly reservations: Reservations;
   // Jak dlouho vlak stojí před obsazenou tratí: celkem a od posledního hledání jiné cesty
   private readonly blocked = new Map<number, { total: number; sinceReplan: number; deadlockWarned: boolean }>();
+  // Herní čas posledního hledání objížďky podle vlaku
+  private readonly detourTried = new Map<number, number>();
+  // Náhoda pro poruchy zvlášť, aby neměnila růst měst a další náhodné jevy
+  private readonly breakdownRng: Rng;
+  // Vlaky, kterým se nepodařilo navázat cestu za stanicí „projet“ (cíl, u kterého to zkoušely)
+  private readonly viaFailed = new Map<number, number>();
 
   constructor(private readonly game: Game) {
+    this.breakdownRng = new Rng(game.world.seed ^ 0x2c1b3c6d);
     this.reservations = new Reservations(game.world.map.width, (x, y) => game.world.rail.hasSignal(x, y));
     game.clock.events.on('month', () => this.chargeRunningCosts());
     game.clock.events.on('year', (ended) => {
@@ -193,15 +266,20 @@ export class Fleet {
     return network >= 0 && network === this.networkAt(station.x, station.y);
   }
 
-  // Chyba řádu, když mezi některými po sobě jdoucími nástupišti (i přes konec řádu) nevede kolej
-  routeError(orders: number[]): string | null {
+  // Chyba řádu, když mezi některými po sobě jdoucími příkazy (i přes konec řádu) nevede kolej
+  routeError(orders: number[], flags: readonly OrderFlags[] = []): string | null {
+    const place = (i: number): { x: number; y: number; name: string } | undefined => {
+      if (!flags[i]?.depot) return this.station(orders[i]);
+      const depot = this.depotById(orders[i]);
+      return depot && { x: depot.x, y: depot.y, name: `depo ${depot.id + 1}` };
+    };
     for (let i = 0; i < orders.length; i++) {
-      const a = this.station(orders[i]);
-      const b = this.station(orders[(i + 1) % orders.length]);
+      const a = place(i);
+      const b = place((i + 1) % orders.length);
       if (!a || !b) continue;
       const network = this.networkAt(a.x, a.y);
       if (network < 0 || network !== this.networkAt(b.x, b.y)) {
-        return `Mezi nástupišti ${a.name} a ${b.name} nevede kolej.`;
+        return `Mezi ${a.name} a ${b.name} nevede kolej.`;
       }
     }
     return null;
@@ -227,7 +305,7 @@ export class Fleet {
       cargo: 'passengers',
       depotId: depot.id,
       orders: null,
-      fullLoad: [],
+      orderFlags: [],
       orderGroup: null,
       target: 0,
       state: 'depot',
@@ -246,19 +324,62 @@ export class Fleet {
       builtDay: this.game.clock.day,
       agingWarned: false,
       renewing: false,
+      ...newMaintenance(model.reliability, this.game.clock.now, SERVICE_INTERVAL_DAYS),
     });
     this.changed();
     return null;
   }
 
-  addWagon(train: Train): string | null {
+  // Přidá vagon; s druhem nákladu jen do vlaku bez vagonů nebo se stejným nákladem (vagony vezou jedno)
+  addWagon(train: Train, cargo?: Cargo): string | null {
     if (train.state !== 'depot') return 'Vagony lze měnit jen v depu.';
     if (train.wagons >= MAX_WAGONS) return `Vlak může mít nejvýš ${MAX_WAGONS} vagonů.`;
+    if (cargo && train.wagons > 0 && cargo !== train.cargo) {
+      return `${train.name} veze ${CARGOS[train.cargo].noun}, vagon na ${CARGOS[cargo].noun} k němu připojit nejde.`;
+    }
     if (this.game.money < WAGON_PRICE) return `Nedostatek peněz (${formatMoney(WAGON_PRICE)}).`;
     this.game.spend(WAGON_PRICE, 'vehicles');
+    if (cargo && train.wagons === 0) train.cargo = cargo;
     train.wagons++;
     this.changed();
     return null;
+  }
+
+  // Cena celé soupravy: lokomotiva a vagony
+  trainPrice(model: TrainModel, wagons: number): number {
+    return model.price + wagons * WAGON_PRICE;
+  }
+
+  // Koupí rovnou celou soupravu (lokomotivu, vagony a druh nákladu); vrací nový vlak, nebo chybu
+  buyTrain(depot: Depot, model: TrainModel, cargo: Cargo, wagons: number): Train | string {
+    const count = Math.max(0, Math.min(MAX_WAGONS, Math.round(wagons)));
+    const price = this.trainPrice(model, count);
+    if (this.game.money < price) return `Nedostatek peněz (${formatMoney(price)}).`;
+    const error = this.buy(depot, model);
+    if (error) return error;
+    const train = this.trains[this.trains.length - 1];
+    train.cargo = cargo;
+    train.wagons = count;
+    this.game.spend(count * WAGON_PRICE, 'vehicles');
+    this.changed();
+    return train;
+  }
+
+  // Klon jako v OpenTTD: stejná lokomotiva (nebo nejnovější, když stará už není), vagony, náklad i jízdní řád;
+  // se sdílením (Ctrl) se klon připojí k lince původního vlaku
+  clone(train: Train, depot: Depot, share = false): Train | string {
+    const models = this.available();
+    const model = models.find((m) => m.id === train.modelId) ?? models[models.length - 1];
+    const copy = this.buyTrain(depot, model, train.cargo, train.wagons);
+    if (typeof copy === 'string') return copy;
+    if (share && train.orders) {
+      this.shareOrders(copy, train);
+    } else {
+      copy.orders = train.orders ? [...train.orders] : null;
+      copy.orderFlags = train.orderFlags.map((f) => ({ ...f }));
+    }
+    this.changed();
+    return copy;
   }
 
   removeWagon(train: Train): void {
@@ -293,6 +414,8 @@ export class Fleet {
     this.game.spend(cost, 'vehicles');
     train.modelId = model.id;
     train.builtDay = this.game.clock.day;
+    // Nová lokomotiva je jako po servisu
+    service(train, model.reliability, this.game.clock.now);
     train.agingWarned = false;
     this.game.news(`${train.name} obnoven: ${model.name}.`);
     this.changed();
@@ -307,38 +430,91 @@ export class Fleet {
     return null;
   }
 
-  // Vypraví vlak z depa; nejdřív jede k nejbližší zastávce jízdního řádu
-  start(train: Train, orders: number[]): string | null {
-    const error = ordersError(orders) ?? this.routeError(orders);
+  // Vypraví vlak z depa; nejdřív jede k nejbližší zastávce jízdního řádu.
+  // Bez voleb příkazů si vlak ponechá volby z dosavadního řádu u stejných zastávek.
+  start(train: Train, orders: number[], flags?: OrderFlags[]): string | null {
+    const nextFlags = flags ? flags.map(cleanFlags) : this.realign(train, orders);
+    const error = ordersError(orders, nextFlags) ?? this.routeError(orders, nextFlags);
     if (error) return error;
     const depot = this.depot(train);
-    const stations = orders.map((id) => this.station(id));
-    if (!depot || stations.some((s) => !s)) return 'Nástupiště nebo depo neexistuje.';
+    const places = orders.map((id, i) => (nextFlags[i]?.depot ? this.depotById(id) : this.station(id)));
+    if (!depot || places.some((p) => !p)) return 'Nástupiště nebo depo neexistuje.';
 
-    const exitSegment: Segment = {
-      x: depot.x,
-      y: depot.y,
-      piece: axisPiece(depot.entrance % 2 === 0 ? 'y' : 'x'),
-      entry: opposite(depot.entrance),
-      exit: depot.entrance,
-    };
-    const routes = stations.map((s) => this.routeTo(segmentStart(exitSegment), s!, train));
+    const exit = this.depotExit(depot);
+    const routes = places.map((place, i) =>
+      nextFlags[i]?.depot ? null : this.routeTo(segmentStart(exit), place!, train),
+    );
     const options = routes
       .map((route, index) => ({ route, index }))
       .filter((o): o is { route: Segment[]; index: number } => o.route !== null)
       .sort((a, b) => pathLength(a.route) - pathLength(b.route));
     if (options.length === 0) return 'Z depa nevede kolej k vybraným nástupištím.';
 
-    train.orders = orders;
+    train.orders = [...orders];
+    train.orderFlags = nextFlags;
     train.target = options[0].index;
-    train.path = [exitSegment, ...options[0].route];
+    this.leaveDepot(train, depot, options[0].route);
+    return null;
+  }
+
+  // Kus koleje v depu, kterým vlak vyjíždí
+  private depotExit(depot: Depot): Segment {
+    return {
+      x: depot.x,
+      y: depot.y,
+      piece: axisPiece(depot.entrance % 2 === 0 ? 'y' : 'x'),
+      entry: opposite(depot.entrance),
+      exit: depot.entrance,
+    };
+  }
+
+  private leaveDepot(train: Train, depot: Depot, route: Segment[]): void {
+    train.serviceUntil = undefined;
+    train.path = [this.depotExit(depot), ...route];
     // Hlava ve středu depa, zbytek soupravy je ještě uvnitř
     train.pos = 0.5;
     train.speed = 0;
     train.state = 'running';
     this.reservations.reset(train, this.tail(train));
     this.changed();
-    return null;
+  }
+
+  // Po servisu v depu pokračuje vlak dalším příkazem řádu
+  private finishService(train: Train): void {
+    const depot = this.depot(train);
+    if (!train.orders || !depot) {
+      train.serviceUntil = undefined;
+      return;
+    }
+    // Po automatickém servisu pokračuje k příkazu, kam jel, po servisu z řádu k dalšímu
+    const resume = train.servicing?.resume;
+    train.servicing = undefined;
+    train.target = resume !== undefined && resume < train.orders.length ? resume : nextStop(train);
+    const goal = this.goal(train);
+    const route = goal && this.routeTo(segmentStart(this.depotExit(depot)), goal, train);
+    if (route) {
+      this.leaveDepot(train, depot, route);
+      return;
+    }
+    // Zkusí to znovu později; hráč se to dozví jen jednou
+    if (train.state === 'depot' && train.serviceUntil !== undefined && !this.blocked.has(train.id)) {
+      this.game.news(`${train.name} nemůže z depa najít cestu dál podle řádu.`, this.position(train));
+    }
+    train.target = (train.target - 1 + train.orders.length) % train.orders.length;
+    train.serviceUntil = this.game.clock.now + LOST_RETRY_DAYS;
+    this.blocked.set(train.id, { total: 0, sinceReplan: 0, deadlockWarned: true });
+  }
+
+  // Volby příkazů pro nový řád: u stejných příkazů z dosavadního řádu se zachovají
+  private realign(train: Train, orders: number[]): OrderFlags[] {
+    const old = train.orders ?? [];
+    const used = new Set<number>();
+    return orders.map((id) => {
+      const j = old.findIndex((o, k) => o === id && !used.has(k));
+      if (j < 0) return {};
+      used.add(j);
+      return { ...orderFlags(train, j) };
+    });
   }
 
   // Změna druhu nákladu jen v depu; dosavadní náklad propadne
@@ -352,10 +528,44 @@ export class Fleet {
 
   // Zapne nebo vypne čekání na plné naložení na zastávce (u sdíleného řádu pro celou linku)
   toggleFullLoad(train: Train, stationId: number): void {
-    const waits = train.fullLoad.includes(stationId);
-    const next = waits ? train.fullLoad.filter((id) => id !== stationId) : [...train.fullLoad, stationId];
-    for (const member of this.lineOf(train)) member.fullLoad = [...next];
+    const indices = (train.orders ?? []).flatMap((id, i) =>
+      id === stationId && !orderFlags(train, i).depot ? [i] : [],
+    );
+    const waits = indices.length > 0 && indices.every((i) => orderFlags(train, i).load === 'full');
+    for (const i of indices) this.setOrderFlags(train, i, { load: waits ? undefined : 'full' });
+  }
+
+  // Interval servisu ve dnech (u linky jen tomuto vlaku), v mezích jako v OpenTTD
+  setServiceInterval(train: Train, days: number): void {
+    train.serviceInterval = Math.max(MIN_SERVICE_INTERVAL_DAYS, Math.min(MAX_SERVICE_INTERVAL_DAYS, Math.round(days)));
     this.changed();
+  }
+
+  // Čeká vlak na zastávce stationId na plné naložení?
+  waitsForFullLoad(train: Train, stationId: number): boolean {
+    return (train.orders ?? []).some((id, i) => id === stationId && orderFlags(train, i).load === 'full');
+  }
+
+  // Změní volby jednoho příkazu (u sdíleného řádu pro celou linku); z příkazu do depa nejde udělat nástupiště
+  setOrderFlags(train: Train, index: number, patch: Omit<OrderFlags, 'depot'>): void {
+    if (!train.orders || index < 0 || index >= train.orders.length) return;
+    for (const member of this.lineOf(train)) {
+      const current = orderFlags(member, index);
+      if (current.depot) continue;
+      const next = [...member.orderFlags];
+      while (next.length < member.orders!.length) next.push({});
+      next[index] = cleanFlags({ ...current, ...patch });
+      member.orderFlags = next;
+    }
+    this.changed();
+  }
+
+  // Název příkazu pro okna: nástupiště, nebo „Depo 3“
+  orderName(train: Train, index: number): string {
+    const id = train.orders?.[index];
+    if (id === undefined) return '?';
+    if (orderFlags(train, index).depot) return `Depo ${id + 1}`;
+    return this.stationName(id);
   }
 
   // Vlaky se stejným sdíleným řádem včetně tohoto; bez linky jen on sám
@@ -371,8 +581,11 @@ export class Fleet {
     if (error) return error;
     other.orderGroup ??= this.nextGroupId++;
     train.orderGroup = other.orderGroup;
-    train.fullLoad = [...other.fullLoad];
-    this.applyOrders(train, [...other.orders]);
+    this.applyOrders(
+      train,
+      [...other.orders],
+      other.orderFlags.map((f) => ({ ...f })),
+    );
     this.changed();
     return null;
   }
@@ -388,26 +601,36 @@ export class Fleet {
 
   // Změní jízdní řád i za jízdy, u sdíleného řádu všem vlakům linky.
   // V depu smí být řád rozpracovaný, ověří se až při výjezdu.
-  setOrders(train: Train, orders: number[]): string | null {
+  // Bez voleb příkazů si vlak ponechá volby z dosavadního řádu u stejných zastávek.
+  setOrders(train: Train, orders: number[], flags?: OrderFlags[]): string | null {
     const line = this.lineOf(train);
+    const nextFlags = flags ? orders.map((_, i) => cleanFlags(flags[i] ?? {})) : this.realign(train, orders);
     // Nepropojené zastávky se za jízdy neblokují (řád se dá přestavět postupně), okno řádu je jen ukáže
-    const error = line.some((t) => t.state !== 'depot') ? ordersError(orders) : null;
+    const moving = line.some((t) => t.state !== 'depot' || t.serviceUntil !== undefined);
+    const error = moving ? ordersError(orders, nextFlags) : null;
     if (error) return error;
-    if (orders.some((id) => !this.station(id))) return 'Nástupiště neexistuje.';
-    for (const member of line) this.applyOrders(member, orders);
+    const missing = orders.some((id, i) => (nextFlags[i].depot ? !this.depotById(id) : !this.station(id)));
+    if (missing) return 'Nástupiště nebo depo neexistuje.';
+    for (const member of line) this.applyOrders(member, orders, nextFlags);
     this.changed();
     return null;
   }
 
   // Vlak pokračuje k aktuálnímu cíli, pokud v řádu zůstal
-  private applyOrders(train: Train, orders: number[]): void {
+  private applyOrders(train: Train, orders: number[], flags: OrderFlags[]): void {
     const current = train.orders && train.target >= 0 ? train.orders[train.target] : null;
+    const currentDepot = train.target >= 0 && orderFlags(train, train.target).depot === true;
     train.orders = orders.length > 0 ? [...orders] : null;
-    train.fullLoad = train.fullLoad.filter((id) => orders.includes(id));
+    train.orderFlags = orders.length > 0 ? flags.map((f) => ({ ...f })) : [];
     if (train.target !== -1 && train.state !== 'depot') {
-      const kept = current === null ? -1 : orders.indexOf(current);
+      const kept =
+        current === null
+          ? -1
+          : orders.findIndex((id, i) => id === current && (flags[i]?.depot === true) === currentDepot);
       // Ve stanici se po nástupu posune na další zastávku, tedy na začátek řádu
       train.target = kept >= 0 ? kept : train.state === 'loading' ? orders.length - 1 : 0;
+      // Cestou na servis se vlak po něm vrátí k témuž cíli, pokud v řádu zůstal
+      if (train.servicing) train.servicing = { ...train.servicing, resume: train.target };
       // Ztracený vlak zkusí novou trasu hned, ne až po další prodlevě
       if ((kept < 0 && train.state === 'running') || train.state === 'lost') this.replan(train);
     }
@@ -422,12 +645,14 @@ export class Fleet {
       // Při odjezdu se cíl posune na následující zastávku
       train.target = (index - 1 + orders.length) % orders.length;
     } else train.target = index;
+    train.servicing = undefined;
     this.replan(train);
     this.changed();
   }
 
   sendToDepot(train: Train): void {
     if (train.state === 'depot') return;
+    train.servicing = undefined;
     train.target = -1;
     if (train.state === 'running' || train.state === 'lost') this.replan(train);
     this.changed();
@@ -436,15 +661,36 @@ export class Fleet {
   update(days: number): void {
     if (days <= 0) return;
     for (const train of this.trains) {
-      if (train.state === 'depot') continue;
+      if (train.state === 'depot') {
+        if (train.serviceUntil !== undefined && this.game.clock.now >= train.serviceUntil) this.finishService(train);
+        continue;
+      }
       // Po načtení hry rezervace neexistují, vlak si znovu vezme koleje pod sebou
       if (!this.reservations.has(train)) this.reservations.reset(train, this.tail(train));
-      if (train.state === 'running') this.move(train, days);
-      else {
+      wearOut(train, days, isOld(train, this.game.clock.day));
+      if (train.brokenDays > 0) {
+        // Porouchaný vlak stojí, dokud se neopraví; koleje drží dál
+        train.speed = 0;
+        train.brokenDays = Math.max(0, train.brokenDays - days);
+        if (train.brokenDays === 0) this.changed();
+        continue;
+      }
+      if (train.state === 'running') {
+        if (train.speed > 0.3 && rollBreakdown(train, days, this.game.breakdowns, this.breakdownRng.next())) {
+          train.speed = 0;
+          this.game.news(
+            `${train.name} má poruchu – pár dní stojí. Pravidelný servis poruchám předchází.`,
+            this.position(train),
+          );
+          this.changed();
+          continue;
+        }
+        this.move(train, days);
+      } else {
         train.waitDays -= days;
         if (train.waitDays > 0) continue;
         if (this.fillingUp(train)) train.waitDays = FULL_LOAD_CHECK_DAYS;
-        else this.replan(train);
+        else if (!this.planService(train)) this.replan(train);
       }
     }
   }
@@ -452,13 +698,13 @@ export class Fleet {
   // Vlak, který na zastávce čeká na plné naložení, ale ještě není plný
   isFillingUp(train: Train): boolean {
     const station = this.loadingStation(train);
-    return station !== null && train.fullLoad.includes(station.id) && !this.isFull(train, station);
+    return station !== null && this.targetFlags(train).load === 'full' && !this.isFull(train, station);
   }
 
   // Doloží náklad; vrací true, když má vlak dál čekat
   private fillingUp(train: Train): boolean {
     const station = this.loadingStation(train);
-    if (!station || !train.fullLoad.includes(station.id)) return false;
+    if (!station || this.targetFlags(train).load !== 'full') return false;
     this.exchange(train, station, true);
     this.changed();
     return !this.isFull(train, station);
@@ -466,7 +712,54 @@ export class Fleet {
 
   private loadingStation(train: Train): Station | null {
     if (train.state !== 'loading' || train.target === -1 || !train.orders) return null;
+    if (this.targetFlags(train).depot) return null;
     return this.station(train.orders[train.target]) ?? null;
+  }
+
+  // Volby příkazu, ke kterému vlak právě jede nebo u kterého stojí
+  private targetFlags(train: Train): OrderFlags {
+    // Cestou na automatický servis neplatí volby příkazu, ke kterému se vlak potom vrátí
+    return train.target >= 0 && !train.servicing ? orderFlags(train, train.target) : {};
+  }
+
+  // Při odjezdu ze stanice: je-li čas na servis, pošle vlak do nejbližšího depa (do SERVICE_MAX_ROUTE dlaždic).
+  // Vlaky se servisem v řádu jezdí podle řádu. Vrací true, když vlak na servis vyrazil.
+  private planService(train: Train): boolean {
+    if (train.state !== 'loading' || !train.orders || train.target === -1 || train.servicing) return false;
+    if (!needsService(train, this.game.clock.now, this.game.breakdowns)) return false;
+    if (train.orderFlags.some((f) => f.depot)) return false;
+    const depot = this.nearestServiceDepot(train);
+    if (!depot) return false;
+    train.servicing = { depotId: depot.id, resume: nextStop(train) };
+    this.replan(train);
+    // replan stav změní; TypeScript o tom neví
+    if ((train.state as TrainState) !== 'running') {
+      // Cestu se nepodařilo naplánovat: servis se odloží a vlak jede dál podle řádu
+      train.servicing = undefined;
+      this.replan(train);
+    }
+    return true;
+  }
+
+  // Nejbližší depo, ke kterému vede z místa vlaku (jedním nebo druhým směrem) cesta do SERVICE_MAX_ROUTE dlaždic
+  private nearestServiceDepot(train: Train): Depot | null {
+    const body = this.body(train);
+    const head = body[body.length - 1];
+    const reversed = body.map(reverseSegment).reverse();
+    const starts = [segmentStart(head), segmentStart(reversed[reversed.length - 1])];
+    const candidates = [...this.game.world.rail.depots]
+      .filter((d) => Math.hypot(d.x - head.x, d.y - head.y) <= SERVICE_MAX_ROUTE)
+      .sort((a, b) => Math.hypot(a.x - head.x, a.y - head.y) - Math.hypot(b.x - head.x, b.y - head.y))
+      .slice(0, 4);
+    let best: { depot: Depot; length: number } | null = null;
+    for (const depot of candidates) {
+      for (const start of starts) {
+        const route = this.findGoal(start, depot);
+        const length = route ? pathLength(route) : Infinity;
+        if (length <= SERVICE_MAX_ROUTE && (!best || length < best.length)) best = { depot, length };
+      }
+    }
+    return best?.depot ?? null;
   }
 
   // Plné jsou všechny vagony, které stojí u nástupiště – ostatní naložit nejdou
@@ -483,7 +776,7 @@ export class Fleet {
   // Nástupiště z jízdního řádu, která jsou kratší než souprava
   shortStations(train: Train): Station[] {
     const length = trainLength(train);
-    return (train.orders ?? [])
+    return stationOrders(train)
       .map((id) => this.station(id))
       .filter((s, i, all): s is Station => s !== undefined && s.length < length && all.indexOf(s) === i);
   }
@@ -502,7 +795,12 @@ export class Fleet {
       if (depot && depot.x === x && depot.y === y) return `Depo patří vlaku ${train.name}.`;
       // Řád vlaku v depu se po demolici jen zkrátí
       if (train.state === 'depot') continue;
-      for (const id of train.orders ?? []) {
+      for (const [i, id] of (train.orders ?? []).entries()) {
+        if (orderFlags(train, i).depot) {
+          const d = this.depotById(id);
+          if (d && d.x === x && d.y === y) return `Depo ${d.id + 1} je v jízdním řádu vlaku ${train.name}.`;
+          continue;
+        }
         const s = this.station(id);
         if (s && stationTiles(s).some((t) => t.x === x && t.y === y)) {
           return `Nástupiště ${s.name} obsluhuje ${train.name}.`;
@@ -518,7 +816,14 @@ export class Fleet {
     const pathEnd = pathLength(train.path);
     // Rezervace musí sahat aspoň na brzdnou dráhu a krok tohoto snímku před hlavu
     const needed = train.pos + (model.speed * model.speed) / (2 * DECELERATION) + model.speed * days + 1;
-    while (!reservations.fullyReserved(train) && reservations.limit(train) < needed && reservations.extend(train));
+    // Stanicí „projet“ vlak nezastaví: cestu k dalšímu příkazu naváže včas před jejím koncem
+    if (this.targetFlags(train).via && pathEnd - train.pos < needed - train.pos + 1) this.chainVia(train);
+    const reserve = (): void => {
+      while (!reservations.fullyReserved(train) && reservations.limit(train) < needed && reservations.extend(train));
+    };
+    reserve();
+    // Další úsek drží jiný vlak: jako cestové návěstidlo zkusí hned volnou cestu (jinou kolej nástupiště, výhybnu)
+    if (!reservations.fullyReserved(train) && reservations.limit(train) < needed && this.detour(train)) reserve();
     const limit = Math.min(pathEnd, reservations.limit(train));
     const remaining = Math.max(0, limit - train.pos);
     const brakeLimit = Math.sqrt(2 * DECELERATION * remaining);
@@ -544,6 +849,40 @@ export class Fleet {
     }
     this.blocked.delete(train.id);
     this.arrive(train);
+  }
+
+  // Naváže cestu za stanicí „projet“ k dalšímu příkazu bez otáčení; když to nejde, vlak ve stanici jen zastaví
+  private chainVia(train: Train): void {
+    if (!train.orders || this.viaFailed.get(train.id) === train.target) return;
+    const next = nextStop(train);
+    const goal = this.orderGoal(train, next);
+    const last = train.path[train.path.length - 1];
+    const route = goal && last ? this.routeTo(segmentStart(last), goal, train) : null;
+    if (!route) {
+      this.viaFailed.set(train.id, train.target);
+      return;
+    }
+    this.viaFailed.delete(train.id);
+    train.path = [...train.path, ...route];
+    train.target = next;
+  }
+
+  // Přesměruje zbytek cesty za koncem rezervace mimo koleje držené jinými vlaky; vrací true při změně
+  private detour(train: Train): boolean {
+    const now = this.game.clock.now;
+    if (now - (this.detourTried.get(train.id) ?? -Infinity) < DETOUR_RETRY_DAYS) return false;
+    this.detourTried.set(train.id, now);
+    const reach = this.reservations.reached(train);
+    const goal = this.goal(train);
+    if (!goal || reach <= 0 || reach >= train.path.length) return false;
+    const blocked = this.reservations.blockerOf(train);
+    if (blocked === undefined) return false;
+    const route = this.findGoal(segmentStart(train.path[reach - 1]), goal, this.avoidFor(train, goal));
+    if (!route) return false;
+    const current = pathLength(train.path.slice(reach));
+    if (pathLength(route) > current * DETOUR_MAX_RATIO + DETOUR_MAX_EXTRA) return false;
+    train.path = [...train.path.slice(0, reach), ...route];
+    return true;
   }
 
   // Stojí před obsazenou tratí; občas zkusí jinou cestu a po delší době varuje hráče
@@ -599,7 +938,17 @@ export class Fleet {
 
   private arrive(train: Train): void {
     this.trimToBody(train);
-    if (train.target === -1) {
+    if (train.servicing && train.target !== -1) {
+      // Automatický servis: vlak zajede do depa a po chvíli pokračuje v řádu
+      const depot = this.depotById(train.servicing.depotId);
+      train.state = 'depot';
+      train.path = [];
+      this.reservations.release(train);
+      if (depot) train.depotId = depot.id;
+      service(train, trainModel(train).reliability, this.game.clock.now);
+      train.serviceUntil = this.game.clock.now + SERVICE_DAYS;
+    } else if (train.target === -1) {
+      service(train, trainModel(train).reliability, this.game.clock.now);
       train.state = 'depot';
       train.path = [];
       this.reservations.release(train);
@@ -607,26 +956,41 @@ export class Fleet {
       const load = train.passengers > 0 ? ` s nákladem ${formatLoad(train)}` : '';
       this.game.news(`${train.name} dorazil do depa${load}.`, this.position(train));
       if (train.renewing) this.finishRenewal(train);
+    } else if (this.targetFlags(train).depot) {
+      // Servis v depu podle řádu: vlak zajede dovnitř a po chvíli pokračuje dalším příkazem
+      const depot = this.goal(train) as Depot | null;
+      train.state = 'depot';
+      train.path = [];
+      this.reservations.release(train);
+      if (depot) train.depotId = depot.id;
+      service(train, trainModel(train).reliability, this.game.clock.now);
+      train.serviceUntil = this.game.clock.now + SERVICE_DAYS;
     } else {
       train.state = 'loading';
-      train.waitDays = TRAIN_LOADING_DAYS;
+      const flags = this.targetFlags(train);
+      // Projetí stanicí bez navázané cesty: jen krátké zastavení bez nakládky a vykládky
+      train.waitDays = flags.via ? 0 : TRAIN_LOADING_DAYS;
       this.reservations.reset(train, this.tail(train));
       const station = this.goal(train);
       // Pobyt se prodlouží podle množství vyloženého a naloženého nákladu
-      if (station && !('entrance' in station)) train.waitDays += this.exchange(train, station) / LOADING_PER_DAY;
+      if (station && !('entrance' in station) && !flags.via) {
+        train.waitDays += this.exchange(train, station) / LOADING_PER_DAY;
+      }
     }
     this.changed();
   }
 
   private exchange(train: Train, station: Station, loadOnly = false): number {
+    const flags = this.targetFlags(train);
+    const options = { unload: flags.unload, load: flags.load === 'none' ? ('none' as const) : undefined };
     const { cargo } = train;
     const hold = {
       atPlatform: wagonsAtStation(train, station) * WAGON_CAPACITY,
       capacity: train.wagons * WAGON_CAPACITY,
       speed: trainModel(train).speed,
     };
-    if (isFreight(cargo)) return this.game.freight.exchange(train, hold, station, cargo, loadOnly);
-    return this.game.passengers.exchange(train, hold, station, loadOnly);
+    if (isFreight(cargo)) return this.game.freight.exchange(train, hold, station, cargo, loadOnly, options);
+    return this.game.passengers.exchange(train, hold, station, loadOnly, options);
   }
 
   // Naplánuje cestu k dalšímu cíli; vlak může pokračovat vpřed, nebo se otočit
@@ -690,7 +1054,15 @@ export class Fleet {
 
   private goal(train: Train): Station | Depot | null {
     if (train.target === -1) return this.depot(train) ?? null;
-    return train.orders ? (this.station(train.orders[train.target]) ?? null) : null;
+    if (train.servicing) return this.depotById(train.servicing.depotId) ?? null;
+    return this.orderGoal(train, train.target);
+  }
+
+  // Cíl příkazu řádu: nástupiště, nebo depo u příkazu na servis
+  private orderGoal(train: Train, index: number): Station | Depot | null {
+    const id = train.orders?.[index];
+    if (id === undefined) return null;
+    return (orderFlags(train, index).depot ? this.depotById(id) : this.station(id)) ?? null;
   }
 
   // Přednostně trasa mimo koleje jiných vlaků (např. volná kolej nástupiště), jinak nejkratší a vlak počká
@@ -761,11 +1133,21 @@ export class Fleet {
     for (const train of this.trains) {
       // Vlak v depu zapomene zbořená nástupiště
       if (train.state === 'depot' && train.orders) {
-        const kept = train.orders.filter((id) => this.station(id));
+        const keep = train.orders.map((_, i) => this.orderGoal(train, i) !== null);
+        const kept = train.orders.filter((_, i) => keep[i]);
+        train.orderFlags = train.orderFlags.filter((_, i) => keep[i]);
         train.orders = kept.length > 0 ? kept : null;
+        if (!train.orders) train.serviceUntil = undefined;
+        else if (train.target >= train.orders.length) train.target = 0;
       }
+      if (train.servicing && !this.depotById(train.servicing.depotId)) train.servicing = undefined;
       if (train.state !== 'running') continue;
-      if (!this.goal(train) || !train.path.every((s) => segmentStillExists(rail, s))) this.replan(train);
+      // Před hlavou vlaku nesmí nově stát jednosměrné návěstidlo proti směru jízdy
+      const head = segmentIndexAt(train.path, Math.max(0, train.pos - 1e-6));
+      const againstSignal = train.path.some((s, i) => i > head && !rail.allowsExit(s.x, s.y, s.piece, s.exit));
+      if (!this.goal(train) || againstSignal || !train.path.every((s) => segmentStillExists(rail, s))) {
+        this.replan(train);
+      }
     }
   }
 
@@ -807,7 +1189,11 @@ export class Fleet {
   }
 
   private depot(train: Train): Depot | undefined {
-    return this.game.world.rail.depots.find((d) => d.id === train.depotId);
+    return this.depotById(train.depotId);
+  }
+
+  depotById(id: number): Depot | undefined {
+    return this.game.world.rail.depots.find((d) => d.id === id);
   }
 
   private station(id: number): Station | undefined {

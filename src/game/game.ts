@@ -13,6 +13,7 @@ import { ShipFleet } from './ships';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
+import type { BreakdownSetting } from './reliability';
 import { growTown } from '../world/town';
 
 export const DEFAULT_COMPANY_NAME = 'Moje dopravní společnost';
@@ -115,6 +116,8 @@ export class Game {
   companyName = DEFAULT_COMPANY_NAME;
   // Staré vlaky se samy pošlou do depa na obnovu
   autoRenew = false;
+  // Poruchy vozidel jako v nastavení OpenTTD; bez poruch se nejezdí ani na servis
+  breakdowns: BreakdownSetting = 'normal';
   money = START_MONEY;
   loan = 0;
   thisYear: YearStats = emptyYear();

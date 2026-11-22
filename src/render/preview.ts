@@ -4,7 +4,8 @@ import { createAirportObject } from './airports';
 import { createPortObject } from './ports';
 import type { PortShape } from '../world/port';
 import type { TilePos } from '../world/map';
-import { EDGE_DELTA, type Axis, type Edge, type StationShape } from '../world/rail';
+import { EDGE_DELTA, PIECES, type Axis, type Edge, type RailNetwork, type StationShape } from '../world/rail';
+import { SIGNAL_ARROW, SIGNAL_LAMP, SIGNAL_POLE, signalPlacement } from './signals';
 import {
   TrackView,
   createDepotMesh,
@@ -53,9 +54,15 @@ export class BuildPreview {
     depthWrite: false,
   });
   private readonly road = new THREE.Mesh(new THREE.BufferGeometry(), this.roadMaterial);
+  private readonly signals = new THREE.Group();
+  private readonly signalMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.75,
+    depthWrite: false,
+  });
 
   constructor() {
-    this.object.add(this.track.object, this.station, this.depot, this.area, this.road);
+    this.object.add(this.track.object, this.station, this.depot, this.area, this.road, this.signals);
     this.object.renderOrder = 5;
     this.clear();
   }
@@ -66,6 +73,33 @@ export class BuildPreview {
     this.depot.visible = false;
     this.area.count = 0;
     this.road.visible = false;
+    this.signals.clear();
+  }
+
+  // Návěstidla tak, jak budou stát (jednosměrná se šipkou), a zvýrazněné dlaždice pod nimi
+  showSignals(items: (TilePos & { dir?: Edge })[], rail: RailNetwork, kind: 'valid' | 'invalid'): void {
+    this.clear();
+    const color = kind === 'valid' ? VALID : INVALID;
+    this.signalMaterial.color.set(color);
+    for (const { x, y, dir } of items.slice(0, 512)) {
+      const piece = PIECES.findIndex((_, p) => rail.has(x, y, p));
+      if (piece < 0) continue;
+      const place = signalPlacement(piece, x, y, dir);
+      for (const geometry of [SIGNAL_POLE, SIGNAL_LAMP]) {
+        const mesh = new THREE.Mesh(geometry, this.signalMaterial);
+        mesh.position.set(place.pole[0], 0, place.pole[1]);
+        this.signals.add(mesh);
+      }
+      if (place.angle !== null) {
+        const arrow = new THREE.Mesh(SIGNAL_ARROW, this.signalMaterial);
+        arrow.position.set(place.center[0], 0.01, place.center[1]);
+        arrow.rotation.y = place.angle;
+        this.signals.add(arrow);
+      }
+    }
+    this.areaMaterial.color.set(color);
+    this.areaMaterial.opacity = 0.3;
+    this.setArea(items);
   }
 
   // Silnice tak, jak bude vypadat: napojená na stávající silnice i na sebe
@@ -107,9 +141,22 @@ export class BuildPreview {
     this.area.computeBoundingSphere();
   }
 
-  showTrack(items: TrackItem[], valid: boolean): void {
+  // Kolej k položení; blocked = zbytek tažení za překážkou (červeně)
+  showTrack(items: TrackItem[], valid: boolean, blocked: TilePos[] = []): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
+    this.track.update(items);
+    if (blocked.length > 0) {
+      this.areaMaterial.color.set(INVALID);
+      this.areaMaterial.opacity = 0.45;
+      this.setArea(blocked);
+    }
+  }
+
+  // Kusy koleje, které se odeberou
+  showTrackRemoval(items: TrackItem[]): void {
+    this.clear();
+    this.material.color.set(DEMOLISH);
     this.track.update(items);
   }
 
@@ -131,11 +178,13 @@ export class BuildPreview {
     this.station.add(createPortObject(shape, this.material, false));
   }
 
-  showDepot(x: number, y: number, entrance: Edge, valid: boolean): void {
+  // Depo i se spojkami, kterými se napojí na kolej před vjezdem
+  showDepot(x: number, y: number, entrance: Edge, valid: boolean, links: TrackItem[] = []): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
     placeDepot(this.depot, x, y, entrance);
     this.depot.visible = true;
+    this.track.update(links);
   }
 
   showRoadStop(x: number, y: number, axis: Axis, valid: boolean): void {
