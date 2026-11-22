@@ -10,6 +10,23 @@ import type { Rng } from './rng';
 
 export type TownKind = 'city' | 'town' | 'village';
 
+// Silniční síť města jako v OpenTTD: lepší silnice (organicky, bez bloků silnic 2×2 a souběžných ulic těsně
+// vedle sebe), původní (organicky a hustěji), pravidelná mřížka s bloky 2×2 nebo 3×3 domy
+export type TownLayout = 'better' | 'original' | 'grid2' | 'grid3';
+
+export const TOWN_LAYOUTS: readonly TownLayout[] = ['better', 'original', 'grid2', 'grid3'];
+
+export const TOWN_LAYOUT_LABELS: Record<TownLayout, string> = {
+  better: 'Lepší silnice',
+  original: 'Původní',
+  grid2: 'Mřížka 2×2',
+  grid3: 'Mřížka 3×3',
+};
+
+export function isTownLayout(value: unknown): value is TownLayout {
+  return typeof value === 'string' && (TOWN_LAYOUTS as readonly string[]).includes(value);
+}
+
 export interface Building {
   x: number;
   y: number;
@@ -30,6 +47,13 @@ export interface Town {
   buildings: Building[];
   // Obsluhové vlakem za poslední rok, zrychluje růst
   served: boolean;
+  // Silniční síť; starší uložení ho nemají a rostou dál v mřížce podle druhu města
+  layout?: TownLayout;
+}
+
+// Rozložení města; bez údaje mřížka jako dřív (velkoměsto 2×2, ostatní 3×3)
+export function townLayout(town: Town): TownLayout {
+  return town.layout ?? (KIND_RULES[town.kind].roadSpacing === 3 ? 'grid2' : 'grid3');
 }
 
 interface KindRules {
@@ -103,9 +127,11 @@ function isFreeFor(map: GameMap, town: Town, x: number, y: number): boolean {
   return owner === NO_OWNER || owner === town.id;
 }
 
-// Čáry silniční sítě jsou vyhrazené pro silnice, aby je budovy nezablokovaly
+// Čáry silniční sítě jsou vyhrazené pro silnice, aby je budovy nezablokovaly (jen u mřížky)
 function onRoadGrid(town: Town, x: number, y: number): boolean {
-  const spacing = KIND_RULES[town.kind].roadSpacing;
+  const layout = townLayout(town);
+  if (layout !== 'grid2' && layout !== 'grid3') return false;
+  const spacing = layout === 'grid2' ? 3 : 4;
   return (x - town.x) % spacing === 0 || (y - town.y) % spacing === 0;
 }
 
@@ -162,6 +188,223 @@ function pickModel(town: Town, distance: number, year: number, rng: Rng): string
 
 // Doplní silnice a budovy, dokud kapacita budov nestačí na populaci; populaci pak omezí kapacitou
 export function expandTown(map: GameMap, town: Town, year: number, rng: Rng): void {
+  const layout = townLayout(town);
+  if (layout === 'grid2' || layout === 'grid3') expandGridTown(map, town, year, rng);
+  else expandOrganicTown(map, town, year, rng);
+}
+
+// Po kolika nezdařených pokusech náhodné procházky postaví město nejbližší možnou stavbu
+const GROWTH_FAILS_BEFORE_FORCED = 12;
+// Kolik volných míst pro domy u silnic si město drží, než začne stavět další ulice
+const MIN_FREE_SPOTS = 4;
+// Podíl míst u silnice s volnou zemí za nimi, která zůstanou volná pro budoucí odbočky
+const EXIT_RESERVE = 0.35;
+
+// Dlaždice silnice tohoto města (ne most hráče)
+function isTownRoad(map: GameMap, town: Town, x: number, y: number): boolean {
+  return map.isType(x, y, TileType.Road) && map.getOwner(x, y) === town.id;
+}
+
+function roadDirs(map: GameMap, town: Town, x: number, y: number): number[] {
+  return [0, 1, 2, 3].filter((d) => isTownRoad(map, town, x + NEIGHBOURS[d].dx, y + NEIGHBOURS[d].dy));
+}
+
+// Organický růst jako v OpenTTD: náhodná procházka po silnicích od středu a na jejím konci
+// prodloužení slepé ulice, odbočka do strany, nebo dům u silnice
+function expandOrganicTown(map: GameMap, town: Town, year: number, rng: Rng): void {
+  const rules = KIND_RULES[town.kind];
+  const better = townLayout(town) === 'better';
+  let capacity = townCapacity(town);
+  if (capacity >= town.population) return;
+
+  // Může sem vést silnice města? Lepší silnice nesmí vytvořit blok 2×2 ani vést těsně vedle souběžné ulice
+  const canRoad = (x: number, y: number, from: number, strict: boolean): boolean => {
+    if (!map.inBounds(x, y) || !insideShape(town, x, y, town.radius) || !isFreeFor(map, town, x, y)) return false;
+    if (isTownRoad(map, town, x, y)) return false;
+    if (!map.isFree(x, y)) return false;
+    const road = (dx: number, dy: number): boolean => isTownRoad(map, town, x + dx, y + dy);
+    for (const [sx, sy] of [
+      [-1, -1],
+      [0, -1],
+      [-1, 0],
+      [0, 0],
+    ]) {
+      // Čtverec 2×2 s rohem (x + sx, y + sy): ostatní tři dlaždice nesmí být všechny silnice
+      const others = [
+        [sx, sy],
+        [sx + 1, sy],
+        [sx, sy + 1],
+        [sx + 1, sy + 1],
+      ].filter(([dx, dy]) => dx !== 0 || dy !== 0);
+      if (others.every(([dx, dy]) => road(dx, dy))) return false;
+    }
+    if (better && strict) {
+      // Po stranách pokračující ulice (kolmo ke směru stavby) nesmí vést jiná silnice
+      const side = NEIGHBOURS[(from + 1) % 4];
+      if (road(side.dx, side.dy) || road(-side.dx, -side.dy)) return false;
+    }
+    return true;
+  };
+
+  const placeRoad = (x: number, y: number): void => {
+    map.set(x, y, TileType.Road);
+    map.setOwner(x, y, town.id);
+  };
+
+  // Rovný úsek silnice z (x, y) směrem d; vrací počet postavených dlaždic. První dlaždice odbočky smí vést
+  // podél jiné ulice (jinak by se husté centrum uzavřelo), další už ne
+  const extend = (x: number, y: number, d: number, length: number, branch = false): number => {
+    let built = 0;
+    for (let i = 1; i <= length; i++) {
+      const nx = x + NEIGHBOURS[d].dx * i;
+      const ny = y + NEIGHBOURS[d].dy * i;
+      if (!canRoad(nx, ny, d, !(branch && i === 1))) break;
+      placeRoad(nx, ny);
+      built++;
+      // Napojení na silnici před sebou vytvoří křižovatku a úsek končí
+      if (isTownRoad(map, town, nx + NEIGHBOURS[d].dx, ny + NEIGHBOURS[d].dy)) break;
+    }
+    return built;
+  };
+
+  // Smí stát dům vedle silnice (x, y) ve směru d? Konec slepé ulice a část míst, za kterými je volná země,
+  // zůstanou volné pro budoucí ulice, aby se město domy samo neuzavřelo
+  const houseSpot = (x: number, y: number, d: number, ahead: number): boolean => {
+    if (d === ahead) return false;
+    const hx = x + NEIGHBOURS[d].dx;
+    const hy = y + NEIGHBOURS[d].dy;
+    if (!map.isFree(hx, hy) || !isFreeFor(map, town, hx, hy) || !insideShape(town, hx, hy, town.radius + 1))
+      return false;
+    if (tileHash(hx, hy, town.id) < rules.gardenRatio) return false;
+    const open = [1, 2].every((k) => map.isFree(hx + NEIGHBOURS[d].dx * k, hy + NEIGHBOURS[d].dy * k));
+    return !(open && tileHash(hx, hy, town.id + 977) < EXIT_RESERVE);
+  };
+
+  // Dům na volné dlaždici vedle silnice (x, y), čelem k ní
+  const house = (x: number, y: number): boolean => {
+    const dirs = roadDirs(map, town, x, y);
+    const ahead = dirs.length === 1 ? (dirs[0] + 2) % 4 : -1;
+    const spots = [0, 1, 2, 3].filter((d) => houseSpot(x, y, d, ahead));
+    if (spots.length === 0) return false;
+    const d = rng.pick(spots);
+    const hx = x + NEIGHBOURS[d].dx;
+    const hy = y + NEIGHBOURS[d].dy;
+    // Budova je natočená čelem k silnici, tedy opačně, než vede směr od silnice k ní
+    const rotation = NEIGHBOURS[(d + 2) % 4].rotation;
+    const model = pickModel(town, Math.hypot(hx - town.x, hy - town.y), year, rng);
+    map.set(hx, hy, TileType.Building);
+    map.setOwner(hx, hy, town.id);
+    town.buildings.push({ x: hx, y: hy, rotation, model });
+    capacity += buildingCapacity(model);
+    return true;
+  };
+
+  // Střed města a první ulice do několika směrů
+  if (!isTownRoad(map, town, town.x, town.y)) {
+    if (!map.isFree(town.x, town.y) || !isFreeFor(map, town, town.x, town.y)) return;
+    placeRoad(town.x, town.y);
+    const arms = rng.shuffle([0, 1, 2, 3]).slice(0, 2 + rng.int(0, 2));
+    for (const d of arms) extend(town.x, town.y, d, rng.int(2, better ? 4 : 3));
+  }
+
+  // Volná místa pro domy u silnic města (v dosahu); když jich je málo, město staví ulice
+  const freeSpots = (): number => {
+    let count = 0;
+    const r = Math.ceil(town.radius * 1.4) + 2;
+    for (let y = town.y - r; y <= town.y + r; y++) {
+      for (let x = town.x - r; x <= town.x + r; x++) {
+        if (!isTownRoad(map, town, x, y)) continue;
+        const dirs = roadDirs(map, town, x, y);
+        const ahead = dirs.length === 1 ? (dirs[0] + 2) % 4 : -1;
+        for (let d = 0; d < 4; d++) if (houseSpot(x, y, d, ahead)) count++;
+      }
+    }
+    return count;
+  };
+
+  // Ulice z dlaždice (x, y): odbočka do volné strany, nebo prodloužení slepé ulice
+  const street = (x: number, y: number): boolean => {
+    const dirs = roadDirs(map, town, x, y);
+    const deadEnd = dirs.length === 1 ? (dirs[0] + 2) % 4 : -1;
+    const sides = rng.shuffle([0, 1, 2, 3].filter((d) => !dirs.includes(d) && d !== deadEnd));
+    const options =
+      deadEnd >= 0 && rng.chance(0.5) ? [deadEnd, ...sides] : [...sides, ...(deadEnd >= 0 ? [deadEnd] : [])];
+    for (const d of options) {
+      const length = d === deadEnd ? rng.int(1, better ? 3 : 2) : rng.int(2, better ? 4 : 3);
+      if (extend(x, y, d, length, d !== deadEnd) > 0) return true;
+    }
+    return false;
+  };
+
+  // Jeden pokus o růst: náhodná procházka po silnicích od středu, na jejím konci ulice nebo dům
+  let spots = freeSpots();
+  const step = (): boolean => {
+    let x = town.x;
+    let y = town.y;
+    let back = -1;
+    const steps = rng.int(0, Math.max(2, town.radius * 2));
+    for (let i = 0; i < steps; i++) {
+      const next = roadDirs(map, town, x, y).filter((d) => d !== back);
+      if (next.length === 0) break;
+      const d = rng.pick(next);
+      x += NEIGHBOURS[d].dx;
+      y += NEIGHBOURS[d].dy;
+      back = (d + 2) % 4;
+    }
+    // Silnice předbíhají domy: když u nich dochází volná místa, staví se ulice
+    const wanted = MIN_FREE_SPOTS + town.buildings.length * (better ? 0.12 : 0.08);
+    if (spots < wanted) {
+      if (street(x, y)) {
+        spots = freeSpots();
+        return true;
+      }
+      return false;
+    }
+    if (house(x, y)) {
+      spots--;
+      return true;
+    }
+    return false;
+  };
+
+  // Záložní růst, když náhodná procházka opakovaně nic nepostaví: nejbližší ulice, nebo dům u silnice
+  const forced = (): boolean => {
+    const roads: { x: number; y: number; distance: number }[] = [];
+    const r = Math.ceil(town.radius * 1.4) + 2;
+    for (let y = town.y - r; y <= town.y + r; y++) {
+      for (let x = town.x - r; x <= town.x + r; x++) {
+        if (isTownRoad(map, town, x, y))
+          roads.push({ x, y, distance: Math.hypot(x - town.x, y - town.y) + rng.next() * 3 });
+      }
+    }
+    roads.sort((a, b) => a.distance - b.distance);
+    const wanted = MIN_FREE_SPOTS + town.buildings.length * (better ? 0.12 : 0.08);
+    const tryHouse = (): boolean => roads.some((road) => house(road.x, road.y));
+    const tryStreet = (): boolean => {
+      const built = roads.some((road) => street(road.x, road.y));
+      if (built) spots = freeSpots();
+      return built;
+    };
+    return spots >= wanted ? tryHouse() || tryStreet() : tryStreet() || tryHouse();
+  };
+
+  let fails = 0;
+  while (capacity < town.population && town.radius <= rules.maxRadius) {
+    if (step()) {
+      fails = 0;
+      continue;
+    }
+    fails++;
+    if (fails >= GROWTH_FAILS_BEFORE_FORCED) {
+      if (!forced()) town.radius++;
+      fails = 0;
+    }
+  }
+  town.population = Math.min(town.population, capacity);
+}
+
+// Mřížka: silnice na pravidelných čarách, budovy na volných místech podél nich
+function expandGridTown(map: GameMap, town: Town, year: number, rng: Rng): void {
   const rules = KIND_RULES[town.kind];
   let capacity = townCapacity(town);
 

@@ -18,7 +18,7 @@ import { generateWorld } from '../world/generator';
 import { Edge, defaultStationShape, type Station } from '../world/rail';
 import { findTrackPath } from '../world/railPath';
 import { hashSeed } from '../world/rng';
-import { growTown, type Town } from '../world/town';
+import { TOWN_LAYOUTS, TOWN_LAYOUT_LABELS, growTown, type Town, type TownLayout } from '../world/town';
 import { DEFAULT_OPTIONS } from './game';
 
 // Ukázka na pozadí běží rychleji, aby bylo co sledovat
@@ -155,6 +155,10 @@ function newGamePanel(back: () => void): HTMLElement {
     ],
     DEFAULT_OPTIONS.industries,
   );
+  const layout = select<TownLayout | 'random'>(
+    [...TOWN_LAYOUTS.map((l): [TownLayout, string] => [l, TOWN_LAYOUT_LABELS[l]]), ['random', 'Náhodně (každé jinak)']],
+    DEFAULT_OPTIONS.townLayout ?? 'better',
+  );
   const start = menuButton('Začít', '', () => {
     const options: NewGameOptions = {
       seedText: seed.value.trim() || String(Date.now()),
@@ -162,6 +166,7 @@ function newGamePanel(back: () => void): HTMLElement {
       water: water.value as WaterAmount,
       towns: towns.value as TownAmount,
       industries: industries.value as IndustryAmount,
+      townLayout: layout.value as TownLayout | 'random',
     };
     launch({ mode: 'new', options });
   });
@@ -176,6 +181,7 @@ function newGamePanel(back: () => void): HTMLElement {
     field('Velikost mapy', size),
     field('Voda', water),
     field('Města a vesnice', towns),
+    field('Silnice ve městech', layout),
     field('Průmysl', industries),
     start,
     cancel,

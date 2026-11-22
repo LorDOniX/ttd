@@ -32,7 +32,7 @@ import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
 import { GameMap, TileType } from '../world/map';
 import { RailNetwork, PIECES, stationTiles, type Depot, type Edge, type RailBridge, type Station } from '../world/rail';
-import type { Town } from '../world/town';
+import { isTownLayout, type Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
 // 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům;
@@ -372,7 +372,8 @@ export function restoreGame(data: SaveData): Game {
   const world: World = {
     seed: data.seed,
     map,
-    towns: data.towns,
+    // Neznámé rozložení silnic se zahodí; město pak roste v mřížce jako ve starších uloženích
+    towns: data.towns.map((t) => (t.layout === undefined || isTownLayout(t.layout) ? t : { ...t, layout: undefined })),
     rail,
     // Starší uložení průmysl nemá; cizí soubor může obsahovat nesmysly
     industries: (data.industries ?? [])

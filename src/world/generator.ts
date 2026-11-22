@@ -5,7 +5,7 @@ import { CITY_NAMES, VILLAGE_NAMES } from './names';
 import { fbm } from './noise';
 import { RailNetwork } from './rail';
 import { Rng } from './rng';
-import { createTownShape, expandTown, type Town, type TownKind } from './town';
+import { TOWN_LAYOUTS, createTownShape, expandTown, type Town, type TownKind, type TownLayout } from './town';
 
 export interface World {
   seed: number;
@@ -26,6 +26,8 @@ export interface GenerateOptions {
   industryDensity?: number;
   // Brno co nejblíž tomuto místu (úvodní ukázka ho chce uprostřed mapy), jinak náhodně
   firstTownAt?: TilePos;
+  // Silniční síť měst jako v OpenTTD; náhodně = každé město jinak (výchozí lepší silnice)
+  townLayout?: TownLayout | 'random';
 }
 
 const DEFAULT_OPTIONS: GenerateOptions = { waterLevel: 0.34, townDensity: 1 };
@@ -101,9 +103,15 @@ function minDistance(kind: TownKind, other: TownKind): number {
   return kind === 'city' && other === 'city' ? 40 : 26;
 }
 
+// Rozložení jednoho města; náhodně se volí pro každé město zvlášť
+function townLayoutFor(layout: TownLayout | 'random', rng: Rng): TownLayout {
+  return layout === 'random' ? rng.pick(TOWN_LAYOUTS) : layout;
+}
+
 function placeTowns(
   map: GameMap,
   rng: Rng,
+  layout: TownLayout | 'random',
   kind: TownKind,
   names: string[],
   towns: Town[],
@@ -128,6 +136,7 @@ function placeTowns(
       shape: createTownShape(rng),
       buildings: [],
       served: false,
+      layout: townLayoutFor(layout, rng),
     };
     expandTown(map, town, year, rng);
     towns.push(town);
@@ -155,6 +164,7 @@ function placeTowns(
       shape: createTownShape(rng),
       buildings: [],
       served: false,
+      layout: townLayoutFor(layout, rng),
     };
     expandTown(map, town, year, rng);
     towns.push(town);
@@ -185,6 +195,7 @@ function placeTowns(
       shape: createTownShape(rng),
       buildings: [],
       served: false,
+      layout: townLayoutFor(layout, rng),
     };
     expandTown(map, town, year, rng);
     towns.push(town);
@@ -202,11 +213,12 @@ export function generateWorld(
   generateWater(map, seed, options.waterLevel);
 
   const towns: Town[] = [];
+  const layout = options.townLayout ?? 'better';
   // Města a městečka berou jména ze společného seznamu, aby se neopakovala
   const townNames = rng.shuffle(CITY_NAMES.filter((name) => name !== 'Brno'));
-  placeTowns(map, rng, 'city', townNames, towns, year, options.townDensity, 'Brno', options.firstTownAt);
-  placeTowns(map, rng, 'town', townNames, towns, year, options.townDensity);
-  placeTowns(map, rng, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year, options.townDensity);
+  placeTowns(map, rng, layout, 'city', townNames, towns, year, options.townDensity, 'Brno', options.firstTownAt);
+  placeTowns(map, rng, layout, 'town', townNames, towns, year, options.townDensity);
+  placeTowns(map, rng, layout, 'village', rng.shuffle([...VILLAGE_NAMES]), towns, year, options.townDensity);
   generateTrees(map, seed);
   // Vlastní proud náhody, aby přidání průmyslu nezměnilo města na existujících seedech
   const industryDensity = options.industryDensity ?? 1;

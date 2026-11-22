@@ -1,3 +1,4 @@
+import type { TownLayout } from '../world/town';
 import { serializeGame, type SaveData } from './save';
 import type { Game } from './game';
 
@@ -16,6 +17,8 @@ export interface NewGameOptions {
   water: WaterAmount;
   towns: TownAmount;
   industries: IndustryAmount;
+  // Silnice ve městech; záměr uložený před zavedením volby ji nemá
+  townLayout?: TownLayout | 'random';
 }
 
 export type LaunchIntent = { mode: 'new'; options: NewGameOptions } | { mode: 'load'; save: string };

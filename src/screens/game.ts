@@ -50,6 +50,7 @@ export const DEFAULT_OPTIONS: Omit<NewGameOptions, 'seedText'> = {
   water: 'normal',
   towns: 'normal',
   industries: 'normal',
+  townLayout: 'better',
 };
 
 function newGame(options: NewGameOptions): Game {
@@ -59,6 +60,7 @@ function newGame(options: NewGameOptions): Game {
       townDensity: TOWN_DENSITY[options.towns],
       // Volba chybí v záměru uloženém před jejím zavedením
       industryDensity: INDUSTRY_DENSITY[options.industries] ?? 1,
+      townLayout: options.townLayout ?? 'better',
     }),
   );
 }
