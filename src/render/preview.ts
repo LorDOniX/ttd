@@ -4,11 +4,20 @@ import { createAirportObject } from './airports';
 import { createPortObject } from './ports';
 import type { PortShape } from '../world/port';
 import type { TilePos } from '../world/map';
-import { EDGE_DELTA, PIECES, type Axis, type Edge, type RailNetwork, type StationShape } from '../world/rail';
+import {
+  EDGE_DELTA,
+  PIECES,
+  type Axis,
+  type Edge,
+  type RailBridge,
+  type RailNetwork,
+  type StationShape,
+} from '../world/rail';
 import { SIGNAL_ARROW, SIGNAL_LAMP, SIGNAL_POLE, signalPlacement } from './signals';
 import {
   TrackView,
   createDepotMesh,
+  createRailBridgeObject,
   createRoadDepotMesh,
   createRoadStopMesh,
   createStationObject,
@@ -158,6 +167,13 @@ export class BuildPreview {
     this.clear();
     this.material.color.set(DEMOLISH);
     this.track.update(items);
+  }
+
+  // Most tak, jak bude stát (nájezdy, mostovka, pilíře)
+  showBridge(bridge: Pick<RailBridge, 'x' | 'y' | 'dir' | 'span'>, valid: boolean): void {
+    this.clear();
+    this.material.color.set(valid ? VALID : INVALID);
+    this.station.add(createRailBridgeObject(bridge, this.material));
   }
 
   showStation(shape: StationShape, valid: boolean): void {

@@ -4,7 +4,8 @@ import { VEHICLE_LENGTH, WAGON_CAPACITY } from '../game/balance';
 import { CARGOS } from '../game/cargo';
 import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
-import { pointAt } from '../world/route';
+import { heightAt, pointAt } from '../world/route';
+import type { RailNetwork } from '../world/rail';
 import { inView, type ViewFrustums } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
 import type { CabPose } from './firstPerson';
@@ -103,6 +104,7 @@ export class TrainsView {
   constructor(
     private readonly fleet: Fleet,
     private readonly map: GameMap,
+    private readonly rail: RailNetwork,
   ) {}
 
   // Vozy mimo záběr se skryjí, aby je vykreslování vůbec neprocházelo
@@ -204,9 +206,15 @@ export class TrainsView {
       const [bx, bz] = pointAt(train.path, center - BOGIE);
       const x = (fx + bx) / 2;
       const z = (fz + bz) / 2;
-      const y = RAIL_TOP + (this.map.isType(Math.floor(x), Math.floor(z), TileType.Bridge) ? BRIDGE_DECK : 0);
+      // Na mostě a nájezdech jede vůz výš a na nájezdu se nakloní
+      const hf = heightAt(this.rail, train.path, center + BOGIE);
+      const hb = heightAt(this.rail, train.path, center - BOGIE);
+      const ground = this.map.isType(Math.floor(x), Math.floor(z), TileType.Bridge) && hf === 0 ? BRIDGE_DECK : 0;
+      const y = RAIL_TOP + ground + (hf + hb) / 2;
       vehicle.position.set(x, y, z);
+      vehicle.rotation.order = 'YXZ';
       vehicle.rotation.y = Math.atan2(fx - bx, fz - bz);
+      vehicle.rotation.x = -Math.atan2(hf - hb, 2 * BOGIE);
       // Vozy ještě (nebo už) v depu nejsou vidět
       vehicle.visible =
         center > 0 &&

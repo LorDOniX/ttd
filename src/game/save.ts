@@ -31,7 +31,7 @@ import { cleanFlags, type OrderFlags, type Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
 import { GameMap, TileType } from '../world/map';
-import { RailNetwork, PIECES, stationTiles, type Depot, type Edge, type Station } from '../world/rail';
+import { RailNetwork, PIECES, stationTiles, type Depot, type Edge, type RailBridge, type Station } from '../world/rail';
 import type { Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
@@ -59,6 +59,9 @@ export interface SaveData {
     signals?: number[];
     // Jednosměrná návěstidla: [dlaždice, hrana výjezdu]
     signalDirs?: [number, number][];
+    // Mosty nad kolejemi a silnicemi; starší uložení je nemají
+    bridges?: RailBridge[];
+    nextBridgeId?: number;
     roadDepots?: Depot[];
   };
   fleet: { trains: Train[]; nextId: number };
@@ -141,6 +144,8 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       nextDepotId: rail.nextDepotId,
       signals: [...rail.signals],
       signalDirs: [...rail.signalDirs],
+      bridges: rail.bridges,
+      nextBridgeId: rail.nextBridgeId,
       roadDepots: rail.roadDepots,
     },
     fleet: { trains: fleet.trains, nextId: fleet.nextId },
@@ -344,6 +349,21 @@ export function restoreGame(data: SaveData): Game {
   for (const tile of data.rail.signals ?? []) {
     if (Number.isInteger(tile) && tile >= 0 && tile < width * height) rail.signals.add(tile);
   }
+  // Mosty: neplatné (mimo mapu, křížící se, nad stavbou) se zahodí
+  for (const b of Array.isArray(data.rail.bridges) ? data.rail.bridges : []) {
+    if (!isObject(b) || ![b.x, b.y, b.dir, b.span].every((n) => Number.isInteger(n))) continue;
+    if (b.dir < 0 || b.dir > 3) continue;
+    const [dx, dy] = [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ][b.dir];
+    const x1 = b.x + (b.span + 1) * dx;
+    const y1 = b.y + (b.span + 1) * dy;
+    if (rail.bridgeProblem(b.x, b.y, x1, y1) === null) rail.addBridge(b.x, b.y, x1, y1).id = b.id;
+  }
+  rail.nextBridgeId = Math.max(finiteOr(data.rail.nextBridgeId, 0), ...rail.bridges.map((b) => b.id + 1));
   for (const entry of Array.isArray(data.rail.signalDirs) ? data.rail.signalDirs : []) {
     const [tile, dir] = Array.isArray(entry) ? entry : [-1, -1];
     if (rail.signals.has(tile) && Number.isInteger(dir) && dir >= 0 && dir < 4) rail.signalDirs.set(tile, dir as Edge);

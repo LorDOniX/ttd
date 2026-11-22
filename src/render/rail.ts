@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TileType } from '../world/map';
 import {
+  EDGE_DELTA,
   EDGE_MID,
   Edge,
   PIECES,
@@ -9,8 +10,10 @@ import {
   isCorner,
   stationTiles,
   type Axis,
+  type RailBridge,
   type StationShape,
 } from '../world/rail';
+import { BRIDGE_HEIGHT } from '../world/route';
 import { createAirportObject } from './airports';
 import { createPortObject } from './ports';
 import type { PortShape } from '../world/port';
@@ -42,6 +45,83 @@ function box(w: number, h: number, d: number, color: number, x: number, y: numbe
   for (let i = 0; i < colors.length; i += 3) colors.set([c.r, c.g, c.b], i);
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   return geometry;
+}
+
+// Kvádr se středem v počátku a barvou ve vrcholech (pro natáčení nájezdů)
+function slab(w: number, h: number, d: number, color: number): THREE.BufferGeometry {
+  return box(w, h, d, color, 0, -h / 2, 0);
+}
+
+const BRIDGE_DECK_THICKNESS = 0.08;
+const BRIDGE_WIDTH = 0.5;
+
+// Vrchní stavba koleje (pražce a kolejnice) délky `length` podél osy X, spodkem v y = 0
+function trackTop(length: number): THREE.BufferGeometry[] {
+  const parts: THREE.BufferGeometry[] = [];
+  const sleepers = Math.max(2, Math.round(length / 0.125));
+  for (let i = 0; i < sleepers; i++) {
+    const x = -length / 2 + (i + 0.5) * (length / sleepers);
+    parts.push(box(0.06, 0.02, 0.36, SLEEPER, x, 0, 0));
+  }
+  for (const z of [-0.1, 0.1]) parts.push(box(length, 0.03, 0.025, RAIL, 0, 0.02, z));
+  return parts;
+}
+
+// Most podél +X od vnějšího okraje nájezdu A (x = 0) po vnější okraj nájezdu B (x = span + 2):
+// nájezdy stoupají na výšku mostovky, pilíře stojí na hranách dlaždic mimo osu, aby nepřekážely provozu pod mostem
+export function railBridgeGeometry(span: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const top = BRIDGE_HEIGHT;
+  const slope = Math.atan(top);
+  const rampLength = Math.hypot(1, top);
+  // Nájezdy: šikmá deska s kolejí, natočená kolem osy Z
+  for (const [cx, angle] of [
+    [0.5, slope],
+    [span + 1.5, -slope],
+  ] as const) {
+    const ramp = [slab(rampLength, BRIDGE_DECK_THICKNESS, BRIDGE_WIDTH, BRIDGE), ...trackTop(rampLength)];
+    // Kolej leží na horní ploše desky; horní plocha vede od země po výšku mostovky
+    ramp.slice(1).forEach((g) => g.translate(0, BRIDGE_DECK_THICKNESS / 2, 0));
+    for (const g of ramp) {
+      g.translate(0, -BRIDGE_DECK_THICKNESS / 2, 0);
+      g.rotateZ(angle);
+      g.translate(cx, top / 2, 0);
+      parts.push(g);
+    }
+  }
+  // Mostovka s kolejí a zábradlím
+  parts.push(box(span, BRIDGE_DECK_THICKNESS, BRIDGE_WIDTH, BRIDGE, 1 + span / 2, top - BRIDGE_DECK_THICKNESS, 0));
+  for (const g of trackTop(span)) parts.push(g.translate(1 + span / 2, top, 0));
+  for (const z of [-0.24, 0.24]) {
+    parts.push(box(span, 0.025, 0.025, BRIDGE_RAIL, 1 + span / 2, top + 0.09, z));
+    for (let i = 0; i <= span * 4; i++) parts.push(box(0.02, 0.09, 0.02, BRIDGE_RAIL, 1 + i / 4, top, z));
+  }
+  // Pilíře na hranách dlaždic po obou stranách mostovky
+  for (let i = 1; i <= span + 1; i++) {
+    for (const z of [-0.3, 0.3]) {
+      parts.push(box(0.08, top - BRIDGE_DECK_THICKNESS, 0.08, BRIDGE, i, 0, z));
+    }
+  }
+  return mergeGeometries(parts)!;
+}
+
+const bridgeGeometries = new Map<number, THREE.BufferGeometry>();
+
+// Most na mapě; geometrie se sdílí podle délky
+export function createRailBridgeObject(
+  bridge: Pick<RailBridge, 'x' | 'y' | 'dir' | 'span'>,
+  material: THREE.Material,
+): THREE.Mesh {
+  let geometry = bridgeGeometries.get(bridge.span);
+  if (!geometry) {
+    geometry = railBridgeGeometry(bridge.span);
+    bridgeGeometries.set(bridge.span, geometry);
+  }
+  const mesh = new THREE.Mesh(geometry, material);
+  const [dx, dy] = EDGE_DELTA[bridge.dir];
+  mesh.position.set(bridge.x + 0.5 - dx / 2, 0, bridge.y + 0.5 - dy / 2);
+  mesh.rotation.y = [Math.PI / 2, 0, -Math.PI / 2, Math.PI][bridge.dir];
+  return mesh;
 }
 
 // Kus koleje délky `length` podél osy X se středem v počátku
@@ -230,6 +310,8 @@ export function networkTrack(rail: RailNetwork): TrackItem[] {
   rail.pieces.forEach((mask, i) => {
     const x = i % width;
     const y = Math.floor(i / width);
+    // Kolej na nájezdu mostu je součástí mostu
+    if (mask !== 0 && rail.bridges.length > 0 && rail.bridgeAtHead(x, y)) return;
     const crossing = mask !== 0 && rail.map.get(x, y) === TileType.Crossing;
     const bridge = mask !== 0 && rail.map.get(x, y) === TileType.Bridge;
     for (let piece = 0; mask >> piece; piece++) {
@@ -309,5 +391,6 @@ export class RailView {
       placeDepot(mesh, d.x, d.y, d.entrance);
       this.structures.add(mesh);
     }
+    for (const b of this.rail.bridges) this.structures.add(createRailBridgeObject(b, this.material));
   }
 }

@@ -44,6 +44,8 @@ const MAX_CHANGE_LOG = 65_536;
 
 // Dlaždice (x, y) zabírá ve světě čtverec [x, x+1] × [y, y+1] v rovině XZ
 export class GameMap {
+  // Dlaždice pod železničními mosty (index y * šířka + x); spravuje je RailNetwork
+  readonly bridged = new Set<number>();
   readonly tiles: Uint8Array;
   // Id města, kterému dlaždice patří, jinak NO_OWNER
   readonly owner: Int16Array;
@@ -108,9 +110,19 @@ export class GameMap {
     return this.inBounds(x, y) && this.get(x, y) === type;
   }
 
-  // Volná dlaždice pro stavbu: tráva nebo stromy
+  // Volná dlaždice pro stavbu: tráva nebo stromy a nad ní žádný most
   isFree(x: number, y: number): boolean {
+    return this.isOpenGround(x, y) && !this.isBridged(x, y);
+  }
+
+  // Tráva nebo stromy, i pod mostem (koleje a silnice tam stavět jde)
+  isOpenGround(x: number, y: number): boolean {
     return this.isType(x, y, TileType.Grass) || this.isType(x, y, TileType.Trees);
+  }
+
+  // Vede nad dlaždicí most? Pod ním zůstává, co tam je, ale nic vysokého se tam nestaví
+  isBridged(x: number, y: number): boolean {
+    return this.bridged.has(y * this.width + x);
   }
 
   isRoad(x: number, y: number): boolean {

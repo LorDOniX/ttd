@@ -34,6 +34,7 @@ import {
   segmentIndexAt,
   segmentStart,
   segmentStillExists,
+  segmentTiles,
   type RouteStart,
   type Segment,
 } from '../world/route';
@@ -193,6 +194,13 @@ export function sellPrice(train: Train, today: number): number {
 export function yearlyRunningCost(train: Train, today: number): number {
   const base = trainModel(train).runningCost + train.wagons * WAGON_RUNNING_COST;
   return isOld(train, today) ? base * OLD_TRAIN_COST_FACTOR : base;
+}
+
+// Kolik dlaždic vlak ujel mezi kusy trasy from a to (pole mostu se počítá po dlaždicích)
+function tilesPassed(path: readonly Segment[], from: number, to: number): number {
+  let tiles = 0;
+  for (let i = from + 1; i <= to; i++) tiles += segmentTiles(path[i]);
+  return tiles;
 }
 
 // Index zastávky, kam vlak pojede po té aktuální
@@ -788,7 +796,7 @@ export class Fleet {
   // Důvod, proč dlaždici nejde zbourat, nebo null
   demolitionBlocker(x: number, y: number): string | null {
     for (const train of this.trains) {
-      if (train.state !== 'depot' && this.body(train).some((s) => s.x === x && s.y === y)) {
+      if (train.state !== 'depot' && this.body(train).some((s) => !s.span && s.x === x && s.y === y)) {
         return `Na koleji stojí ${train.name}.`;
       }
       const depot = this.depot(train);
@@ -834,13 +842,13 @@ export class Fleet {
     const before = segmentIndexAt(train.path, train.pos);
     if (step < remaining) {
       train.pos += step;
-      train.tiles += segmentIndexAt(train.path, train.pos) - before;
+      train.tiles += tilesPassed(train.path, before, segmentIndexAt(train.path, train.pos));
       this.blocked.delete(train.id);
       reservations.sync(train, this.tail(train));
       return;
     }
     train.pos += remaining;
-    train.tiles += segmentIndexAt(train.path, Math.max(0, train.pos - 1e-6)) - before;
+    train.tiles += tilesPassed(train.path, before, segmentIndexAt(train.path, Math.max(0, train.pos - 1e-6)));
     train.speed = 0;
     if (limit < pathEnd - 1e-6) {
       reservations.sync(train, this.tail(train));
@@ -1144,7 +1152,9 @@ export class Fleet {
       if (train.state !== 'running') continue;
       // Před hlavou vlaku nesmí nově stát jednosměrné návěstidlo proti směru jízdy
       const head = segmentIndexAt(train.path, Math.max(0, train.pos - 1e-6));
-      const againstSignal = train.path.some((s, i) => i > head && !rail.allowsExit(s.x, s.y, s.piece, s.exit));
+      const againstSignal = train.path.some(
+        (s, i) => i > head && !s.span && !rail.allowsExit(s.x, s.y, s.piece, s.exit),
+      );
       if (!this.goal(train) || againstSignal || !train.path.every((s) => segmentStillExists(rail, s))) {
         this.replan(train);
       }

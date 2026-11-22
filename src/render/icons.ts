@@ -14,6 +14,7 @@ import { airportShape, standPoint } from '../world/airport';
 import {
   TrackView,
   createDepotMesh,
+  createRailBridgeObject,
   createRoadDepotMesh,
   createRoadStopMesh,
   createStationObject,
@@ -39,6 +40,7 @@ const TILE_DEPTH = 0.12;
 
 export type SceneIcon =
   | 'track'
+  | 'bridge'
   | 'station'
   | 'depot'
   | 'signal'
@@ -131,6 +133,17 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
     return [tile(), depot];
   },
   signal: () => [tile(), track('x'), signal()],
+  // Most přes kolej: tři dlaždice, pod prostředním polem kolej napříč
+  bridge: () => {
+    const ground = [0, 1, 2].map((x) => {
+      const t = tile();
+      t.position.x = x;
+      return t;
+    });
+    const under = track('y');
+    under.position.x = 1;
+    return [...ground, under, createRailBridgeObject({ x: 0, y: 0, dir: Edge.E, span: 1 }, material)];
+  },
   road: () => [tile(), road('x')],
   'road-stop': () => [tile(), road('x'), createRoadStopMesh(material, 0, 0, 'x')],
   'road-depot': () => {

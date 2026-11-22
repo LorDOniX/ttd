@@ -1,7 +1,8 @@
 import type { Train } from './trains';
-import { segmentIndexAt, segmentLength } from '../world/route';
+import { reverseSegment, segmentIndexAt, segmentLength, type Segment } from '../world/route';
 
-// Rezervace kolejí před vlaky: vlak smí vjet jen na dlaždice, které drží sám.
+// Rezervace kolejí před vlaky: vlak smí vjet jen na dlaždice, které drží sám. Pole mostu má vlastní klíč
+// (záporný), takže vlak na mostě neblokuje provoz pod ním.
 // Úsek se rezervuje celý najednou – do nejbližšího místa, kde lze bezpečně čekat, jinak až do cíle.
 export class Reservations {
   // Dlaždice → id vlaku, který ji drží
@@ -17,6 +18,11 @@ export class Reservations {
 
   has(train: Train): boolean {
     return this.reach.has(train.id);
+  }
+
+  // Drží vlak klíč (dlaždici nebo pole mostu)?
+  holds(train: Train, key: number): boolean {
+    return this.owners.get(key) === train.id;
   }
 
   ownerAt(x: number, y: number): number | undefined {
@@ -78,9 +84,10 @@ export class Reservations {
     const start = this.reach.get(train.id) ?? 0;
     if (start >= path.length) return false;
     let end = start;
-    while (end < path.length - 1 && !this.isWaitPoint(path[end].x, path[end].y)) end++;
+    while (end < path.length - 1 && !this.waitsAt(path[end])) end++;
     for (let i = start; i <= end; i++) {
-      if (this.blocks(train, path[i].x, path[i].y)) return false;
+      const owner = this.owners.get(this.key(train, i));
+      if (owner !== undefined && owner !== train.id) return false;
     }
     const held = this.held.get(train.id) ?? new Set<number>();
     for (let i = start; i <= end; i++) {
@@ -97,9 +104,9 @@ export class Reservations {
   blockerOf(train: Train): number | undefined {
     const { path } = train;
     for (let i = this.reach.get(train.id) ?? 0; i < path.length; i++) {
-      const owner = this.ownerAt(path[i].x, path[i].y);
+      const owner = this.owners.get(this.key(train, i));
       if (owner !== undefined && owner !== train.id) return owner;
-      if (this.isWaitPoint(path[i].x, path[i].y)) return undefined;
+      if (this.waitsAt(path[i])) return undefined;
     }
     return undefined;
   }
@@ -113,7 +120,18 @@ export class Reservations {
   }
 
   private key(train: Train, index: number): number {
-    const s = train.path[index];
-    return s.y * this.width + s.x;
+    return this.segmentKey(train.path[index]);
+  }
+
+  // Dlaždice, nebo celé pole mostu (stejný klíč z obou směrů)
+  segmentKey(s: Segment): number {
+    if (!s.span) return s.y * this.width + s.x;
+    const end = reverseSegment(s);
+    return -1 - Math.min(s.y * this.width + s.x, end.y * this.width + end.x);
+  }
+
+  // Návěstidlo na poli mostu neplatí (stojí na zemi pod ním)
+  private waitsAt(s: Segment): boolean {
+    return !s.span && this.isWaitPoint(s.x, s.y);
   }
 }

@@ -6,6 +6,7 @@ import {
   PIECES,
   RailNetwork,
   axisPiece,
+  bridgeAxis,
   heading,
   opposite,
   pieceLength,
@@ -14,14 +15,19 @@ import {
   type Station,
 } from './rail';
 
-// Průjezd jedním kusem koleje od vstupní k výstupní hraně
+// Průjezd jedním kusem koleje od vstupní k výstupní hraně. S `span` je to průjezd polem mostu nad `span`
+// dlaždicemi: (x, y) je první z nich ve směru jízdy, kus je rovný podél mostu.
 export interface Segment {
   x: number;
   y: number;
   piece: number;
   entry: Edge;
   exit: Edge;
+  span?: number;
 }
+
+// Výška mostovky nad zemí (v jednotkách dlaždice)
+export const BRIDGE_HEIGHT = 0.42;
 
 // Místo, odkud vlak pokračuje: výjezd z dlaždice hranou `exit` ve směru `heading`
 export interface RouteStart {
@@ -34,7 +40,19 @@ export interface RouteStart {
 const MAX_EXPANSIONS = 200_000;
 
 export function segmentLength(s: Segment): number {
-  return pieceLength(s.piece);
+  return s.span ?? pieceLength(s.piece);
+}
+
+// Kolik dlaždic vlak projede kusem trasy (pole mostu jich má víc)
+export function segmentTiles(s: Segment): number {
+  return s.span ?? 1;
+}
+
+// Poslední dlaždice pole mostu ve směru jízdy
+function spanEnd(s: Segment): [number, number] {
+  const [dx, dy] = EDGE_DELTA[s.exit];
+  const n = (s.span ?? 1) - 1;
+  return [s.x + n * dx, s.y + n * dy];
 }
 
 export function pathLength(path: readonly Segment[]): number {
@@ -42,17 +60,43 @@ export function pathLength(path: readonly Segment[]): number {
 }
 
 export function reverseSegment(s: Segment): Segment {
-  return { ...s, entry: s.exit, exit: s.entry };
+  if (!s.span) return { ...s, entry: s.exit, exit: s.entry };
+  const [x, y] = spanEnd(s);
+  return { ...s, x, y, entry: s.exit, exit: s.entry };
 }
 
 export function segmentStart(s: Segment): RouteStart {
-  return { x: s.x, y: s.y, exit: s.exit, heading: heading(s.entry, s.exit) };
+  const [x, y] = s.span ? spanEnd(s) : [s.x, s.y];
+  return { x, y, exit: s.exit, heading: heading(s.entry, s.exit) };
 }
 
 export function segmentPoint(s: Segment, t: number): [number, number] {
   const [ax, ay] = EDGE_MID[s.entry];
   const [bx, by] = EDGE_MID[s.exit];
-  return [s.x + ax + (bx - ax) * t, s.y + ay + (by - ay) * t];
+  const [ex, ey] = s.span ? spanEnd(s) : [s.x, s.y];
+  const [sx, sy] = [s.x + ax, s.y + ay];
+  const [tx, ty] = [ex + bx, ey + by];
+  return [sx + (tx - sx) * t, sy + (ty - sy) * t];
+}
+
+// Výška koleje nad zemí v bodě t (0–1) kusu trasy: pole mostu nahoře, nájezdy stoupají a klesají
+export function segmentHeight(rail: RailNetwork, s: Segment, t: number): number {
+  if (s.span) return BRIDGE_HEIGHT;
+  if (rail.bridgeFrom(s.x, s.y, s.exit)) return BRIDGE_HEIGHT * t;
+  if (rail.bridgeFrom(s.x, s.y, s.entry)) return BRIDGE_HEIGHT * (1 - t);
+  return 0;
+}
+
+// Výška koleje nad zemí ve vzdálenosti d od začátku trasy
+export function heightAt(rail: RailNetwork, path: readonly Segment[], d: number): number {
+  let rest = Math.max(0, d);
+  for (const s of path) {
+    const len = segmentLength(s);
+    if (rest <= len) return segmentHeight(rail, s, rest / len);
+    rest -= len;
+  }
+  const last = path[path.length - 1];
+  return last ? segmentHeight(rail, last, 1) : 0;
 }
 
 // Index kusu koleje, na kterém leží bod ve vzdálenosti d
@@ -78,6 +122,10 @@ export function pointAt(path: readonly Segment[], d: number): [number, number] {
 }
 
 export function segmentStillExists(rail: RailNetwork, s: Segment): boolean {
+  if (s.span) {
+    const [dx, dy] = EDGE_DELTA[s.entry];
+    return rail.bridgeFrom(s.x + dx, s.y + dy, s.exit)?.span === s.span;
+  }
   return rail.has(s.x, s.y, s.piece);
 }
 
@@ -95,20 +143,37 @@ export function findRoute(
   const estimate = (x: number, y: number): number => Math.hypot(x - target.x, y - target.y) * 0.7;
 
   const g = new Map<number, number>();
-  const parents = new Map<number, { prev: number; segment: Segment }>();
+  // Kus koleje projetý před přesunem na stav; přes most k němu patří i pole mostu (span)
+  const parents = new Map<number, { prev: number; segment: Segment | null; span: Segment | null }>();
   const heap = new MinHeap();
   const GOAL = -1;
   let goal: { cost: number; prev: number; segment: Segment } | null = null;
 
   const push = (from: RouteStart, cost: number, prev: number, segment: Segment | null): void => {
     const [dx, dy] = EDGE_DELTA[from.exit];
-    const nx = from.x + dx;
-    const ny = from.y + dy;
+    let nx = from.x + dx;
+    let ny = from.y + dy;
+    // Z nájezdu mostu se jede rovnou přes celé pole na druhý nájezd
+    const bridge = rail.bridgeFrom(from.x, from.y, from.exit);
+    let span: Segment | null = null;
+    if (bridge) {
+      span = {
+        x: nx,
+        y: ny,
+        piece: axisPiece(bridgeAxis(bridge)),
+        entry: opposite(from.exit),
+        exit: from.exit,
+        span: bridge.span,
+      };
+      nx = from.x + (bridge.span + 1) * dx;
+      ny = from.y + (bridge.span + 1) * dy;
+      cost += bridge.span;
+    }
     if (!map.inBounds(nx, ny) || avoid?.(nx, ny)) return;
     const k = key(nx, ny, opposite(from.exit), from.heading);
     if (cost >= (g.get(k) ?? Infinity)) return;
     g.set(k, cost);
-    if (segment) parents.set(k, { prev, segment });
+    if (segment || span) parents.set(k, { prev, segment, span });
     heap.push(k, cost + estimate(nx, ny));
   };
 
@@ -154,7 +219,11 @@ export function findRoute(
   const found = goal as { cost: number; prev: number; segment: Segment } | null;
   if (!found) return null;
   const path = [found.segment];
-  for (let k = found.prev; parents.has(k); k = parents.get(k)!.prev) path.push(parents.get(k)!.segment);
+  for (let k = found.prev; parents.has(k); k = parents.get(k)!.prev) {
+    const parent = parents.get(k)!;
+    if (parent.span) path.push(parent.span);
+    if (parent.segment) path.push(parent.segment);
+  }
   return path.reverse();
 }
 
@@ -200,8 +269,10 @@ export function railNetworks(rail: RailNetwork): Int32Array {
       for (let edge = 0; edge < 4; edge++) {
         if (!(mine & (1 << edge))) continue;
         const [dx, dy] = EDGE_DELTA[edge];
-        const nx = x + dx;
-        const ny = y + dy;
+        // Most spojuje nájezd přímo s druhým nájezdem
+        const jump = (rail.bridgeFrom(x, y, edge as Edge)?.span ?? 0) + 1;
+        const nx = x + jump * dx;
+        const ny = y + jump * dy;
         if (!map.inBounds(nx, ny)) continue;
         const j = ny * width + nx;
         if (label[j] >= 0 || !(edges(nx, ny) & (1 << opposite(edge)))) continue;

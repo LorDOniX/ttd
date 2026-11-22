@@ -115,6 +115,48 @@ export interface Depot {
   entrance: Edge;
 }
 
+// Železniční most nad čímkoli (kolejí, silnicí, vodou, trávou): nájezd A na (x, y), pole mostu ve směru dir
+// a za ním nájezd B. Nájezdy jsou rovné koleje na souši, pole je ve výšce a pod ním zůstává, co tam je.
+export interface RailBridge {
+  id: number;
+  x: number;
+  y: number;
+  dir: Edge;
+  // Počet polí mezi nájezdy
+  span: number;
+}
+
+// Nejdelší most (polí mezi nájezdy)
+export const MAX_BRIDGE_SPAN = 16;
+
+export function bridgeAxis(bridge: RailBridge): Axis {
+  return bridge.dir % 2 === 1 ? 'x' : 'y';
+}
+
+// Nájezd B na druhém konci mostu
+export function bridgeEnd(bridge: RailBridge): TilePos {
+  const [dx, dy] = EDGE_DELTA[bridge.dir];
+  return { x: bridge.x + (bridge.span + 1) * dx, y: bridge.y + (bridge.span + 1) * dy };
+}
+
+// Dlaždice pod polem mostu (bez nájezdů)
+export function bridgeSpanTiles(bridge: RailBridge): TilePos[] {
+  const [dx, dy] = EDGE_DELTA[bridge.dir];
+  return Array.from({ length: bridge.span }, (_, i) => ({ x: bridge.x + (i + 1) * dx, y: bridge.y + (i + 1) * dy }));
+}
+
+// Pod mostem nemůže stát nic vysokého; koleje, silnice a voda tam zůstat smějí
+const UNDER_BRIDGE_FORBIDDEN = [
+  TileType.Building,
+  TileType.Industry,
+  TileType.Station,
+  TileType.Depot,
+  TileType.RoadStop,
+  TileType.RoadDepot,
+  TileType.Airport,
+  TileType.Port,
+];
+
 export function defaultStationShape(x: number, y: number, axis: Axis): StationShape {
   return { x, y, axis, length: STATION_LENGTH, tracks: 1 };
 }
@@ -149,9 +191,12 @@ export class RailNetwork {
   readonly signals = new Set<number>();
   // Jednosměrná návěstidla: dlaždice → hrana, kterou vlak smí dlaždici opustit; bez záznamu obousměrné
   readonly signalDirs = new Map<number, Edge>();
+  // Mosty nad kolejemi, silnicemi, vodou i trávou
+  readonly bridges: RailBridge[] = [];
   // Id se nerecyklují, aby odkazy (např. trasy vlaků) po demolici neukazovaly jinam
   nextStationId = 0;
   nextDepotId = 0;
+  nextBridgeId = 0;
 
   constructor(readonly map: GameMap) {
     this.pieces = new Uint8Array(map.width * map.height);
@@ -171,6 +216,9 @@ export class RailNetwork {
 
   canPlace(x: number, y: number, piece: number): boolean {
     if (!this.map.inBounds(x, y)) return false;
+    // Na nájezdu mostu jen kolej ve směru mostu (bez výhybky)
+    const head = this.bridgeAtHead(x, y);
+    if (head) return piece === axisPiece(bridgeAxis(head));
     switch (this.map.get(x, y)) {
       case TileType.Grass:
       case TileType.Trees:
@@ -195,7 +243,7 @@ export class RailNetwork {
     this.pieces[y * this.map.width + x] |= 1 << piece;
     this.revision++;
     const type = this.map.get(x, y);
-    if (this.map.isFree(x, y)) this.map.set(x, y, TileType.Rail);
+    if (this.map.isOpenGround(x, y)) this.map.set(x, y, TileType.Rail);
     if (type === TileType.Road) this.map.set(x, y, TileType.Crossing);
     if (type === TileType.Water) this.map.set(x, y, TileType.Bridge);
   }
@@ -224,7 +272,11 @@ export class RailNetwork {
     const bit = 1 << axisPiece(shape.axis);
     return stationTiles(shape).every(
       (t) =>
-        this.map.isFree(t.x, t.y) || (this.map.isType(t.x, t.y, TileType.Rail) && (this.mask(t.x, t.y) | bit) === bit),
+        this.map.isFree(t.x, t.y) ||
+        (this.map.isType(t.x, t.y, TileType.Rail) &&
+          (this.mask(t.x, t.y) | bit) === bit &&
+          !this.map.isBridged(t.x, t.y) &&
+          !this.bridgeAtHead(t.x, t.y)),
     );
   }
 
@@ -398,7 +450,87 @@ export class RailNetwork {
 
   // Návěstidlo jen na samostatnou kolej bez výhybky – čekající vlak tak neblokuje křížení
   canPlaceSignal(x: number, y: number): boolean {
-    return this.map.isType(x, y, TileType.Rail) && this.pieceCount(x, y) === 1 && !this.hasSignal(x, y);
+    return (
+      this.map.isType(x, y, TileType.Rail) &&
+      this.pieceCount(x, y) === 1 &&
+      !this.hasSignal(x, y) &&
+      !this.bridgeAtHead(x, y)
+    );
+  }
+
+  // Most s nájezdem na (x, y), nebo undefined
+  bridgeAtHead(x: number, y: number): RailBridge | undefined {
+    return this.bridges.find((b) => {
+      const end = bridgeEnd(b);
+      return (b.x === x && b.y === y) || (end.x === x && end.y === y);
+    });
+  }
+
+  // Most, na který se z nájezdu (x, y) vjíždí hranou dir
+  bridgeFrom(x: number, y: number, dir: Edge): RailBridge | undefined {
+    return this.bridges.find((b) => {
+      if (b.x === x && b.y === y) return b.dir === dir;
+      const end = bridgeEnd(b);
+      return end.x === x && end.y === y && opposite(b.dir) === dir;
+    });
+  }
+
+  // Proč most mezi nájezdy (x0, y0) a (x1, y1) postavit nejde, nebo null
+  bridgeProblem(x0: number, y0: number, x1: number, y1: number): string | null {
+    if (x0 !== x1 && y0 !== y1) return 'Most vede jen rovně podél osy X nebo Y.';
+    const span = Math.abs(x1 - x0) + Math.abs(y1 - y0) - 1;
+    if (span < 1) return 'Most musí něco překlenout: táhněte aspoň přes 3 dlaždice.';
+    if (span > MAX_BRIDGE_SPAN) return `Most může mít nejvýš ${MAX_BRIDGE_SPAN} polí.`;
+    const bridge = this.bridgeShape(x0, y0, x1, y1);
+    const axis = bridgeAxis(bridge);
+    for (const head of [{ x: x0, y: y0 }, bridgeEnd(bridge)]) {
+      if (!this.map.inBounds(head.x, head.y)) return 'Most musí stát celý na mapě.';
+      if (this.map.isBridged(head.x, head.y) || this.bridgeAtHead(head.x, head.y)) return 'Mosty se nesmí křížit.';
+      const type = this.map.get(head.x, head.y);
+      const straight =
+        type === TileType.Rail && (this.mask(head.x, head.y) | (1 << axisPiece(axis))) === 1 << axisPiece(axis);
+      if (!this.map.isFree(head.x, head.y) && !straight) {
+        return 'Nájezd mostu musí být na volné zemi nebo na rovné koleji ve směru mostu.';
+      }
+    }
+    for (const t of bridgeSpanTiles(bridge)) {
+      if (this.map.isBridged(t.x, t.y) || this.bridgeAtHead(t.x, t.y)) return 'Mosty se nesmí křížit.';
+      if (UNDER_BRIDGE_FORBIDDEN.includes(this.map.get(t.x, t.y))) {
+        return 'Pod mostem nesmí stát budovy, nástupiště, depa ani průmysl.';
+      }
+    }
+    return null;
+  }
+
+  private bridgeShape(x0: number, y0: number, x1: number, y1: number): RailBridge {
+    const dir = x1 > x0 ? Edge.E : x1 < x0 ? Edge.W : y1 > y0 ? Edge.S : Edge.N;
+    return { id: -1, x: x0, y: y0, dir, span: Math.abs(x1 - x0) + Math.abs(y1 - y0) - 1 };
+  }
+
+  // Postaví most (ověřený bridgeProblem): na nájezdech kolej ve směru mostu, pod polem se vykácí stromy
+  addBridge(x0: number, y0: number, x1: number, y1: number): RailBridge {
+    const bridge = { ...this.bridgeShape(x0, y0, x1, y1), id: this.nextBridgeId++ };
+    this.bridges.push(bridge);
+    const piece = axisPiece(bridgeAxis(bridge));
+    for (const head of [{ x: x0, y: y0 }, bridgeEnd(bridge)]) {
+      if (!this.has(head.x, head.y, piece)) this.addPiece(head.x, head.y, piece);
+    }
+    for (const t of bridgeSpanTiles(bridge)) {
+      this.map.bridged.add(t.y * this.map.width + t.x);
+      if (this.map.isType(t.x, t.y, TileType.Trees)) this.map.set(t.x, t.y, TileType.Grass);
+    }
+    this.revision++;
+    return bridge;
+  }
+
+  // Zboří most i s kolejí na nájezdech
+  removeBridge(bridge: RailBridge): void {
+    const index = this.bridges.indexOf(bridge);
+    if (index < 0) return;
+    this.bridges.splice(index, 1);
+    for (const t of bridgeSpanTiles(bridge)) this.map.bridged.delete(t.y * this.map.width + t.x);
+    for (const head of [{ x: bridge.x, y: bridge.y }, bridgeEnd(bridge)]) this.removeTrack(head.x, head.y);
+    this.revision++;
   }
 
   // dir = hrana, kterou smí vlak dlaždici opustit (jednosměrné návěstidlo), bez ní obousměrné

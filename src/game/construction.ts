@@ -21,7 +21,19 @@ import type { World } from '../world/generator';
 import { NO_OWNER, TileType, type GameMap, type TilePos } from '../world/map';
 import { airportShape } from '../world/airport';
 import { canPlacePort, type PortShape } from '../world/port';
-import { PIECES, stationTiles, type Axis, type Edge, type Station, type StationShape } from '../world/rail';
+import {
+  PIECES,
+  axisPiece,
+  bridgeEnd,
+  bridgeSpanTiles,
+  opposite,
+  stationTiles,
+  type Axis,
+  type Edge,
+  type RailBridge,
+  type Station,
+  type StationShape,
+} from '../world/rail';
 import { depotLinks, removableTile, type PathStep } from '../world/railPath';
 import type { RoadStep } from '../world/roadPath';
 import { buildingAt, buildingCapacity, demolishBuilding } from '../world/town';
@@ -42,6 +54,11 @@ export function trackPieceCost(map: GameMap, x: number, y: number): number {
   return type === TileType.Water || type === TileType.Bridge ? BRIDGE_PIECE_COST : TRACK_PIECE_COST;
 }
 
+// Cena pole mostu (bez kolejí na nájezdech)
+export function bridgeCost(span: number): number {
+  return span * BRIDGE_PIECE_COST;
+}
+
 // Cena nového dílku silnice: přes vodu se staví most
 export function roadPieceCost(map: GameMap, x: number, y: number): number {
   return map.isType(x, y, TileType.Water) || map.roadBridgeAxis(x, y) ? ROAD_BRIDGE_COST : ROAD_TILE_COST;
@@ -60,6 +77,7 @@ export function infrastructureValue(world: World): number {
     }
   }
   for (const station of rail.stations) value += stationCost(station);
+  for (const bridge of rail.bridges) value += bridgeCost(bridge.span);
   return (
     value + rail.depots.length * DEPOT_COST + rail.roadDepots.length * ROAD_DEPOT_COST + rail.signals.size * SIGNAL_COST
   );
@@ -250,6 +268,47 @@ export class Construction {
     return null;
   }
 
+  // Cena mostu mezi nájezdy (x0, y0) a (x1, y1): pole mostu a nové koleje na nájezdech
+  bridgePlan(x0: number, y0: number, x1: number, y1: number): { cost: number; problem: string | null; span: number } {
+    const { rail } = this.game.world;
+    const problem = rail.bridgeProblem(x0, y0, x1, y1);
+    const span = Math.max(0, Math.abs(x1 - x0) + Math.abs(y1 - y0) - 1);
+    const axis = x0 !== x1 ? 'x' : 'y';
+    const piece = axisPiece(axis);
+    const heads = [
+      { x: x0, y: y0 },
+      { x: x1, y: y1 },
+    ].filter((h) => !rail.has(h.x, h.y, piece)).length;
+    return { cost: bridgeCost(span) + heads * TRACK_PIECE_COST, problem, span };
+  }
+
+  // Most jako v OpenTTD: přes koleje, silnice, vodu i souš; nájezdy dostanou kolej ve směru mostu
+  buildBridge(x0: number, y0: number, x1: number, y1: number): string | null {
+    const { cost, problem } = this.bridgePlan(x0, y0, x1, y1);
+    if (problem) return problem;
+    if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'construction');
+    this.game.world.rail.addBridge(x0, y0, x1, y1);
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
+  // Vlak na mostě (nebo s rezervací přes něj) brání demolici
+  private bridgeBlocker(bridge: RailBridge): string | null {
+    const { fleet } = this.game;
+    const [first] = bridgeSpanTiles(bridge);
+    const key = fleet.reservations.segmentKey({
+      x: first.x,
+      y: first.y,
+      piece: 0,
+      entry: opposite(bridge.dir),
+      exit: bridge.dir,
+      span: bridge.span,
+    });
+    const owner = fleet.trains.find((t) => fleet.reservations.holds(t, key));
+    return owner ? `Na mostě je ${owner.name}.` : null;
+  }
+
   buildDepot(x: number, y: number, entrance: Edge): string | null {
     const { rail } = this.game.world;
     if (!rail.canPlaceDepot(x, y)) return 'Sem depo postavit nelze.';
@@ -306,6 +365,7 @@ export class Construction {
     const { map, rail, towns } = this.game.world;
     const tiles: TilePos[] = [];
     const stations = new Set<number>();
+    const bridges = new Set<number>();
     let cost = 0;
     let blocked: string | null = null;
 
@@ -332,6 +392,20 @@ export class Construction {
         (port ? this.game.shipFleet.demolitionBlocker(port) : null);
       if (blocker) {
         blocked ??= blocker;
+        continue;
+      }
+      // Nájezd mostu zboří celý most (oba nájezdy); vlak na mostě demolici zablokuje
+      const bridge = type === TileType.Rail ? rail.bridgeAtHead(x, y) : undefined;
+      if (bridge) {
+        if (bridges.has(bridge.id)) continue;
+        const onBridge = this.bridgeBlocker(bridge);
+        if (onBridge) {
+          blocked ??= onBridge;
+          continue;
+        }
+        bridges.add(bridge.id);
+        cost -= bridgeCost(bridge.span) * DEMOLISH_REFUND + 2 * TRACK_PIECE_COST * DEMOLISH_REFUND;
+        tiles.push({ x: bridge.x, y: bridge.y }, bridgeEnd(bridge));
         continue;
       }
       switch (type) {
@@ -411,10 +485,13 @@ export class Construction {
           break;
         case TileType.Rail:
         case TileType.Crossing:
-        case TileType.Bridge:
-          rail.removeTrack(x, y);
+        case TileType.Bridge: {
+          const bridge = rail.bridgeAtHead(x, y);
+          if (bridge) rail.removeBridge(bridge);
+          else rail.removeTrack(x, y);
           railChanged = true;
           break;
+        }
         case TileType.Station:
         case TileType.Airport:
         case TileType.Port: {
@@ -523,7 +600,7 @@ export class Construction {
   private roadPlaceable(step: RoadStep): boolean {
     const { map, rail } = this.game.world;
     const type = map.get(step.x, step.y);
-    if (map.isFree(step.x, step.y)) return true;
+    if (map.isOpenGround(step.x, step.y)) return true;
     if (type === TileType.Water) return step.axis !== undefined && !rail.isBerth(step.x, step.y);
     // Přejezd jen přes samotnou rovnou kolej
     const mask = rail.mask(step.x, step.y);

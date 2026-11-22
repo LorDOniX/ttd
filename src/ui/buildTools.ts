@@ -61,6 +61,7 @@ import type { WindowManager } from './windows';
 
 export type BuildTool =
   | 'track'
+  | 'bridge'
   | 'station'
   | 'depot'
   | 'signal'
@@ -220,12 +221,14 @@ export class BuildTools {
         ],
         ['station', '🚉', 'Nástupiště', 'N', `${formatMoneyShort(PLATFORM_TILE_COST)} / dílek`],
         ['depot', '🏭', 'Depo', 'D', formatMoneyShort(DEPOT_COST)],
+        ['bridge', '🌉', 'Most', 'J', `${formatMoneyShort(BRIDGE_PIECE_COST)} / pole`],
         ['signal', '🚦', 'Návěstidla', 'B', `${formatMoneyShort(SIGNAL_COST)} / kus`],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Koleje (autorail jako v OpenTTD): kliknutím položíte dílek pod kurzorem (u rohu dlaždice zatáčku), ' +
         'tažením rovný úsek nebo úhlopříčku podle směru tažení. Ctrl/Cmd odebírá koleje, Shift ukáže jen cenu. ' +
         'Depo se samo napojí na kolej před vjezdem. Nástupiště: rozměr a orientace v okně, nebo Drag & Drop. ' +
+        'Most: táhněte od nájezdu k nájezdu přes koleje, silnice, vodu i trávu, provoz pod ním zůstane. ' +
         'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. R – otočit, Esc – zrušit nástroj.',
     );
   }
@@ -643,7 +646,8 @@ export class BuildTools {
       this.tool === 'road' ||
       this.tool === 'demolish' ||
       this.tool === 'station' ||
-      this.tool === 'signal'
+      this.tool === 'signal' ||
+      this.tool === 'bridge'
     ) {
       this.dragStart = tile;
       this.updatePath();
@@ -703,6 +707,12 @@ export class BuildTools {
     }
     if (this.tool === 'road' && this.roadPath) construction.buildRoad(this.roadPath);
     if (this.tool === 'signal') this.applySignals();
+    if (this.tool === 'bridge') {
+      const end = this.bridgeEnd();
+      if (end && this.dragStart && !this.estimateMode && (end.x !== this.dragStart.x || end.y !== this.dragStart.y)) {
+        this.report(construction.buildBridge(this.dragStart.x, this.dragStart.y, end.x, end.y));
+      }
+    }
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
     if (this.tool === 'station') {
       const shape = this.stationShape();
@@ -739,6 +749,36 @@ export class BuildTools {
     if (n === 0) return 'Silnice už je postavená';
     const pieces = n === 1 ? 'dílek' : n <= 4 ? 'dílky' : 'dílků';
     return `${n} ${pieces}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoneyShort(cost)}`;
+  }
+
+  // Konec mostu: kurzor přichycený na řadu nebo sloupec začátku tažení
+  private bridgeEnd(): TilePos | null {
+    const start = this.dragStart;
+    const end = this.hover;
+    if (!start || !end) return null;
+    return Math.abs(end.x - start.x) >= Math.abs(end.y - start.y) ? { x: end.x, y: start.y } : { x: start.x, y: end.y };
+  }
+
+  // Náhled mostu; vrací text pro popisek
+  private showBridge(): string {
+    const start = this.dragStart;
+    const end = this.bridgeEnd();
+    if (!start || !end || (start.x === end.x && start.y === end.y)) {
+      if (this.hover) this.preview.showArea([this.hover], 'valid');
+      return 'Most: táhněte od jednoho nájezdu k druhému – přes koleje, silnice, vodu i trávu';
+    }
+    const plan = this.game.construction.bridgePlan(start.x, start.y, end.x, end.y);
+    const dir = end.x > start.x ? Edge.E : end.x < start.x ? Edge.W : end.y > start.y ? Edge.S : Edge.N;
+    if (plan.span >= 1) {
+      this.preview.showBridge(
+        { x: start.x, y: start.y, dir, span: plan.span },
+        !plan.problem && this.game.money >= plan.cost,
+      );
+    } else this.preview.showArea([start, end], 'invalid');
+    if (plan.problem) return plan.problem;
+    const fields = plan.span === 1 ? 'pole' : plan.span <= 4 ? 'pole' : 'polí';
+    const prefix = this.estimateMode ? 'Odhad: ' : '';
+    return `${prefix}Most ${plan.span} ${fields} · ${formatMoneyShort(plan.cost)}`;
   }
 
   // Jediný kus koleje na dlaždici, kam jde návěstidlo, nebo -1
@@ -1130,6 +1170,8 @@ export class BuildTools {
       }
     } else if (this.tool === 'signal' && tile) {
       text = this.showSignals();
+    } else if (this.tool === 'bridge' && tile) {
+      text = this.showBridge();
     } else if (this.tool === 'industry' && tile) {
       const { map, towns, industries } = this.game.world;
       const site = industrySite(tile);

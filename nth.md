@@ -32,8 +32,11 @@ Volitelná rozšíření mimo hlavní fáze ze [ttd.md](ttd.md).
 - **Cestová návěstidla** – obousměrná i jednosměrná (proti šipce vlak nepojede), tažení po trati s hustotou, klik otáčí směr, Ctrl/Cmd odstraní; u obsazeného úseku si vlak hned najde volnou kolej
 - **Příkazy jízdního řádu jako v OpenTTD (vlaky)** – u každého příkazu nakládání (běžně / do plna / nenakládat), vykládání (běžně / vyložit vše / překládka / nevykládat), „Projet“ bez zastavení a „Servis v depu“; překládka nechá náklad i s historií na stanici, první vozidlo dostane virtuální podíl 75 % a zbytek zaplatí konečné doručení
 - **Spolehlivost, poruchy a servis vlaků** – každý model má nejvyšší spolehlivost (parní 78 %, rychlovlak 95 %), vlaku denně klesá (po životnosti dvakrát rychleji); nespolehlivý vlak se porouchá a pár dní stojí s kouřem; po intervalu (výchozí 150 dní, v detailu vlaku −/+) zajede při odjezdu ze stanice do nejbližšího depa na servis a pokračuje v řádu; nastavení „Poruchy vozidel“ žádné / snížené / běžné
+- **Mosty jako v OpenTTD (železnice)** – nástroj Most (J): tažením od nájezdu k nájezdu přes koleje, silnice, vodu i trávu (až 16 polí, 20 000 Kč za pole); provoz pod mostem zůstane, pod mostem se nestaví budovy, nástupiště, depa ani průmysl; vlaky vyjíždějí po nájezdech s náklonem; demolice nájezdu zboří celý most
 
 ## Zbývá
+- **Silniční mosty přes koleje a silnice** – zatím jen železniční; silniční mosty jdou jen přes vodu
+- **Tunely** – potřebují výšku terénu (viz níže)
 - **Poruchy a servis i pro auta, letadla a lodě** – zatím jen vlaky; logika je obecná v `src/game/reliability.ts`
 - **Cargodist (distribuce nákladu)** – cestující a náklad mají konkrétní cílovou stanici, stanice tvoří síť linek a náklad se rozděluje podle kapacity spojení jako v OpenTTD; velký zásah do cestujících, nákladu, překládek a okna stanice
 - **Výška terénu** – teď nedává smysl: koleje, mosty, stavba i generátor počítají s rovinou, šlo by o přestavbu celé mapy

@@ -141,7 +141,8 @@ export interface AutorailPlan {
 export function removableTile(rail: RailNetwork, x: number, y: number): boolean {
   if (!rail.map.inBounds(x, y)) return false;
   const type = rail.map.get(x, y);
-  return type === TileType.Rail || type === TileType.Crossing || type === TileType.Bridge;
+  // Kolej na nájezdu mostu jde odstranit jen se mostem (demolicí)
+  return (type === TileType.Rail || type === TileType.Crossing || type === TileType.Bridge) && !rail.bridgeAtHead(x, y);
 }
 
 // Plán tažení autorailu: stavba (zastaví se na první překážce) nebo odebírání (Ctrl)

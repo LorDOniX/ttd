@@ -157,7 +157,7 @@ export class GameView {
     this.portLamps = portLamps(world.rail.ports() as PortShape[]);
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
-    this.trains = new TrainsView(game.fleet, map);
+    this.trains = new TrainsView(game.fleet, map, world.rail);
     this.vehicles = new RoadVehiclesView(game.roadFleet, map);
     this.aircraft = new AircraftView3D(game.airFleet);
     this.ships = new ShipsView(game.shipFleet);
