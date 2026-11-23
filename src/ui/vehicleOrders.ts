@@ -1,3 +1,4 @@
+import { CARGOS, type Cargo } from '../game/cargo';
 import type { OrderFlags } from '../game/trains';
 import type { Station } from '../world/rail';
 import { h } from './dom';
@@ -56,6 +57,7 @@ function flagsText(flags: OrderFlags): string {
   if (flags.unload === 'unload') parts.push('Vyložit vše');
   if (flags.unload === 'transfer') parts.push('Překládka');
   if (flags.unload === 'none') parts.push('Nevykládat');
+  if (flags.refit) parts.push(`Přestavět na ${CARGOS[flags.refit].noun}`);
   return parts.length > 0 ? `[${parts.join(', ')}]` : '';
 }
 
@@ -327,6 +329,13 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
         ],
         (v) => api.set(index, { unload: v === 'normal' ? undefined : v }),
       );
+      const refit = choice(
+        'Přestavět',
+        'Po vyložení přestavět prázdné vagony na jiný náklad a ten naložit (za poplatek)',
+        f?.refit ?? 'keep',
+        [['keep', '—'], ...(Object.keys(CARGOS) as Cargo[]).map((c): [string, string] => [c, CARGOS[c].name])],
+        (v) => api.set(index, { refit: v === 'keep' ? undefined : (v as Cargo) }),
+      );
       const via = button(
         'Projet',
         'Stanicí projet bez zastavení (nenaloží ani nevyloží)',
@@ -348,7 +357,7 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
           refresh();
         }
       });
-      return [load, unload, via, depot];
+      return [load, unload, refit, via, depot];
     }
   }
 
@@ -360,7 +369,7 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
 
   const unsubscribe = [...source.subscribe(refresh), onStationPickChange(() => refresh())];
   windows.open(id, source.title, render(), {
-    width: source.flags ? 430 : 380,
+    width: source.flags ? 480 : 380,
     onClose: () => {
       unsubscribe.forEach((off) => off());
       stopStationPick(id);

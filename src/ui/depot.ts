@@ -7,9 +7,10 @@ import {
   WAGON_RUNNING_COST,
   speedKmh,
   type TrainModel,
+  REFIT_COST_PER_WAGON,
 } from '../game/balance';
 import { CARGOS, type Cargo } from '../game/cargo';
-import { Game, formatMoney } from '../game/game';
+import { Game, formatMoney, formatMoneyShort } from '../game/game';
 import {
   formatLoad,
   isOld,
@@ -196,7 +197,10 @@ export function openDepot(
       return card;
     }
 
-    const cargo = h('select', { title: 'Druh nákladu všech vagonů; dosavadní náklad propadne' });
+    const refitCost = train.wagons * REFIT_COST_PER_WAGON;
+    const cargo = h('select', {
+      title: `Přestavět všechny vagony na jiný náklad za ${formatMoney(refitCost)}; dosavadní náklad propadne`,
+    });
     for (const c of CARGO_LIST) cargo.append(h('option', { value: c, selected: c === train.cargo }, CARGOS[c].name));
     cargo.addEventListener('change', () => report(fleet.setCargo(train, cargo.value as Cargo)));
     const renewal = fleet.renewalOffer(train);
@@ -204,7 +208,13 @@ export function openDepot(
       h(
         'div',
         { className: 'train__actions' },
-        h('label', { className: 'depot-train__cargo' }, 'Náklad ', cargo),
+        h(
+          'label',
+          { className: 'depot-train__cargo' },
+          'Náklad ',
+          cargo,
+          ...(refitCost > 0 ? [h('small', {}, ` přestavba ${formatMoneyShort(refitCost)}`)] : []),
+        ),
         button('Klonovat', (e) => report(cloneError(fleet.clone(train, depot, e.ctrlKey || e.metaKey))), {
           title: `Koupit stejný vlak i s jízdním řádem (${formatMoney(fleet.trainPrice(model, train.wagons))}); s Ctrl/Cmd na sdílený řád`,
         }),

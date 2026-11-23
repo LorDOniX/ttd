@@ -153,7 +153,8 @@ function trainOrders(game: Game, train: Train, links: TrainLinks): OrdersSource 
       shortStationsWarning(game, train),
     hint:
       'Vlak objíždí příkazy dokola. U vybraného příkazu nastavíte nakládání (do plna, nenakládat), ' +
-      'vykládání (vyložit vše, překládka pro další vozidlo, nevykládat) nebo „Projet“ bez zastavení. ' +
+      'vykládání (vyložit vše, překládka pro další vozidlo, nevykládat), přestavbu prázdných vagonů ' +
+      'na jiný náklad (po vyložení, za poplatek) nebo „Projet“ bez zastavení. ' +
       '„Servis v depu“ přidá zajížďku do depa.',
     focusStation: (stationId) => {
       const station = game.world.rail.stations.find((s) => s.id === stationId);

@@ -729,6 +729,8 @@ export const FEEDER_SHARE = 0.75;
 
 export const WAGON_PRICE = 50_000;
 export const WAGON_CAPACITY = 30;
+// Přestavba vagonu na jiný druh nákladu (v depu i podle příkazu na stanici)
+export const REFIT_COST_PER_WAGON = 4_000;
 export const WAGON_RUNNING_COST = 4_000;
 export const VEHICLE_LENGTH = 0.5;
 // Lokomotiva a vagony po půl dlaždici: nejdelší vlak vyplní nejdelší nástupiště (1×3 pojme 5 vagonů);

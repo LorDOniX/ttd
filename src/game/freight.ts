@@ -17,7 +17,7 @@ import { catchmentArea, fare, type Area } from './passengers';
 import { inflowFactor, recordVisit } from './rating';
 import { aircraftModel } from './aircraft';
 import { roadVehicleModel } from './roadVehicles';
-import { stationOrders } from './trains';
+import { refitLoadStops, stationOrders } from './trains';
 import { shipModel } from './ships';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
 import type { Station, StationShape } from '../world/rail';
@@ -75,7 +75,11 @@ export class Freight {
 
   // Náklad se na nástupiště sváží, jen když ho tam odváží některý vlak s vagony na tento náklad
   private servedBy(type: FreightType): Set<number> {
-    const trains = this.game.fleet.trains.filter((t) => t.cargo === type).flatMap((t) => stationOrders(t));
+    // Vlak s vagony na tento náklad, nebo s příkazem přestavby na něj (pak jen zastávky od přestavby dál)
+    const trains = this.game.fleet.trains.flatMap((t) => {
+      if (t.cargo === type) return stationOrders(t);
+      return (t.orderFlags ?? []).some((f) => f.refit === type) ? refitLoadStops(t, type) : [];
+    });
     const vehicles = this.game.roadFleet.vehicles
       .filter((v) => roadVehicleModel(v).cargo === type)
       .flatMap((v) => v.orders ?? []);

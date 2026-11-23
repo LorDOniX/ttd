@@ -1658,7 +1658,7 @@ body.pegman-dragging * {
 }
 
 .ottd-orders__bar--flags > .ottd-orders__choice {
-  flex: 1 1 45%;
+  flex: 1 1 30%;
 }
 
 .ottd-orders__bar--flags > .ottd-orders__choice select {

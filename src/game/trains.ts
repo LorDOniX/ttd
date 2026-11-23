@@ -16,11 +16,12 @@ import {
   SERVICE_INTERVAL_DAYS,
   SERVICE_MAX_ROUTE,
   type TrainModel,
+  REFIT_COST_PER_WAGON,
 } from './balance';
 import { needsService, newMaintenance, rollBreakdown, service, wearOut, type Maintained } from './reliability';
 import { Rng } from '../world/rng';
 import { formatMoney, type Game } from './game';
-import { CARGOS, isFreight, type Cargo } from './cargo';
+import { CARGOS, isCargo, isFreight, type Cargo } from './cargo';
 import { Reservations } from './reservations';
 import { axisPiece, opposite, stationTiles, type Depot, type Station, type StationShape } from '../world/rail';
 import {
@@ -69,6 +70,9 @@ export interface OrderFlags {
   via?: boolean;
   // Příkaz „Jet do depa“ na servis; číslo v orders je pak id depa
   depot?: boolean;
+  // Přestavět vagony na stanici na tento náklad (jako automatická přestavba v OpenTTD): po vyložení
+  // prázdné vagony přestaví a naloží nový náklad
+  refit?: Cargo;
 }
 
 // Volby bez prázdných hodnot (do uložení i pro porovnání)
@@ -81,6 +85,7 @@ export function cleanFlags(flags: OrderFlags): OrderFlags {
   if (flags.load === 'full' || flags.load === 'none') clean.load = flags.load;
   if (flags.unload === 'unload' || flags.unload === 'transfer' || flags.unload === 'none') clean.unload = flags.unload;
   if (flags.via) clean.via = true;
+  if (isCargo(flags.refit)) clean.refit = flags.refit;
   return clean;
 }
 
@@ -96,6 +101,23 @@ export function servesStation(train: Train, stationId: number): boolean {
 // Nástupiště z řádu bez příkazů do depa
 export function stationOrders(train: Train): number[] {
   return (train.orders ?? []).filter((_, i) => !orderFlags(train, i).depot);
+}
+
+// Zastávky, kde vlak s přestavbou v řádu veze náklad cargo: od příkazu přestavby na něj až po přestavbu
+// na jiný náklad (řád se objíždí dokola)
+export function refitLoadStops(train: Train, cargo: Cargo): number[] {
+  const orders = train.orders ?? [];
+  const n = orders.length;
+  const start = orders.findIndex((_, i) => orderFlags(train, i).refit === cargo);
+  if (start < 0) return [];
+  const stops: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const i = (start + k) % n;
+    const flags = orderFlags(train, i);
+    if (k > 0 && flags.refit && flags.refit !== cargo) break;
+    if (!flags.depot) stops.push(orders[i]);
+  }
+  return stops;
 }
 
 export interface Train extends Maintained {
@@ -525,13 +547,43 @@ export class Fleet {
     });
   }
 
-  // Změna druhu nákladu jen v depu; dosavadní náklad propadne
+  // Cena přestavby všech vagonů na jiný náklad
+  refitCost(train: Train, cargo: Cargo): number {
+    return cargo === train.cargo ? 0 : train.wagons * REFIT_COST_PER_WAGON;
+  }
+
+  // Přestavba v depu jako v OpenTTD: všechny vagony na jiný druh nákladu za poplatek; dosavadní náklad propadne
   setCargo(train: Train, cargo: Cargo): string | null {
-    if (train.state !== 'depot') return 'Druh nákladu lze změnit jen v depu.';
-    if (cargo !== train.cargo) train.passengers = 0;
+    if (train.state !== 'depot') return 'Vagony lze přestavět jen v depu, nebo příkazem na stanici.';
+    if (cargo === train.cargo) return null;
+    const cost = this.refitCost(train, cargo);
+    if (this.game.money < cost) return `Na přestavbu chybí peníze (${formatMoney(cost)}).`;
+    if (cost > 0) this.game.spend(cost, 'vehicles');
+    train.costs += cost;
+    train.passengers = 0;
     train.cargo = cargo;
     this.changed();
     return null;
+  }
+
+  // Přestavba podle příkazu na stanici: jen prázdné vagony a jen když je na ni
+  private refitAtStation(train: Train, cargo: Cargo, station: Station): boolean {
+    if (train.passengers > 0) {
+      this.game.news(
+        `${train.name} se ve stanici ${station.name} nepřestavěl: ve vagonech zůstal náklad (${formatLoad(train)}).`,
+        station,
+      );
+      return false;
+    }
+    const cost = this.refitCost(train, cargo);
+    if (this.game.money < cost) {
+      this.game.news(`${train.name} se ve stanici ${station.name} nepřestavěl: chybí ${formatMoney(cost)}.`, station);
+      return false;
+    }
+    if (cost > 0) this.game.spend(cost, 'vehicles');
+    train.costs += cost;
+    train.cargo = cargo;
+    return true;
   }
 
   // Zapne nebo vypne čekání na plné naložení na zastávce (u sdíleného řádu pro celou linku)
@@ -991,6 +1043,23 @@ export class Fleet {
   private exchange(train: Train, station: Station, loadOnly = false): number {
     const flags = this.targetFlags(train);
     const options = { unload: flags.unload, load: flags.load === 'none' ? ('none' as const) : undefined };
+    // Přestavba: nejdřív vyložit dosavadní náklad, pak přestavět prázdné vagony a naložit nový
+    if (flags.refit && flags.refit !== train.cargo && !loadOnly) {
+      const unloaded = this.transfer(train, station, false, { ...options, load: 'none' });
+      // Bez přestavby (zbylý náklad, chybí peníze) vlak doloží, co veze
+      if (this.refitAtStation(train, flags.refit, station)) this.changed();
+      return unloaded + this.transfer(train, station, true, options);
+    }
+    return this.transfer(train, station, loadOnly, options);
+  }
+
+  // Vyložení a naložení nákladu, který vlak právě veze
+  private transfer(
+    train: Train,
+    station: Station,
+    loadOnly: boolean,
+    options: { unload?: OrderFlags['unload']; load?: 'none' },
+  ): number {
     const { cargo } = train;
     const hold = {
       atPlatform: wagonsAtStation(train, station) * WAGON_CAPACITY,
