@@ -271,6 +271,8 @@ export class GameView {
       this.nightLights.invalidate();
     });
     game.events.on('railChanged', () => (this.railDirty = true));
+    // Silniční most mění napojení silnic i bez změny dlaždic
+    game.events.on('roadsChanged', () => this.roads.invalidate());
     game.events.on('stationsChanged', rebuildStationLabels);
     game.events.on('industriesChanged', () => void this.industries.sync(world.industries));
     game.events.on('income', (amount, x, z) =>

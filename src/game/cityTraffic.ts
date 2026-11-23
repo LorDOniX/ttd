@@ -1,7 +1,7 @@
 import type { RoadVehicle } from './roadVehicles';
 import { TileType, type GameMap, type TilePos } from '../world/map';
 import type { RailNetwork } from '../world/rail';
-import { roadMoves } from '../world/roadRoute';
+import { roadElevation, roadMoves, sameRoadLevel } from '../world/roadRoute';
 import {
   JUNCTION_CLEARANCE,
   JUNCTION_STOP_GAP,
@@ -71,7 +71,7 @@ function roomAhead(path: TilePos[], pos: number, others: readonly RoadTrafficObs
   const me = vehiclePoint(path, pos);
   let room = Infinity;
   for (const other of others) {
-    if (other.path.length === 0) continue;
+    if (other.path.length === 0 || !sameRoadLevel(path, pos, other.path, other.pos)) continue;
     const it = vehiclePoint(other.path, other.pos);
     if (me.dx * it.dx + me.dy * it.dy <= 0.5) continue;
     const ox = it.x - me.x;
@@ -120,8 +120,12 @@ export class CityTraffic {
     roadVersion: number,
   ): void {
     if (roadVersion !== this.roadsVersion) this.reconcile(roadVersion, playerVehicles);
+    // Auta hráče na silničním mostě městská auta pod ním neomezují
     const playerObstacles = playerVehicles
-      .filter((vehicle) => vehicle.state !== 'depot' && vehicle.path.length > 0)
+      .filter(
+        (vehicle) =>
+          vehicle.state !== 'depot' && vehicle.path.length > 0 && roadElevation(vehicle.path, vehicle.pos) < 0.5,
+      )
       .map(({ id, path, pos }) => ({ id, path, pos }));
     const traffic = [...this.cars.map(({ id, path, pos }) => ({ id: -id, path, pos })), ...playerObstacles];
     const priorities = junctionPriorities(

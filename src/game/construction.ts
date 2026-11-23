@@ -62,6 +62,11 @@ export function bridgeCost(span: number): number {
   return span * BRIDGE_PIECE_COST;
 }
 
+// Cena pole silničního mostu (bez silnice na nájezdech)
+export function roadBridgeCost(span: number): number {
+  return span * ROAD_BRIDGE_COST;
+}
+
 // Cena nového dílku silnice: přes vodu se staví most
 export function roadPieceCost(map: GameMap, x: number, y: number): number {
   return map.isType(x, y, TileType.Water) || map.roadBridgeAxis(x, y) ? ROAD_BRIDGE_COST : ROAD_TILE_COST;
@@ -82,6 +87,7 @@ export function infrastructureValue(world: World): number {
   for (const station of rail.stations) value += stationCost(station);
   for (const on of rail.electrified) value += on * ELECTRIFY_TILE_COST;
   for (const bridge of rail.bridges) value += bridgeCost(bridge.span);
+  for (const bridge of rail.roadBridges) value += roadBridgeCost(bridge.span);
   return (
     value +
     rail.depots.length * DEPOT_COST +
@@ -396,6 +402,35 @@ export class Construction {
     return null;
   }
 
+  // Cena silničního mostu: pole mostu a nová silnice na nájezdech z volné země
+  roadBridgePlan(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ): { cost: number; problem: string | null; span: number } {
+    const { map, rail } = this.game.world;
+    const problem = rail.roadBridgeProblem(x0, y0, x1, y1);
+    const span = Math.max(0, Math.abs(x1 - x0) + Math.abs(y1 - y0) - 1);
+    const heads = [
+      { x: x0, y: y0 },
+      { x: x1, y: y1 },
+    ].filter((h) => map.isOpenGround(h.x, h.y)).length;
+    return { cost: roadBridgeCost(span) + heads * ROAD_TILE_COST, problem, span };
+  }
+
+  // Silniční most jako v OpenTTD: přes koleje, silnice, vodu i souš; provoz pod ním zůstane
+  buildRoadBridge(x0: number, y0: number, x1: number, y1: number): string | null {
+    const { cost, problem } = this.roadBridgePlan(x0, y0, x1, y1);
+    if (problem) return problem;
+    if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'construction');
+    this.game.world.rail.addRoadBridge(x0, y0, x1, y1);
+    this.game.events.emit('railChanged');
+    this.game.events.emit('roadsChanged');
+    return null;
+  }
+
   // Vlak na mostě (nebo s rezervací přes něj) brání demolici
   private bridgeBlocker(bridge: RailBridge): string | null {
     const { fleet } = this.game;
@@ -502,6 +537,20 @@ export class Construction {
         blocked ??= blocker;
         continue;
       }
+      // Nájezd silničního mostu zboří most, silnice na nájezdech zůstane; auto na mostě demolici zablokuje
+      const roadBridge = type === TileType.Road ? rail.roadBridgeAtHead(x, y) : undefined;
+      if (roadBridge) {
+        if (bridges.has(roadBridge.id)) continue;
+        const car = this.game.roadFleet.onBridge(roadBridge);
+        if (car) {
+          blocked ??= `Na mostě je ${car.name}.`;
+          continue;
+        }
+        bridges.add(roadBridge.id);
+        cost -= roadBridgeCost(roadBridge.span) * DEMOLISH_REFUND;
+        tiles.push({ x: roadBridge.x, y: roadBridge.y }, bridgeEnd(roadBridge));
+        continue;
+      }
       // Nájezd mostu zboří celý most (oba nájezdy); vlak na mostě demolici zablokuje
       const bridge = type === TileType.Rail ? rail.bridgeAtHead(x, y) : undefined;
       if (bridge) {
@@ -585,7 +634,18 @@ export class Construction {
     let townsChanged = false;
     let treesChanged = false;
 
+    // Silniční mosty napřed: jejich nájezdy (silnice) zůstanou
+    const keep = new Set<number>();
     for (const { x, y } of plan.tiles) {
+      const bridge = map.isType(x, y, TileType.Road) ? rail.roadBridgeAtHead(x, y) : undefined;
+      if (!bridge) continue;
+      for (const head of [{ x: bridge.x, y: bridge.y }, bridgeEnd(bridge)]) keep.add(head.y * map.width + head.x);
+      rail.removeRoadBridge(bridge);
+      railChanged = true;
+      roadsChanged = true;
+    }
+    for (const { x, y } of plan.tiles) {
+      if (keep.has(y * map.width + x)) continue;
       switch (map.get(x, y)) {
         case TileType.Trees:
           map.set(x, y, TileType.Grass);

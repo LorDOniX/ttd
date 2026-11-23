@@ -13,8 +13,16 @@ import {
 import { CARGOS, isFreight, type Cargo } from './cargo';
 import { formatMoney, type Game } from './game';
 import { TileType, type TilePos } from '../world/map';
-import type { Depot, Station } from '../world/rail';
-import { findRoadRoute, roadMoves } from '../world/roadRoute';
+import { bridgeEnd, bridgeSpanTiles, type Depot, type RailBridge, type Station } from '../world/rail';
+import {
+  findRoadRoute,
+  roadElevation,
+  roadMoves,
+  roadSteps,
+  sameRoadLevel,
+  sameRoadTile,
+  type RoadTile,
+} from '../world/roadRoute';
 import {
   JUNCTION_CLEARANCE,
   JUNCTION_STOP_GAP,
@@ -63,7 +71,8 @@ export interface RoadVehicle extends Maintained {
   // Index zastávky v řádu, −1 = jede do garáže
   target: number;
   state: RoadVehicleState;
-  path: TilePos[];
+  // Dlaždice cesty; na poli silničního mostu s level 1
+  path: RoadTile[];
   pos: number;
   waitDays: number;
   // Náklad na palubě (cestující nebo tuny)
@@ -262,8 +271,11 @@ export function safeVehiclePosition(
     direction > 0 ? candidate <= target : candidate >= target;
   ) {
     const point = vehiclePoint(path, candidate);
+    const height = roadElevation(path, candidate);
     const blocked = obstacles.some((other) => {
       if (other.path.length === 0) return false;
+      // Vozidlo na mostě a pod ním se nepotkají
+      if (Math.abs(roadElevation(other.path, other.pos) - height) >= 0.5) return false;
       const obstacle = vehiclePoint(other.path, other.pos);
       const direction = point.dx * obstacle.dx + point.dy * obstacle.dy;
       const ox = obstacle.x - point.x;
@@ -534,16 +546,26 @@ export class RoadFleet {
   }
 
   // Dlaždice, na které auto stojí nebo jede
-  tileOf(vehicle: RoadVehicle): TilePos | null {
+  tileOf(vehicle: RoadVehicle): RoadTile | null {
     if (vehicle.state === 'depot' || vehicle.path.length === 0) return null;
     return vehicle.path[Math.min(vehicle.path.length - 1, Math.round(vehicle.pos))];
+  }
+
+  // Auto, které právě jede po silničním mostě (nebo na jeho nájezdu stoupá), nebo undefined
+  onBridge(bridge: RailBridge): RoadVehicle | undefined {
+    const tiles = [{ x: bridge.x, y: bridge.y }, bridgeEnd(bridge), ...bridgeSpanTiles(bridge)];
+    return this.vehicles.find((vehicle) => {
+      const tile = this.tileOf(vehicle);
+      if (!tile || roadElevation(vehicle.path, vehicle.pos) === 0) return false;
+      return tiles.some((t) => t.x === tile.x && t.y === tile.y);
+    });
   }
 
   // Důvod, proč dlaždici nejde zbourat, nebo null
   demolitionBlocker(x: number, y: number): string | null {
     for (const vehicle of this.vehicles) {
       const tile = this.tileOf(vehicle);
-      if (tile && tile.x === x && tile.y === y) return `Na silnici stojí ${vehicle.name}.`;
+      if (tile && !tile.level && tile.x === x && tile.y === y) return `Na silnici stojí ${vehicle.name}.`;
       const depot = this.depot(vehicle);
       if (depot && depot.x === x && depot.y === y) return `Garáž patří vozidlu ${vehicle.name}.`;
       if (vehicle.state === 'depot') continue;
@@ -576,7 +598,7 @@ export class RoadFleet {
       const from = vehicle.path[k - 1];
       const to = vehicle.path[k];
       const crossingTile = to.y * map.width + to.x;
-      const junction = roadMoves(this.game.world.rail, to.x, to.y).length >= 3;
+      const junction = !to.level && roadMoves(this.game.world.rail, to.x, to.y).length >= 3;
       const junctionOccupied =
         junction &&
         (this.vehicles.some((other) => {
@@ -589,7 +611,8 @@ export class RoadFleet {
       const mustYield =
         junction && priorities.get(crossingTile) !== undefined && priorities.get(crossingTile) !== vehicle.id;
       const redSignal = junction && this.trafficLights !== undefined && !this.trafficLights.allows(from, to);
-      const blocked = this.pedestrianCrossings.has(crossingTile) || junctionOccupied || mustYield || redSignal;
+      const pedestrians = !to.level && this.pedestrianCrossings.has(crossingTile);
+      const blocked = pedestrians || junctionOccupied || mustYield || redSignal;
       const gap =
         junction && redSignal
           ? RED_SIGNAL_STOP_GAP
@@ -599,20 +622,21 @@ export class RoadFleet {
       if (k - 0.5 - gap > pos) break;
       // Kdo už zasahuje do křižovatky, toho ostatní vidí jako obsazeného; přednost by vedla k zablokování
       const holdsJunction = vehicle.pos >= k - 0.5 - JUNCTION_CLEARANCE;
-      const onlyYield = mustYield && !junctionOccupied && !redSignal && !this.pedestrianCrossings.has(crossingTile);
+      const onlyYield = mustYield && !junctionOccupied && !redSignal && !pedestrians;
       if (blocked && vehicle.pos < k - 0.5 && !(holdsJunction && onlyYield)) {
         // Auto, které už je za stopčárou (třeba stálo blíž na červenou), počká na místě, necouvá
         pos = Math.min(pos, Math.max(vehicle.pos, k - 0.5 - gap));
         break;
       }
       // Před zavřenou závorou auto stojí; kdo už k ní dojel před zavřením, projede
-      const closed = map.get(to.x, to.y) === TileType.Crossing && reservations.ownerAt(to.x, to.y) !== undefined;
+      const closed =
+        !to.level && map.get(to.x, to.y) === TileType.Crossing && reservations.ownerAt(to.x, to.y) !== undefined;
       if (closed && vehicle.pos <= k - 0.5 - CROSSING_GAP) {
         pos = k - 0.5 - CROSSING_GAP;
         break;
       }
       if (k - 0.5 > pos) break;
-      if (!roadMoves(this.game.world.rail, from.x, from.y).some((t) => t.x === to.x && t.y === to.y)) {
+      if (!roadSteps(this.game.world.rail, from).some((t) => sameRoadTile(t, to))) {
         this.replan(vehicle);
         return;
       }
@@ -638,6 +662,7 @@ export class RoadFleet {
   }
 
   private roomTo(me: ReturnType<typeof vehiclePoint>, vehicle: RoadVehicle, other: RoadTrafficObstacle): number {
+    if (!sameRoadLevel(vehicle.path, vehicle.pos, other.path, other.pos)) return Infinity;
     const it = vehiclePoint(other.path, other.pos);
     if (me.dx * it.dx + me.dy * it.dy <= 0.5) return Infinity;
     const ox = it.x - me.x;
@@ -738,7 +763,7 @@ export class RoadFleet {
     }
     const next = vehicle.state === 'running' && i + 1 < path.length ? path[i + 1] : null;
     const fromNext =
-      next && roadMoves(this.game.world.rail, here.x, here.y).some((t) => t.x === next.x && t.y === next.y)
+      next && roadSteps(this.game.world.rail, here).some((t) => sameRoadTile(t, next))
         ? this.routeTo(next, vehicle)
         : null;
     if (fromNext && next) {
@@ -766,7 +791,7 @@ export class RoadFleet {
   }
 
   // Do garáže kterékoli (nejbližší), jinak na cílovou zastávku
-  private routeTo(start: TilePos, vehicle: RoadVehicle): TilePos[] | null {
+  private routeTo(start: RoadTile, vehicle: RoadVehicle): RoadTile[] | null {
     const { rail } = this.game.world;
     if (vehicle.target === -1) {
       return findRoadRoute(rail, start, (x, y) => rail.roadDepotAt(x, y) !== undefined);
@@ -793,9 +818,7 @@ export class RoadFleet {
       const from = Math.max(0, Math.floor(vehicle.pos));
       const valid = vehicle.path
         .slice(from + 1)
-        .every((t, k) =>
-          roadMoves(rail, vehicle.path[from + k].x, vehicle.path[from + k].y).some((m) => m.x === t.x && m.y === t.y),
-        );
+        .every((t, k) => roadSteps(rail, vehicle.path[from + k]).some((m) => sameRoadTile(m, t)));
       if (!valid || (vehicle.target !== -1 && !this.goal(vehicle))) this.replan(vehicle);
     }
   }

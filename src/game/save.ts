@@ -74,6 +74,8 @@ export interface SaveData {
     signalDirs?: [number, number][];
     // Mosty nad kolejemi a silnicemi; starší uložení je nemají
     bridges?: RailBridge[];
+    // Silniční mosty nad kolejemi a silnicemi; starší uložení je nemají
+    roadBridges?: RailBridge[];
     nextBridgeId?: number;
     // Průjezdné body; starší uložení je nemají
     waypoints?: Waypoint[];
@@ -167,6 +169,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       signals: [...rail.signals],
       signalDirs: [...rail.signalDirs],
       bridges: rail.bridges,
+      roadBridges: rail.roadBridges,
       nextBridgeId: rail.nextBridgeId,
       waypoints: rail.waypoints,
       nextWaypointId: rail.nextWaypointId,
@@ -387,20 +390,30 @@ export function restoreGame(data: SaveData): Game {
     if (Number.isInteger(tile) && tile >= 0 && tile < width * height) rail.signals.add(tile);
   }
   // Mosty: neplatné (mimo mapu, křížící se, nad stavbou) se zahodí
-  for (const b of Array.isArray(data.rail.bridges) ? data.rail.bridges : []) {
-    if (!isObject(b) || ![b.x, b.y, b.dir, b.span].every((n) => Number.isInteger(n))) continue;
-    if (b.dir < 0 || b.dir > 3) continue;
-    const [dx, dy] = [
-      [0, -1],
-      [1, 0],
-      [0, 1],
-      [-1, 0],
-    ][b.dir];
-    const x1 = b.x + (b.span + 1) * dx;
-    const y1 = b.y + (b.span + 1) * dy;
-    if (rail.bridgeProblem(b.x, b.y, x1, y1) === null) rail.addBridge(b.x, b.y, x1, y1).id = b.id;
+  const bridgeHeads = (list: unknown): { id: number; x0: number; y0: number; x1: number; y1: number }[] =>
+    (Array.isArray(list) ? (list as RailBridge[]) : []).flatMap((b) => {
+      if (!isObject(b) || ![b.x, b.y, b.dir, b.span].every((n) => Number.isInteger(n))) return [];
+      if (b.dir < 0 || b.dir > 3) return [];
+      const [dx, dy] = [
+        [0, -1],
+        [1, 0],
+        [0, 1],
+        [-1, 0],
+      ][b.dir];
+      return [{ id: b.id, x0: b.x, y0: b.y, x1: b.x + (b.span + 1) * dx, y1: b.y + (b.span + 1) * dy }];
+    });
+  for (const b of bridgeHeads(data.rail.bridges)) {
+    if (rail.bridgeProblem(b.x0, b.y0, b.x1, b.y1) === null) rail.addBridge(b.x0, b.y0, b.x1, b.y1).id = b.id;
   }
-  rail.nextBridgeId = Math.max(finiteOr(data.rail.nextBridgeId, 0), ...rail.bridges.map((b) => b.id + 1));
+  for (const b of bridgeHeads(data.rail.roadBridges)) {
+    if (rail.roadBridgeProblem(b.x0, b.y0, b.x1, b.y1, false) === null) {
+      rail.addRoadBridge(b.x0, b.y0, b.x1, b.y1).id = b.id;
+    }
+  }
+  rail.nextBridgeId = Math.max(
+    finiteOr(data.rail.nextBridgeId, 0),
+    ...[...rail.bridges, ...rail.roadBridges].map((b) => b.id + 1),
+  );
   // Průjezdné body: jen na rovné koleji (neplatné se zahodí)
   for (const w of Array.isArray(data.rail.waypoints) ? data.rail.waypoints : []) {
     if (!isObject(w) || !Number.isInteger(w.x) || !Number.isInteger(w.y) || !Number.isInteger(w.id)) continue;

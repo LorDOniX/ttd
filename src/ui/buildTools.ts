@@ -8,6 +8,7 @@ import {
   MAX_STATION_TRACKS,
   PLATFORM_TILE_COST,
   PORT_COST,
+  ROAD_BRIDGE_COST,
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
   ROAD_TILE_COST,
@@ -75,6 +76,7 @@ export type BuildTool =
   | 'road'
   | 'road-stop'
   | 'road-depot'
+  | 'road-bridge'
   | 'airport-small'
   | 'airport-large'
   | 'port'
@@ -335,10 +337,13 @@ export class BuildTools {
         ['road', '🛣️', 'Silnice', 'S', `${formatMoneyShort(ROAD_TILE_COST)} / dílek`],
         ['road-stop', '🚏', 'Zastávka', 'Z', formatMoneyShort(ROAD_STOP_COST)],
         ['road-depot', '🏠', 'Garáž', 'U', formatMoneyShort(ROAD_DEPOT_COST)],
+        ['road-bridge', '🌉', 'Most', '—', `${formatMoneyShort(ROAD_BRIDGE_COST)} / pole`],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Silnice a demolice: táhněte levým tlačítkem. Zastávka aut jde na rovnou silnici bez křižovatky, ' +
-        'garáž se natočí vjezdem k silnici. R – otočit garáž, Esc – zrušit nástroj.',
+        'garáž se natočí vjezdem k silnici. Most: táhněte od nájezdu k nájezdu přes koleje, silnice, vodu ' +
+        'i trávu; nájezd je volná země nebo silnice bez křižovatky a provoz pod mostem zůstane. ' +
+        'R – otočit garáž, Esc – zrušit nástroj.',
     );
   }
 
@@ -702,8 +707,9 @@ export class BuildTools {
   toggleTool(tool: BuildTool): void {
     const windowOpen = [...this.buttons.values()].some((buttons) => buttons.has(tool));
     if (!windowOpen && tool !== 'info') {
-      if (tool === 'road' || tool === 'road-stop' || tool === 'road-depot') this.openRoadWindow();
-      else if (airportTool(tool)) this.openAirWindow();
+      if (tool === 'road' || tool === 'road-stop' || tool === 'road-depot' || tool === 'road-bridge') {
+        this.openRoadWindow();
+      } else if (airportTool(tool)) this.openAirWindow();
       else if (tool === 'port') this.openWaterWindow();
       else this.openRailWindow();
     }
@@ -747,7 +753,8 @@ export class BuildTools {
       this.tool === 'electrify' ||
       this.tool === 'station' ||
       this.tool === 'signal' ||
-      this.tool === 'bridge'
+      this.tool === 'bridge' ||
+      this.tool === 'road-bridge'
     ) {
       this.dragStart = tile;
       this.updatePath();
@@ -815,10 +822,15 @@ export class BuildTools {
     }
     if (this.tool === 'road' && this.roadPath) construction.buildRoad(this.roadPath);
     if (this.tool === 'signal') this.applySignals();
-    if (this.tool === 'bridge') {
+    if (this.tool === 'bridge' || this.tool === 'road-bridge') {
       const end = this.bridgeEnd();
       if (end && this.dragStart && !this.estimateMode && (end.x !== this.dragStart.x || end.y !== this.dragStart.y)) {
-        this.report(construction.buildBridge(this.dragStart.x, this.dragStart.y, end.x, end.y));
+        const { x, y } = this.dragStart;
+        this.report(
+          this.tool === 'bridge'
+            ? construction.buildBridge(x, y, end.x, end.y)
+            : construction.buildRoadBridge(x, y, end.x, end.y),
+        );
       }
     }
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
@@ -871,25 +883,29 @@ export class BuildTools {
   }
 
   // Náhled mostu; vrací text pro popisek
-  private showBridge(): string {
+  private showBridge(road = false): string {
     const start = this.dragStart;
     const end = this.bridgeEnd();
     if (!start || !end || (start.x === end.x && start.y === end.y)) {
       if (this.hover) this.preview.showArea([this.hover], 'valid');
-      return 'Most: táhněte od jednoho nájezdu k druhému – přes koleje, silnice, vodu i trávu';
+      return `${road ? 'Silniční most' : 'Most'}: táhněte od jednoho nájezdu k druhému – přes koleje, silnice, vodu i trávu`;
     }
-    const plan = this.game.construction.bridgePlan(start.x, start.y, end.x, end.y);
+    const { construction } = this.game;
+    const plan = road
+      ? construction.roadBridgePlan(start.x, start.y, end.x, end.y)
+      : construction.bridgePlan(start.x, start.y, end.x, end.y);
     const dir = end.x > start.x ? Edge.E : end.x < start.x ? Edge.W : end.y > start.y ? Edge.S : Edge.N;
     if (plan.span >= 1) {
       this.preview.showBridge(
         { x: start.x, y: start.y, dir, span: plan.span },
         !plan.problem && this.game.money >= plan.cost,
+        road,
       );
     } else this.preview.showArea([start, end], 'invalid');
     if (plan.problem) return plan.problem;
     const fields = plan.span === 1 ? 'pole' : plan.span <= 4 ? 'pole' : 'polí';
     const prefix = this.estimateMode ? 'Odhad: ' : '';
-    return `${prefix}Most ${plan.span} ${fields} · ${formatMoneyShort(plan.cost)}`;
+    return `${prefix}${road ? 'Silniční most' : 'Most'} ${plan.span} ${fields} · ${formatMoneyShort(plan.cost)}`;
   }
 
   // Jediný kus koleje na dlaždici, kam jde návěstidlo, nebo -1
@@ -1316,8 +1332,8 @@ export class BuildTools {
       }
     } else if (this.tool === 'signal' && tile) {
       text = this.showSignals();
-    } else if (this.tool === 'bridge' && tile) {
-      text = this.showBridge();
+    } else if ((this.tool === 'bridge' || this.tool === 'road-bridge') && tile) {
+      text = this.showBridge(this.tool === 'road-bridge');
     } else if (this.tool === 'industry' && tile) {
       const { map, towns, industries } = this.game.world;
       const site = industrySite(tile);

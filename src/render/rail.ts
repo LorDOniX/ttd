@@ -30,6 +30,8 @@ const WALL = 0x9c6b4a;
 const DOOR = 0x2a2420;
 const BRIDGE = 0x7a7066;
 const BRIDGE_RAIL = 0xa8442c;
+const ROAD_DECK = 0x4d4d50;
+const ROAD_MARKING = 0xe8e4d8;
 const GLASS = 0x9fc4d8;
 const SIGN = 0xe0c040;
 const GARAGE_WALL = 0xa8a8a0;
@@ -67,19 +69,40 @@ function trackTop(length: number): THREE.BufferGeometry[] {
   return parts;
 }
 
+// Vozovka silničního mostu délky `length` podél osy X, spodkem v y = 0: asfalt a přerušovaná středová čára
+function roadTop(length: number): THREE.BufferGeometry[] {
+  const parts = [box(length, 0.012, 0.66, ROAD_DECK, 0, 0, 0)];
+  const dashes = Math.max(1, Math.round(length / 0.25));
+  for (let i = 0; i < dashes; i++) {
+    const x = -length / 2 + (i + 0.5) * (length / dashes);
+    parts.push(box((length / dashes) * 0.5, 0.004, 0.025, ROAD_MARKING, x, 0.012, 0));
+  }
+  return parts;
+}
+
+interface BridgeStyle {
+  width: number;
+  top: (length: number) => THREE.BufferGeometry[];
+  railingZ: number;
+  pierZ: number;
+}
+
+const RAIL_BRIDGE_STYLE: BridgeStyle = { width: BRIDGE_WIDTH, top: trackTop, railingZ: 0.24, pierZ: 0.3 };
+const ROAD_BRIDGE_STYLE: BridgeStyle = { width: 0.78, top: roadTop, railingZ: 0.37, pierZ: 0.36 };
+
 // Most podél +X od vnějšího okraje nájezdu A (x = 0) po vnější okraj nájezdu B (x = span + 2):
 // nájezdy stoupají na výšku mostovky, pilíře stojí na hranách dlaždic mimo osu, aby nepřekážely provozu pod mostem
-export function railBridgeGeometry(span: number): THREE.BufferGeometry {
+export function railBridgeGeometry(span: number, style: BridgeStyle = RAIL_BRIDGE_STYLE): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const top = BRIDGE_HEIGHT;
   const slope = Math.atan(top);
   const rampLength = Math.hypot(1, top);
-  // Nájezdy: šikmá deska s kolejí, natočená kolem osy Z
+  // Nájezdy: šikmá deska s kolejí (vozovkou), natočená kolem osy Z
   for (const [cx, angle] of [
     [0.5, slope],
     [span + 1.5, -slope],
   ] as const) {
-    const ramp = [slab(rampLength, BRIDGE_DECK_THICKNESS, BRIDGE_WIDTH, BRIDGE), ...trackTop(rampLength)];
+    const ramp = [slab(rampLength, BRIDGE_DECK_THICKNESS, style.width, BRIDGE), ...style.top(rampLength)];
     // Kolej leží na horní ploše desky; horní plocha vede od země po výšku mostovky
     ramp.slice(1).forEach((g) => g.translate(0, BRIDGE_DECK_THICKNESS / 2, 0));
     for (const g of ramp) {
@@ -89,33 +112,35 @@ export function railBridgeGeometry(span: number): THREE.BufferGeometry {
       parts.push(g);
     }
   }
-  // Mostovka s kolejí a zábradlím
-  parts.push(box(span, BRIDGE_DECK_THICKNESS, BRIDGE_WIDTH, BRIDGE, 1 + span / 2, top - BRIDGE_DECK_THICKNESS, 0));
-  for (const g of trackTop(span)) parts.push(g.translate(1 + span / 2, top, 0));
-  for (const z of [-0.24, 0.24]) {
+  // Mostovka s kolejí (vozovkou) a zábradlím
+  parts.push(box(span, BRIDGE_DECK_THICKNESS, style.width, BRIDGE, 1 + span / 2, top - BRIDGE_DECK_THICKNESS, 0));
+  for (const g of style.top(span)) parts.push(g.translate(1 + span / 2, top, 0));
+  for (const z of [-style.railingZ, style.railingZ]) {
     parts.push(box(span, 0.025, 0.025, BRIDGE_RAIL, 1 + span / 2, top + 0.09, z));
     for (let i = 0; i <= span * 4; i++) parts.push(box(0.02, 0.09, 0.02, BRIDGE_RAIL, 1 + i / 4, top, z));
   }
   // Pilíře na hranách dlaždic po obou stranách mostovky
   for (let i = 1; i <= span + 1; i++) {
-    for (const z of [-0.3, 0.3]) {
+    for (const z of [-style.pierZ, style.pierZ]) {
       parts.push(box(0.08, top - BRIDGE_DECK_THICKNESS, 0.08, BRIDGE, i, 0, z));
     }
   }
   return mergeGeometries(parts)!;
 }
 
-const bridgeGeometries = new Map<number, THREE.BufferGeometry>();
+const bridgeGeometries = new Map<string, THREE.BufferGeometry>();
 
-// Most na mapě; geometrie se sdílí podle délky
+// Most na mapě; geometrie se sdílí podle délky a druhu (road = silniční most)
 export function createRailBridgeObject(
   bridge: Pick<RailBridge, 'x' | 'y' | 'dir' | 'span'>,
   material: THREE.Material,
+  road = false,
 ): THREE.Mesh {
-  let geometry = bridgeGeometries.get(bridge.span);
+  const key = `${road ? 'road' : 'rail'}:${bridge.span}`;
+  let geometry = bridgeGeometries.get(key);
   if (!geometry) {
-    geometry = railBridgeGeometry(bridge.span);
-    bridgeGeometries.set(bridge.span, geometry);
+    geometry = railBridgeGeometry(bridge.span, road ? ROAD_BRIDGE_STYLE : RAIL_BRIDGE_STYLE);
+    bridgeGeometries.set(key, geometry);
   }
   const mesh = new THREE.Mesh(geometry, material);
   const [dx, dy] = EDGE_DELTA[bridge.dir];
@@ -392,5 +417,6 @@ export class RailView {
       this.structures.add(mesh);
     }
     for (const b of this.rail.bridges) this.structures.add(createRailBridgeObject(b, this.material));
+    for (const b of this.rail.roadBridges) this.structures.add(createRailBridgeObject(b, this.material, true));
   }
 }

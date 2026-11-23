@@ -8,6 +8,8 @@ import { inView, type ViewFrustums } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
 import type { CabPose } from './firstPerson';
 import { BRIDGE_DECK } from './rail';
+import { BRIDGE_HEIGHT } from '../world/route';
+import { roadElevation } from '../world/roadRoute';
 
 // Modely z car kitu jsou dlouhé ~3 jednotky podél +Z (předek), kola stojí na y = 0
 const SCALE = 0.13;
@@ -207,9 +209,16 @@ export class RoadVehiclesView {
     const length = Math.hypot(dx, dy) || 1;
     const [ux, uy] = [dx / length, dy / length];
     // Pozice už zahrnuje jízdní pruh; na mostě auto jede po mostovce
-    const lift = this.map.roadBridgeAxis(Math.floor(x), Math.floor(y)) ? BRIDGE_DECK : 0;
+    const height = roadElevation(path, pos);
+    const lift =
+      height > 0 ? height * BRIDGE_HEIGHT : this.map.roadBridgeAxis(Math.floor(x), Math.floor(y)) ? BRIDGE_DECK : 0;
     view.group.position.set(x, ROAD_TOP + lift, y);
     view.group.rotation.y = Math.atan2(ux, uy);
+    // Na nájezdu silničního mostu se auto nakloní do stoupání
+    const climb =
+      height > 0 && height < 1 ? Math.atan(BRIDGE_HEIGHT) * Math.sign(roadElevation(path, pos + 0.05) - height) : 0;
+    view.group.rotation.x = 0;
+    if (climb !== 0) view.group.rotateX(-climb);
     if (view.load && view.playerId !== null) {
       const vehicle = this.fleet.vehicles.find((candidate) => candidate.id === view.playerId);
       view.load.visible = (vehicle?.passengers ?? 0) > 0;

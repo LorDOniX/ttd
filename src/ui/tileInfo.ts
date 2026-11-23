@@ -1,5 +1,5 @@
 import { MAINTENANCE_RATE } from '../game/balance';
-import { trackPieceCost } from '../game/construction';
+import { roadBridgeCost, trackPieceCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
 import { catchmentArea, inArea } from '../game/passengers';
 import { NO_OWNER, TileType, type TilePos } from '../world/map';
@@ -63,6 +63,13 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
     const town = owner === NO_OWNER ? null : towns[owner];
     if (map.isRoad(x, y)) {
       rows.push(['Vlastník silnice', town ? town.name : 'vaše společnost']);
+    }
+    const roadBridge = rail.roadBridgeAtHead(x, y) ?? rail.roadBridgeOver(x, y);
+    if (roadBridge) {
+      rows.push(
+        [rail.roadBridgeAtHead(x, y) ? 'Nájezd mostu' : 'Nad dlaždicí', `silniční most, ${roadBridge.span} polí`],
+        ['Údržba mostu', monthly(roadBridgeCost(roadBridge.span))],
+      );
     }
     if (type === TileType.Building && town) {
       const building = buildingAt(town, x, y);

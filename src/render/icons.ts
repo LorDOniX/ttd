@@ -51,6 +51,7 @@ export type SceneIcon =
   | 'road'
   | 'road-stop'
   | 'road-depot'
+  | 'road-bridge'
   | 'airport-small'
   | 'airport-large'
   | 'port'
@@ -149,6 +150,17 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
     const under = track('y');
     under.position.x = 1;
     return [...ground, under, createRailBridgeObject({ x: 0, y: 0, dir: Edge.E, span: 1 }, material)];
+  },
+  // Silniční most přes kolej
+  'road-bridge': () => {
+    const ground = [0, 1, 2].map((x) => {
+      const t = tile();
+      t.position.x = x;
+      return t;
+    });
+    const under = track('y');
+    under.position.x = 1;
+    return [...ground, under, createRailBridgeObject({ x: 0, y: 0, dir: Edge.E, span: 1 }, material, true)];
   },
   road: () => [tile(), road('x')],
   'road-stop': () => [tile(), road('x'), createRoadStopMesh(material, 0, 0, 'x')],

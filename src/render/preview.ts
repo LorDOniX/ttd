@@ -170,10 +170,10 @@ export class BuildPreview {
   }
 
   // Most tak, jak bude stát (nájezdy, mostovka, pilíře)
-  showBridge(bridge: Pick<RailBridge, 'x' | 'y' | 'dir' | 'span'>, valid: boolean): void {
+  showBridge(bridge: Pick<RailBridge, 'x' | 'y' | 'dir' | 'span'>, valid: boolean, road = false): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    this.station.add(createRailBridgeObject(bridge, this.material));
+    this.station.add(createRailBridgeObject(bridge, this.material, road));
   }
 
   showStation(shape: StationShape, valid: boolean): void {

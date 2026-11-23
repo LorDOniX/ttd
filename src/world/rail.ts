@@ -236,6 +236,8 @@ export class RailNetwork {
   readonly signalDirs = new Map<number, Edge>();
   // Mosty nad kolejemi, silnicemi, vodou i trávou
   readonly bridges: RailBridge[] = [];
+  // Silniční mosty stejného tvaru: nájezdy jsou silnice (TileType.Road), pole ve výšce nad čímkoli
+  readonly roadBridges: RailBridge[] = [];
   // Id se nerecyklují, aby odkazy (např. trasy vlaků) po demolici neukazovaly jinam
   nextStationId = 0;
   nextDepotId = 0;
@@ -294,6 +296,8 @@ export class RailNetwork {
     // Na nájezdu mostu jen kolej ve směru mostu (bez výhybky)
     const head = this.bridgeAtHead(x, y);
     if (head) return piece === axisPiece(bridgeAxis(head));
+    // Přes nájezd silničního mostu kolej nevede
+    if (this.roadBridgeAtHead(x, y)) return false;
     // Na průjezdném bodu jen jeho rovná kolej (bez výhybky)
     const waypoint = this.waypointAt(x, y);
     if (waypoint) return piece === axisPiece(waypoint.axis);
@@ -457,7 +461,7 @@ export class RailNetwork {
 
   // Zastávka aut jde na rovnou silnici bez křižovatky; vrací směr silnice
   roadStopAxis(x: number, y: number): Axis | null {
-    if (!this.map.isType(x, y, TileType.Road)) return null;
+    if (!this.map.isType(x, y, TileType.Road) || this.roadBridgeAtHead(x, y)) return null;
     const axis = this.map.roadAxis(x, y);
     return axis === 'x' || axis === 'y' ? axis : null;
   }
@@ -642,6 +646,99 @@ export class RailNetwork {
     });
   }
 
+  // Nájezd kteréhokoli mostu (železničního i silničního)?
+  anyBridgeHead(x: number, y: number): boolean {
+    return this.bridgeAtHead(x, y) !== undefined || this.roadBridgeAtHead(x, y) !== undefined;
+  }
+
+  // Silniční most s nájezdem na (x, y), nebo undefined
+  roadBridgeAtHead(x: number, y: number): RailBridge | undefined {
+    if (this.roadBridges.length === 0) return undefined;
+    return this.roadBridges.find((b) => {
+      const end = bridgeEnd(b);
+      return (b.x === x && b.y === y) || (end.x === x && end.y === y);
+    });
+  }
+
+  // Hrana, kterou se z nájezdu (x, y) vjíždí na silniční most, nebo null
+  roadBridgeExit(x: number, y: number): Edge | null {
+    const bridge = this.roadBridgeAtHead(x, y);
+    if (!bridge) return null;
+    return bridge.x === x && bridge.y === y ? bridge.dir : opposite(bridge.dir);
+  }
+
+  // Silniční most, jehož pole vede nad (x, y), nebo undefined
+  roadBridgeOver(x: number, y: number): RailBridge | undefined {
+    if (this.roadBridges.length === 0 || !this.map.isBridged(x, y)) return undefined;
+    return this.roadBridges.find((b) => bridgeSpanTiles(b).some((t) => t.x === x && t.y === y));
+  }
+
+  // Proč silniční most mezi nájezdy postavit nejde, nebo null. Nájezd je volná země nebo silnice
+  // (bez křižovatky napříč mostu, zastávky a přejezdu); strict = false u načítání (silnice vedle mohly přibýt)
+  roadBridgeProblem(x0: number, y0: number, x1: number, y1: number, strict = true): string | null {
+    const shape = this.spanProblem(x0, y0, x1, y1);
+    if (typeof shape === 'string') return shape;
+    const axis = bridgeAxis(shape);
+    for (const head of [{ x: x0, y: y0 }, bridgeEnd(shape)]) {
+      if (!this.map.inBounds(head.x, head.y)) return 'Most musí stát celý na mapě.';
+      if (this.map.isBridged(head.x, head.y) || this.anyBridgeHead(head.x, head.y)) return 'Mosty se nesmí křížit.';
+      const road = this.map.isType(head.x, head.y, TileType.Road);
+      if (!this.map.isFree(head.x, head.y) && !road) {
+        return 'Nájezd silničního mostu musí být na volné zemi nebo na silnici.';
+      }
+      if (road && strict) {
+        const across = axis === 'x' ? [Edge.N, Edge.S] : [Edge.E, Edge.W];
+        if (across.some((e) => this.map.isRoad(head.x + EDGE_DELTA[e][0], head.y + EDGE_DELTA[e][1]))) {
+          return 'Nájezd mostu nesmí být na křižovatce.';
+        }
+      }
+    }
+    return this.underSpanProblem(shape);
+  }
+
+  // Tvar mostu, nebo důvod, proč takový most nejde
+  private spanProblem(x0: number, y0: number, x1: number, y1: number): RailBridge | string {
+    if (x0 !== x1 && y0 !== y1) return 'Most vede jen rovně podél osy X nebo Y.';
+    const span = Math.abs(x1 - x0) + Math.abs(y1 - y0) - 1;
+    if (span < 1) return 'Most musí něco překlenout: táhněte aspoň přes 3 dlaždice.';
+    if (span > MAX_BRIDGE_SPAN) return `Most může mít nejvýš ${MAX_BRIDGE_SPAN} polí.`;
+    return this.bridgeShape(x0, y0, x1, y1);
+  }
+
+  private underSpanProblem(bridge: RailBridge): string | null {
+    for (const t of bridgeSpanTiles(bridge)) {
+      if (this.map.isBridged(t.x, t.y) || this.anyBridgeHead(t.x, t.y)) return 'Mosty se nesmí křížit.';
+      if (UNDER_BRIDGE_FORBIDDEN.includes(this.map.get(t.x, t.y))) {
+        return 'Pod mostem nesmí stát budovy, nástupiště, depa ani průmysl.';
+      }
+    }
+    return null;
+  }
+
+  // Postaví silniční most (ověřený roadBridgeProblem): nájezdy se stanou silnicí
+  addRoadBridge(x0: number, y0: number, x1: number, y1: number): RailBridge {
+    const bridge = { ...this.bridgeShape(x0, y0, x1, y1), id: this.nextBridgeId++ };
+    this.roadBridges.push(bridge);
+    for (const head of [{ x: x0, y: y0 }, bridgeEnd(bridge)]) {
+      if (this.map.isOpenGround(head.x, head.y)) this.map.set(head.x, head.y, TileType.Road);
+    }
+    for (const t of bridgeSpanTiles(bridge)) {
+      this.map.bridged.add(t.y * this.map.width + t.x);
+      if (this.map.isType(t.x, t.y, TileType.Trees)) this.map.set(t.x, t.y, TileType.Grass);
+    }
+    this.revision++;
+    return bridge;
+  }
+
+  // Zboří silniční most; silnice na nájezdech zůstane
+  removeRoadBridge(bridge: RailBridge): void {
+    const index = this.roadBridges.indexOf(bridge);
+    if (index < 0) return;
+    this.roadBridges.splice(index, 1);
+    for (const t of bridgeSpanTiles(bridge)) this.map.bridged.delete(t.y * this.map.width + t.x);
+    this.revision++;
+  }
+
   // Proč most mezi nájezdy (x0, y0) a (x1, y1) postavit nejde, nebo null
   bridgeProblem(x0: number, y0: number, x1: number, y1: number): string | null {
     if (x0 !== x1 && y0 !== y1) return 'Most vede jen rovně podél osy X nebo Y.';
@@ -652,7 +749,7 @@ export class RailNetwork {
     const axis = bridgeAxis(bridge);
     for (const head of [{ x: x0, y: y0 }, bridgeEnd(bridge)]) {
       if (!this.map.inBounds(head.x, head.y)) return 'Most musí stát celý na mapě.';
-      if (this.map.isBridged(head.x, head.y) || this.bridgeAtHead(head.x, head.y)) return 'Mosty se nesmí křížit.';
+      if (this.map.isBridged(head.x, head.y) || this.anyBridgeHead(head.x, head.y)) return 'Mosty se nesmí křížit.';
       const type = this.map.get(head.x, head.y);
       const straight =
         type === TileType.Rail && (this.mask(head.x, head.y) | (1 << axisPiece(axis))) === 1 << axisPiece(axis);
@@ -660,13 +757,7 @@ export class RailNetwork {
         return 'Nájezd mostu musí být na volné zemi nebo na rovné koleji ve směru mostu.';
       }
     }
-    for (const t of bridgeSpanTiles(bridge)) {
-      if (this.map.isBridged(t.x, t.y) || this.bridgeAtHead(t.x, t.y)) return 'Mosty se nesmí křížit.';
-      if (UNDER_BRIDGE_FORBIDDEN.includes(this.map.get(t.x, t.y))) {
-        return 'Pod mostem nesmí stát budovy, nástupiště, depa ani průmysl.';
-      }
-    }
-    return null;
+    return this.underSpanProblem(bridge);
   }
 
   private bridgeShape(x0: number, y0: number, x1: number, y1: number): RailBridge {

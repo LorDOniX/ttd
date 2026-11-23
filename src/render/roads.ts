@@ -131,6 +131,13 @@ export function roadConnects(map: GameMap, rail: RailNetwork): RoadConnects {
     if (own && !bridgeAlong(own, edge)) return false;
     const other = map.roadBridgeAxis(nx, ny);
     if (other) return bridgeAlong(other, edge);
+    // Nájezd silničního mostu se napojuje jen zezadu; vpředu stoupá na most
+    if (rail.roadBridges.length > 0) {
+      const exit = map.isType(x, y, TileType.Road) ? rail.roadBridgeExit(x, y) : null;
+      if (exit !== null && edge !== opposite(exit)) return false;
+      const otherExit = map.isType(nx, ny, TileType.Road) ? rail.roadBridgeExit(nx, ny) : null;
+      if (otherExit !== null && edge !== otherExit) return false;
+    }
     if (map.isRoad(nx, ny)) return true;
     return map.isType(nx, ny, TileType.RoadDepot) && rail.roadDepotAt(nx, ny)?.entrance === opposite(edge);
   };
@@ -228,6 +235,7 @@ export class RoadView {
   private readonly road: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   private readonly sidewalk: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   private readonly bridges: THREE.Mesh;
+  private dirty = false;
   private readonly streetLights = new THREE.Group();
   // Kód dlaždice při poslední přestavbě: silnice, garáž a město vlastnící chodník
   private readonly roadTiles: Int32Array;
@@ -274,8 +282,16 @@ export class RoadView {
     const changes = this.changes.take();
     const width = this.map.width;
     const roadChanged =
-      changes === null || changes.some((i) => this.roadTiles[i] !== this.code(i % width, Math.floor(i / width)));
+      this.dirty ||
+      changes === null ||
+      changes.some((i) => this.roadTiles[i] !== this.code(i % width, Math.floor(i / width)));
+    this.dirty = false;
     if (roadChanged) this.rebuild();
+  }
+
+  // Přestaví silnice při příští synchronizaci (např. most změnil napojení bez změny dlaždic)
+  invalidate(): void {
+    this.dirty = true;
   }
 
   rebuild(): void {

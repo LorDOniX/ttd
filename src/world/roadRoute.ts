@@ -1,5 +1,10 @@
 import { TileType, bridgeAlong, type TilePos } from './map';
-import { EDGE_DELTA, RailNetwork, axisPiece, opposite, type Edge } from './rail';
+import { EDGE_DELTA, RailNetwork, axisPiece, bridgeEnd, opposite, type Edge } from './rail';
+
+// Dlaždice cesty auta; level 1 = na poli silničního mostu nad dlaždicí (pod mostem může vést jiná silnice)
+export interface RoadTile extends TilePos {
+  level?: 1;
+}
 
 // Smí auto opustit (nebo vjet na) dlaždici přes danou hranu? Zastávkou jen podél silnice,
 // přejezdem kolmo na kolej, mostem jen podél něj, garáží jen vjezdem.
@@ -7,8 +12,11 @@ function opensTo(rail: RailNetwork, x: number, y: number, edge: Edge): boolean {
   const { map } = rail;
   if (!map.inBounds(x, y)) return false;
   switch (map.get(x, y)) {
-    case TileType.Road:
-      return true;
+    case TileType.Road: {
+      // Nájezd silničního mostu jen zezadu; dopředu se jede po mostě (roadSteps), ne po zemi
+      const exit = rail.roadBridges.length > 0 ? rail.roadBridgeExit(x, y) : null;
+      return exit === null || edge === opposite(exit);
+    }
     case TileType.Crossing:
       return rail.mask(x, y) === 1 << axisPiece(edge % 2 === 0 ? 'x' : 'y');
     case TileType.RoadStop:
@@ -35,29 +43,80 @@ export function roadMoves(rail: RailNetwork, x: number, y: number): TilePos[] {
   return moves;
 }
 
-// Nejkratší cesta po silnicích (BFS) včetně výchozí dlaždice, nebo null
+// Kam auto z dlaždice cesty může přejet, včetně jízdy po silničních mostech
+export function roadSteps(rail: RailNetwork, tile: RoadTile): RoadTile[] {
+  const { x, y } = tile;
+  if (tile.level) {
+    const bridge = rail.roadBridgeOver(x, y);
+    if (!bridge) return [];
+    const [dx, dy] = EDGE_DELTA[bridge.dir];
+    const end = bridgeEnd(bridge);
+    return [-1, 1].map((sign) => {
+      const nx = x + sign * dx;
+      const ny = y + sign * dy;
+      const head = (nx === bridge.x && ny === bridge.y) || (nx === end.x && ny === end.y);
+      return head ? { x: nx, y: ny } : { x: nx, y: ny, level: 1 as const };
+    });
+  }
+  const moves: RoadTile[] = roadMoves(rail, x, y);
+  const exit = rail.roadBridges.length > 0 && rail.map.isType(x, y, TileType.Road) ? rail.roadBridgeExit(x, y) : null;
+  if (exit !== null) {
+    const [dx, dy] = EDGE_DELTA[exit];
+    moves.push({ x: x + dx, y: y + dy, level: 1 });
+  }
+  return moves;
+}
+
+export function sameRoadTile(a: RoadTile, b: RoadTile): boolean {
+  return a.x === b.x && a.y === b.y && (a.level ?? 0) === (b.level ?? 0);
+}
+
+// Výška auta na cestě v násobcích výšky mostu: na poli mostu 1, na nájezdu stoupá, jinde 0
+export function roadElevation(path: readonly RoadTile[], pos: number): number {
+  if (path.length === 0) return 0;
+  const k = Math.max(0, Math.min(path.length - 1, Math.round(pos)));
+  if (path[k].level) return 1;
+  const u = pos - k;
+  if (path[k + 1]?.level) return Math.max(0, Math.min(1, u + 0.5));
+  if (path[k - 1]?.level) return Math.max(0, Math.min(1, 0.5 - u));
+  return 0;
+}
+
+// Jsou dvě vozidla ve stejné výšce (na mostě, nebo obě pod ním)? Jinak se navzájem nevidí
+export function sameRoadLevel(a: readonly RoadTile[], aPos: number, b: readonly RoadTile[], bPos: number): boolean {
+  return Math.abs(roadElevation(a, aPos) - roadElevation(b, bPos)) < 0.5;
+}
+
+// Nejkratší cesta po silnicích a silničních mostech (BFS) včetně výchozí dlaždice, nebo null
 export function findRoadRoute(
   rail: RailNetwork,
-  start: TilePos,
+  start: RoadTile,
   isGoal: (x: number, y: number) => boolean,
-): TilePos[] | null {
+): RoadTile[] | null {
   const width = rail.map.width;
-  const from = new Map<number, number>([[start.y * width + start.x, -1]]);
-  const queue = [start.y * width + start.x];
+  const size = width * rail.map.height;
+  const keyOf = (t: RoadTile): number => t.y * width + t.x + (t.level ? size : 0);
+  const tileOf = (key: number): RoadTile => {
+    const index = key % size;
+    const tile: RoadTile = { x: index % width, y: Math.floor(index / width) };
+    if (key >= size) tile.level = 1;
+    return tile;
+  };
+  const from = new Map<number, number>([[keyOf(start), -1]]);
+  const queue = [keyOf(start)];
   for (let head = 0; head < queue.length; head++) {
-    const index = queue[head];
-    const x = index % width;
-    const y = Math.floor(index / width);
-    if (isGoal(x, y)) {
-      const path: TilePos[] = [];
-      for (let i = index; i !== -1; i = from.get(i)!) path.push({ x: i % width, y: Math.floor(i / width) });
+    const key = queue[head];
+    const tile = tileOf(key);
+    if (!tile.level && isGoal(tile.x, tile.y)) {
+      const path: RoadTile[] = [];
+      for (let i = key; i !== -1; i = from.get(i)!) path.push(tileOf(i));
       return path.reverse();
     }
-    for (const next of roadMoves(rail, x, y)) {
-      const key = next.y * width + next.x;
-      if (from.has(key)) continue;
-      from.set(key, index);
-      queue.push(key);
+    for (const next of roadSteps(rail, tile)) {
+      const nextKey = keyOf(next);
+      if (from.has(nextKey)) continue;
+      from.set(nextKey, key);
+      queue.push(nextKey);
     }
   }
   return null;
