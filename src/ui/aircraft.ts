@@ -9,6 +9,7 @@ import {
   canUseAirport,
   formatAircraftLoad,
   isOldAircraft,
+  aircraftCargo,
   aircraftReliability,
   type Aircraft,
 } from '../game/aircraft';
@@ -17,7 +18,7 @@ import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { liveWindow, maintenanceRows, openVehicleWindow, refitControl, type VehicleStatus } from './vehicleWindow';
 import { brokenText } from '../game/reliability';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
@@ -300,6 +301,9 @@ export function openHangar(windows: WindowManager, game: Game, airport: Station,
       h(
         'div',
         { className: 'train__actions' },
+        refitControl(game, airFleet.refitOptions(plane), aircraftCargo(plane), airFleet.refitCost(plane), (c) =>
+          airFleet.refit(plane, c),
+        ),
         smallButton(`Prodat (${formatMoney(aircraftSellPrice(plane, today))})`, () => airFleet.sell(plane)),
       ),
     );

@@ -1,5 +1,6 @@
 import { SERVICE_INTERVAL_STEP } from '../game/balance';
-import type { Game } from '../game/game';
+import { CARGOS, type Cargo } from '../game/cargo';
+import { formatMoney, type Game } from '../game/game';
 import type { Maintained } from '../game/reliability';
 import { h } from './dom';
 import type { VehicleViewport } from './vehicleViewport';
@@ -151,4 +152,30 @@ export function maintenanceRows(
       ),
     ),
   ];
+}
+
+// Výběr nákladu pro přestavbu auta, lodi nebo letadla v depu; bez možnosti přestavby nic
+export function refitControl(
+  game: Game,
+  options: readonly Cargo[],
+  current: Cargo,
+  cost: number,
+  refit: (cargo: Cargo) => string | null,
+): HTMLElement | string {
+  if (options.length < 2) return '';
+  const select = h('select', {
+    title: `Přestavět na jiný náklad za ${formatMoney(cost)}; náklad na palubě propadne`,
+  });
+  for (const c of options) select.append(h('option', { value: c, selected: c === current }, CARGOS[c].name));
+  select.addEventListener('change', () => {
+    const error = refit(select.value as Cargo);
+    if (error) game.news(error);
+  });
+  return h(
+    'label',
+    { className: 'depot-train__cargo' },
+    'Náklad ',
+    select,
+    h('small', {}, ` přestavba ${formatMoney(cost)}`),
+  );
 }

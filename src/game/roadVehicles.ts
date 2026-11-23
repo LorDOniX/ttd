@@ -43,6 +43,7 @@ import {
   type Maintained,
 } from './reliability';
 import { Rng } from '../world/rng';
+import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
 
 const DAYS_PER_YEAR = 365.25;
 const LOST_RETRY_DAYS = 5;
@@ -90,6 +91,8 @@ export interface RoadVehicle extends Maintained {
   agingWarned: boolean;
   // Jede na servis do garáže; po něm pokračuje na zastávku s tímto indexem v řádu
   servicing?: number;
+  // Náklad po přestavbě; bez údaje podle modelu
+  cargo?: Cargo;
 }
 
 // Nejvyšší spolehlivost auta (po servisu)
@@ -101,8 +104,14 @@ export function roadVehicleModel(vehicle: RoadVehicle): RoadVehicleModel {
   return ROAD_VEHICLE_MODELS.find((m) => m.id === vehicle.modelId)!;
 }
 
+// Náklad auta: podle modelu, nebo podle přestavby
 export function vehicleCargo(vehicle: RoadVehicle): Cargo {
-  return roadVehicleModel(vehicle).cargo;
+  return vehicle.cargo ?? roadVehicleModel(vehicle).cargo;
+}
+
+export function vehicleCapacity(vehicle: RoadVehicle): number {
+  const model = roadVehicleModel(vehicle);
+  return refitCapacity(model.capacity, model.cargo, vehicleCargo(vehicle));
 }
 
 // Druh vozidla v mužském rodě, aby seděly zprávy „… přivezl …“
@@ -113,8 +122,7 @@ export function vehicleKind(cargo: Cargo): string {
 }
 
 export function formatVehicleLoad(vehicle: RoadVehicle): string {
-  const model = roadVehicleModel(vehicle);
-  return `${vehicle.passengers} / ${model.capacity} ${CARGOS[model.cargo].unit}`;
+  return `${vehicle.passengers} / ${vehicleCapacity(vehicle)} ${CARGOS[vehicleCargo(vehicle)].unit}`;
 }
 
 export function vehicleAge(vehicle: RoadVehicle, today: number): number {
@@ -380,6 +388,30 @@ export class RoadFleet {
       agingWarned: false,
       ...newMaintenance(reliabilityForYear(model.year), this.game.clock.now, SERVICE_INTERVAL_DAYS),
     });
+    this.changed();
+    return null;
+  }
+
+  // Na co jde auto přestavět (první je náklad modelu)
+  refitOptions(vehicle: RoadVehicle): Cargo[] {
+    return refitOptions('road', roadVehicleModel(vehicle).cargo);
+  }
+
+  refitCost(vehicle: RoadVehicle): number {
+    return vehicleRefitCost(roadVehicleModel(vehicle).price);
+  }
+
+  // Přestavba v garáži jako v OpenTTD; náklad na palubě propadne
+  refit(vehicle: RoadVehicle, cargo: Cargo): string | null {
+    if (cargo === vehicleCargo(vehicle)) return null;
+    if (vehicle.state !== 'depot') return 'Auto lze přestavět jen v garáži.';
+    if (!this.refitOptions(vehicle).includes(cargo)) return `${vehicle.name} na ${CARGOS[cargo].noun} přestavět nejde.`;
+    const cost = this.refitCost(vehicle);
+    if (this.game.money < cost) return `Na přestavbu chybí peníze (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'vehicles');
+    vehicle.costs += cost;
+    vehicle.cargo = cargo === roadVehicleModel(vehicle).cargo ? undefined : cargo;
+    vehicle.passengers = 0;
     this.changed();
     return null;
   }
@@ -707,8 +739,9 @@ export class RoadFleet {
 
   private exchange(vehicle: RoadVehicle, station: Station, loadOnly = false): number {
     const model = roadVehicleModel(vehicle);
-    const hold = { atPlatform: model.capacity, capacity: model.capacity, speed: model.speed };
-    const { cargo } = model;
+    const capacity = vehicleCapacity(vehicle);
+    const hold = { atPlatform: capacity, capacity, speed: model.speed };
+    const cargo = vehicleCargo(vehicle);
     if (isFreight(cargo)) return this.game.freight.exchange(vehicle, hold, station, cargo, loadOnly);
     return this.game.passengers.exchange(vehicle, hold, station, loadOnly);
   }
@@ -718,7 +751,7 @@ export class RoadFleet {
     const station = this.goal(vehicle);
     if (!station || !vehicle.fullLoad.includes(station.id)) return false;
     this.exchange(vehicle, station, true);
-    if (vehicle.passengers >= roadVehicleModel(vehicle).capacity) return false;
+    if (vehicle.passengers >= vehicleCapacity(vehicle)) return false;
     vehicle.waitDays = FULL_LOAD_CHECK_DAYS;
     this.changed();
     return true;
@@ -726,11 +759,7 @@ export class RoadFleet {
 
   isFillingUp(vehicle: RoadVehicle): boolean {
     const station = vehicle.state === 'loading' ? this.goal(vehicle) : null;
-    return (
-      station !== null &&
-      vehicle.fullLoad.includes(station.id) &&
-      vehicle.passengers < roadVehicleModel(vehicle).capacity
-    );
+    return station !== null && vehicle.fullLoad.includes(station.id) && vehicle.passengers < vehicleCapacity(vehicle);
   }
 
   private depart(vehicle: RoadVehicle): void {

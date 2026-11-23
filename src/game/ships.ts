@@ -10,6 +10,7 @@ import {
   type ShipModel,
 } from './balance';
 import { CARGOS, isFreight, type Cargo } from './cargo';
+import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
 import { formatMoney, type Game } from './game';
 import { seasonBlendForDate, seasonWeight } from './seasons';
 import {
@@ -88,6 +89,8 @@ export interface Ship extends Maintained {
   agingWarned: boolean;
   // Před odplutím prochází servisem v loděnici přístavu
   servicing?: boolean;
+  // Náklad po přestavbě; bez údaje podle modelu
+  cargo?: Cargo;
 }
 
 // Nejvyšší spolehlivost lodi (po servisu)
@@ -103,9 +106,18 @@ export function shipKind(cargo: Cargo): string {
   return cargo === 'passengers' ? 'Parník' : 'Nákladní loď';
 }
 
-export function formatShipLoad(ship: Ship): string {
+// Náklad lodi: podle modelu, nebo podle přestavby
+export function shipCargo(ship: Ship): Cargo {
+  return ship.cargo ?? shipModel(ship).cargo;
+}
+
+export function shipCapacity(ship: Ship): number {
   const model = shipModel(ship);
-  return `${ship.passengers} / ${model.capacity} ${CARGOS[model.cargo].unit}`;
+  return refitCapacity(model.capacity, model.cargo, shipCargo(ship));
+}
+
+export function formatShipLoad(ship: Ship): string {
+  return `${ship.passengers} / ${shipCapacity(ship)} ${CARGOS[shipCargo(ship)].unit}`;
 }
 
 export function shipAge(ship: Ship, today: number): number {
@@ -211,6 +223,29 @@ export class ShipFleet {
       agingWarned: false,
       ...newMaintenance(reliabilityForYear(model.year), this.game.clock.now, SERVICE_INTERVAL_DAYS),
     });
+    this.changed();
+    return null;
+  }
+
+  refitOptions(ship: Ship): Cargo[] {
+    return refitOptions('ship', shipModel(ship).cargo);
+  }
+
+  refitCost(ship: Ship): number {
+    return vehicleRefitCost(shipModel(ship).price);
+  }
+
+  // Přestavba v loděnici jako v OpenTTD; náklad na palubě propadne
+  refit(ship: Ship, cargo: Cargo): string | null {
+    if (cargo === shipCargo(ship)) return null;
+    if (ship.state !== 'depot') return 'Loď lze přestavět jen v loděnici.';
+    if (!this.refitOptions(ship).includes(cargo)) return `${ship.name} na ${CARGOS[cargo].noun} přestavět nejde.`;
+    const cost = this.refitCost(ship);
+    if (this.game.money < cost) return `Na přestavbu chybí peníze (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'vehicles');
+    ship.costs += cost;
+    ship.cargo = cargo === shipModel(ship).cargo ? undefined : cargo;
+    ship.passengers = 0;
     this.changed();
     return null;
   }
@@ -377,15 +412,13 @@ export class ShipFleet {
       ship.waitDays -= days;
       if (ship.waitDays > 0) continue;
       const port = this.port(ship.portId);
-      if (port && ship.passengers < shipModel(ship).capacity) this.exchange(ship, port, true);
+      if (port && ship.passengers < shipCapacity(ship)) this.exchange(ship, port, true);
       ship.waitDays = FULL_LOAD_CHECK_DAYS;
     }
   }
 
   isFillingUp(ship: Ship): boolean {
-    return (
-      ship.state === 'loading' && ship.fullLoad.includes(ship.portId) && ship.passengers < shipModel(ship).capacity
-    );
+    return ship.state === 'loading' && ship.fullLoad.includes(ship.portId) && ship.passengers < shipCapacity(ship);
   }
 
   stationName(id: number): string {
@@ -571,8 +604,9 @@ export class ShipFleet {
 
   private exchange(ship: Ship, port: Station, loadOnly = false): number {
     const model = shipModel(ship);
-    const hold = { atPlatform: model.capacity, capacity: model.capacity, speed: model.speed };
-    const { cargo } = model;
+    const capacity = shipCapacity(ship);
+    const hold = { atPlatform: capacity, capacity, speed: model.speed };
+    const cargo = shipCargo(ship);
     if (isFreight(cargo)) return this.game.freight.exchange(ship, hold, port, cargo, loadOnly);
     return this.game.passengers.exchange(ship, hold, port, loadOnly);
   }
@@ -581,7 +615,7 @@ export class ShipFleet {
     const port = this.port(ship.portId);
     if (!port || !ship.fullLoad.includes(port.id)) return false;
     this.exchange(ship, port, true);
-    if (ship.passengers >= shipModel(ship).capacity) return false;
+    if (ship.passengers >= shipCapacity(ship)) return false;
     ship.waitDays = FULL_LOAD_CHECK_DAYS;
     this.changed();
     return true;

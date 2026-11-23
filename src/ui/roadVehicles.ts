@@ -17,7 +17,7 @@ import { modelThumb } from '../render/icons';
 import type { Depot, Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { liveWindow, maintenanceRows, openVehicleWindow, refitControl, type VehicleStatus } from './vehicleWindow';
 import { brokenText } from '../game/reliability';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
@@ -281,6 +281,9 @@ export function openRoadDepot(windows: WindowManager, game: Game, depot: Depot, 
       h(
         'div',
         { className: 'train__actions' },
+        refitControl(game, roadFleet.refitOptions(vehicle), vehicleCargo(vehicle), roadFleet.refitCost(vehicle), (c) =>
+          roadFleet.refit(vehicle, c),
+        ),
         smallButton(`Prodat (${formatMoney(vehicleSellPrice(vehicle, today))})`, () => roadFleet.sell(vehicle)),
       ),
     );

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { loadModel } from '../assets';
 import { CARGOS } from '../game/cargo';
 import type { CityCar } from '../game/cityTraffic';
-import { roadVehicleModel, vehiclePoint, type RoadFleet, type RoadVehicle } from '../game/roadVehicles';
+import { roadVehicleModel, vehicleCargo, vehiclePoint, type RoadFleet, type RoadVehicle } from '../game/roadVehicles';
 import type { GameMap } from '../world/map';
 import { inView, type ViewFrustums } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
@@ -18,6 +18,8 @@ const ROAD_TOP = 0.01;
 
 interface VehicleView {
   modelId: string;
+  // Náklad hráčova auta (po přestavbě se mění náklad na korbě)
+  cargo?: string;
   playerId: number | null;
   cityCarId: number | null;
   group: THREE.Group;
@@ -108,7 +110,7 @@ export class RoadVehiclesView {
       const key = `player:${vehicle.id}`;
       const modelId = roadVehicleModel(vehicle).model;
       let view = this.views.get(key);
-      if (!view || view.modelId !== modelId) {
+      if (!view || view.modelId !== modelId || view.cargo !== vehicleCargo(vehicle)) {
         if (view) this.object.remove(view.group);
         view = this.createView(key, modelId, vehicle.id, vehicle);
         this.views.set(key, view);
@@ -169,9 +171,10 @@ export class RoadVehiclesView {
   }
 
   private createView(key: string, modelId: string, playerId: number | null, vehicle?: RoadVehicle): VehicleView {
-    const model = vehicle ? roadVehicleModel(vehicle) : null;
+    const cargo = vehicle ? vehicleCargo(vehicle) : null;
     const view: VehicleView = {
       modelId,
+      cargo: cargo ?? undefined,
       playerId,
       cityCarId: null,
       group: new THREE.Group(),
@@ -195,9 +198,9 @@ export class RoadVehiclesView {
       });
       view.cab = { height: box.max.y * SCALE, front: box.max.z * SCALE };
       view.group.add(object);
-      const kind = model && FLATBED_LOADS[model.cargo];
-      if (model && kind) {
-        view.load = flatbedLoad(CARGOS[model.cargo].color, kind);
+      const kind = cargo && FLATBED_LOADS[cargo];
+      if (cargo && kind) {
+        view.load = flatbedLoad(CARGOS[cargo].color, kind);
         view.group.add(view.load);
       }
     });

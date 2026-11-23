@@ -10,8 +10,8 @@ import {
   TRAIN_MODELS,
   INDUSTRY_HISTORY_MONTHS,
 } from './balance';
-import { aircraftReliability, type Aircraft } from './aircraft';
-import { shipReliability, type Ship } from './ships';
+import { aircraftModel, aircraftReliability, type Aircraft } from './aircraft';
+import { shipModel, shipReliability, type Ship } from './ships';
 import {
   CARGO_TYPES,
   FREIGHT_TYPES,
@@ -27,7 +27,8 @@ import {
 import { Game, emptyYear, type ViewState, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Job } from './construction';
-import { roadVehicleReliability, type RoadVehicle } from './roadVehicles';
+import { roadVehicleModel, roadVehicleReliability, type RoadVehicle } from './roadVehicles';
+import { refitOptions, type RefitVehicle } from './vehicleRefit';
 import { isBreakdownSetting, restoreMaintenance } from './reliability';
 import { setConsist, wagonCargos } from './consist';
 import { cleanFlags, type OrderFlags, type Train } from './trains';
@@ -534,6 +535,8 @@ export function restoreGame(data: SaveData): Game {
         // Starší uložení údržbu neznají: auto je jako po servisu
         ...restoreMaintenance(v, roadVehicleReliability(v), data.clock.day),
         servicing: Number.isInteger(v.servicing) && v.servicing! >= 0 ? v.servicing : undefined,
+        // Přestavba (starší uložení ji nemají); nepovolený náklad se zahodí
+        cargo: refitted('road', roadVehicleModel(v).cargo, v.cargo),
       })),
   );
   game.roadFleet.nextId = Number.isInteger(roadFleet.nextId) ? roadFleet.nextId : 1;
@@ -554,6 +557,7 @@ export function restoreGame(data: SaveData): Game {
         ...p,
         ...restoreMaintenance(p, aircraftReliability(p), data.clock.day),
         servicing: p.servicing === true || undefined,
+        cargo: refitted('air', aircraftModel(p).cargo, p.cargo),
       })),
   );
   game.airFleet.nextId = Number.isInteger(airFleet.nextId) ? airFleet.nextId : 1;
@@ -574,6 +578,7 @@ export function restoreGame(data: SaveData): Game {
         ...s,
         ...restoreMaintenance(s, shipReliability(s), data.clock.day),
         servicing: s.servicing === true || undefined,
+        cargo: refitted('ship', shipModel(s).cargo, s.cargo),
       })),
   );
   game.shipFleet.nextId = Number.isInteger(shipFleet.nextId) ? shipFleet.nextId : 1;
@@ -583,6 +588,10 @@ export function restoreGame(data: SaveData): Game {
   // Cizí soubor může obsahovat nesmysly; místo se před stavbou kontroluje znovu
   game.construction.restore((data.construction ?? []).filter((job) => validJob(job, width, height)));
   return game;
+}
+
+function refitted(kind: RefitVehicle, base: Cargo, cargo: unknown): Cargo | undefined {
+  return isCargo(cargo) && cargo !== base && refitOptions(kind, base).includes(cargo) ? cargo : undefined;
 }
 
 function validJob(job: unknown, width: number, height: number): job is Job {

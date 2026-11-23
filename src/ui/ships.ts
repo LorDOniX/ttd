@@ -5,6 +5,7 @@ import { Game, formatMoney } from '../game/game';
 import {
   formatShipLoad,
   isOldShip,
+  shipCargo,
   shipReliability,
   shipAge,
   shipModel,
@@ -16,7 +17,7 @@ import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { liveWindow, maintenanceRows, openVehicleWindow, refitControl, type VehicleStatus } from './vehicleWindow';
 import { brokenText } from '../game/reliability';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
@@ -283,6 +284,9 @@ export function openShipyard(windows: WindowManager, game: Game, port: Station, 
       h(
         'div',
         { className: 'train__actions' },
+        refitControl(game, shipFleet.refitOptions(ship), shipCargo(ship), shipFleet.refitCost(ship), (c) =>
+          shipFleet.refit(ship, c),
+        ),
         smallButton(`Prodat (${formatMoney(shipSellPrice(ship, today))})`, () => shipFleet.sell(ship)),
       ),
     );

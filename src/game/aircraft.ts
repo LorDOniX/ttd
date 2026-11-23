@@ -14,7 +14,8 @@ import {
   type AircraftModel,
   type AirportType,
 } from './balance';
-import { CARGOS, isFreight } from './cargo';
+import { CARGOS, isFreight, type Cargo } from './cargo';
+import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
 import { formatMoney, type Game } from './game';
 import {
   approachPoint,
@@ -93,6 +94,8 @@ export interface Aircraft extends Maintained {
   agingWarned: boolean;
   // Pojíždí do hangáru na servis; po něm pokračuje podle řádu
   servicing?: boolean;
+  // Náklad po přestavbě; bez údaje podle modelu
+  cargo?: Cargo;
 }
 
 // Nejvyšší spolehlivost letadla (po servisu)
@@ -108,9 +111,18 @@ export function aircraftKind(cargo: AircraftModel['cargo']): string {
   return cargo === 'mail' ? 'Poštovní letoun' : 'Letoun';
 }
 
-export function formatAircraftLoad(plane: Aircraft): string {
+// Náklad letadla: podle modelu, nebo podle přestavby (cestující ↔ pošta)
+export function aircraftCargo(plane: Aircraft): Cargo {
+  return plane.cargo ?? aircraftModel(plane).cargo;
+}
+
+export function aircraftCapacity(plane: Aircraft): number {
   const model = aircraftModel(plane);
-  return `${plane.passengers} / ${model.capacity} ${CARGOS[model.cargo].unit}`;
+  return refitCapacity(model.capacity, model.cargo, aircraftCargo(plane));
+}
+
+export function formatAircraftLoad(plane: Aircraft): string {
+  return `${plane.passengers} / ${aircraftCapacity(plane)} ${CARGOS[aircraftCargo(plane)].unit}`;
 }
 
 export function aircraftAge(plane: Aircraft, today: number): number {
@@ -214,6 +226,29 @@ export class AirFleet {
       agingWarned: false,
       ...newMaintenance(reliabilityForYear(model.year), this.game.clock.now, SERVICE_INTERVAL_DAYS),
     });
+    this.changed();
+    return null;
+  }
+
+  refitOptions(plane: Aircraft): Cargo[] {
+    return refitOptions('air', aircraftModel(plane).cargo);
+  }
+
+  refitCost(plane: Aircraft): number {
+    return vehicleRefitCost(aircraftModel(plane).price);
+  }
+
+  // Přestavba v hangáru jako v OpenTTD (cestující ↔ pošta); náklad na palubě propadne
+  refit(plane: Aircraft, cargo: Cargo): string | null {
+    if (cargo === aircraftCargo(plane)) return null;
+    if (plane.state !== 'hangar') return 'Letadlo lze přestavět jen v hangáru.';
+    if (!this.refitOptions(plane).includes(cargo)) return `${plane.name} na ${CARGOS[cargo].noun} přestavět nejde.`;
+    const cost = this.refitCost(plane);
+    if (this.game.money < cost) return `Na přestavbu chybí peníze (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'vehicles');
+    plane.costs += cost;
+    plane.cargo = cargo === aircraftModel(plane).cargo ? undefined : cargo;
+    plane.passengers = 0;
     this.changed();
     return null;
   }
@@ -364,7 +399,7 @@ export class AirFleet {
     return (
       plane.state === 'loading' &&
       plane.fullLoad.includes(plane.airportId) &&
-      plane.passengers < aircraftModel(plane).capacity
+      plane.passengers < aircraftCapacity(plane)
     );
   }
 
@@ -553,8 +588,9 @@ export class AirFleet {
 
   private exchange(plane: Aircraft, airport: Station, loadOnly = false): number {
     const model = aircraftModel(plane);
-    const hold = { atPlatform: model.capacity, capacity: model.capacity, speed: model.speed };
-    const { cargo } = model;
+    const capacity = aircraftCapacity(plane);
+    const hold = { atPlatform: capacity, capacity, speed: model.speed };
+    const cargo = aircraftCargo(plane);
     if (isFreight(cargo)) return this.game.freight.exchange(plane, hold, airport, cargo, loadOnly);
     return this.game.passengers.exchange(plane, hold, airport, loadOnly);
   }
@@ -563,7 +599,7 @@ export class AirFleet {
     const airport = this.airport(plane.airportId);
     if (!airport || !plane.fullLoad.includes(airport.id)) return false;
     this.exchange(plane, airport, true);
-    if (plane.passengers >= aircraftModel(plane).capacity) return false;
+    if (plane.passengers >= aircraftCapacity(plane)) return false;
     plane.waitDays = FULL_LOAD_CHECK_DAYS;
     this.changed();
     return true;
