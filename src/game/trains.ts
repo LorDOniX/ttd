@@ -33,6 +33,7 @@ import {
 } from './consist';
 import { Reservations } from './reservations';
 import {
+  RailType,
   axisPiece,
   opposite,
   stationTiles,
@@ -229,6 +230,11 @@ export interface Train extends Maintained, Consist {
 }
 
 const DAYS_PER_YEAR = 365.25;
+
+// Druh koleje, po kterém lokomotiva jezdí
+export function modelRailType(model: TrainModel): RailType {
+  return model.railType === 'monorail' ? RailType.Monorail : model.railType === 'maglev' ? RailType.Maglev : RailType.Rail;
+}
 
 export function trainModel(train: Train): TrainModel {
   return TRAIN_MODELS.find((m) => m.id === train.modelId)!;
@@ -513,15 +519,19 @@ export class Fleet {
 
   // Nejnovější dostupný model a doplatek za něj po započtení staré lokomotivy
   // Lze lokomotivu koupit v tomto depu? Elektrická jen v elektrizovaném
+  // Lokomotivu jen v depu jejího druhu koleje (jednokolejka, maglev, železnice)
   fitsDepot(model: TrainModel, depot: Depot): boolean {
-    return !model.electric || this.game.world.rail.isElectrified(depot.x, depot.y);
+    const { rail } = this.game.world;
+    if (modelRailType(model) !== rail.railTypeAt(depot.x, depot.y)) return false;
+    return !model.electric || rail.isElectrified(depot.x, depot.y);
   }
 
   renewalOffer(train: Train): { model: TrainModel; cost: number } {
     // Nejnovější lokomotiva stejného druhu koleje (jako autoreplace v OpenTTD): parní a motorová
     // za neelektrickou, elektrická za elektrickou
     const electric = trainModel(train).electric === true;
-    const models = this.available().filter((m) => (m.electric === true) === electric);
+    const type = modelRailType(trainModel(train));
+    const models = this.available().filter((m) => (m.electric === true) === electric && modelRailType(m) === type);
     const model = models[models.length - 1] ?? trainModel(train);
     const tradeIn = trainModel(train).price * sellFactor(trainAge(train, this.game.clock.day));
     return { model, cost: Math.round(model.price - tradeIn) };
@@ -1458,7 +1468,9 @@ export class Fleet {
   // Nástupiště spojené stanice, ke které patří část goal (u samostatné stanice jen ona)
   private platformsOf(goal: Station): Station[] {
     if (goal.kind !== undefined) return [goal];
-    const members = this.game.world.rail.membersOf(goal).filter((s) => s.kind === undefined);
+    const { rail } = this.game.world;
+    const type = rail.railTypeAt(goal.x, goal.y);
+    const members = rail.membersOf(goal).filter((s) => s.kind === undefined && rail.railTypeAt(s.x, s.y) === type);
     return members.some((s) => s.id === goal.id) ? members : [goal];
   }
 

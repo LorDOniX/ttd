@@ -158,6 +158,19 @@ export interface Waypoint {
   waypoint: true;
 }
 
+// Druhy kolejí jako v OpenTTD: každý je samostatná síť se svými vlaky
+export enum RailType {
+  Rail = 0,
+  Monorail = 1,
+  Maglev = 2,
+}
+
+export const RAIL_TYPE_NAMES: Record<RailType, string> = {
+  [RailType.Rail]: 'železnice',
+  [RailType.Monorail]: 'jednokolejka',
+  [RailType.Maglev]: 'maglev',
+};
+
 // Železniční most nad čímkoli (kolejí, silnicí, vodou, trávou): nájezd A na (x, y), pole mostu ve směru dir
 // a za ním nájezd B. Nájezdy jsou rovné koleje na souši, pole je ve výšce a pod ním zůstává, co tam je.
 export interface RailBridge {
@@ -249,10 +262,20 @@ export class RailNetwork {
   // Elektrizovaná trať (trolejové vedení) jako druh koleje v OpenTTD: 1 = celá dlaždice s kolejí, nástupištěm
   // nebo depem je pod vedením; elektrické lokomotivy jezdí jen tudy
   readonly electrified: Uint8Array;
+  // Druh koleje na dlaždici s kolejí (RailType): železnice, jednokolejka, maglev – oddělené sítě jako v OpenTTD
+  readonly railType: Uint8Array;
+  // Druh koleje, který se právě staví: nová kolej ho dostane a navázat jde jen na kolej stejného druhu
+  buildType: RailType = RailType.Rail;
 
   constructor(readonly map: GameMap) {
     this.pieces = new Uint8Array(map.width * map.height);
     this.electrified = new Uint8Array(map.width * map.height);
+    this.railType = new Uint8Array(map.width * map.height);
+  }
+
+  // Druh koleje na dlaždici (bez koleje železnice)
+  railTypeAt(x: number, y: number): RailType {
+    return this.map.inBounds(x, y) ? (this.railType[y * this.map.width + x] as RailType) : RailType.Rail;
   }
 
   isElectrified(x: number, y: number): boolean {
@@ -293,6 +316,8 @@ export class RailNetwork {
 
   canPlace(x: number, y: number, piece: number): boolean {
     if (!this.map.inBounds(x, y)) return false;
+    // Na dlaždici s kolejí jiného druhu nic nového nepřibude (sítě se nemíchají)
+    if (this.mask(x, y) !== 0 && this.railTypeAt(x, y) !== this.buildType) return false;
     // Na nájezdu mostu jen kolej ve směru mostu (bez výhybky)
     const head = this.bridgeAtHead(x, y);
     if (head) return piece === axisPiece(bridgeAxis(head));
@@ -322,6 +347,7 @@ export class RailNetwork {
   }
 
   addPiece(x: number, y: number, piece: number): void {
+    if (this.pieces[y * this.map.width + x] === 0) this.railType[y * this.map.width + x] = this.buildType;
     this.pieces[y * this.map.width + x] |= 1 << piece;
     this.revision++;
     const type = this.map.get(x, y);
@@ -341,6 +367,7 @@ export class RailNetwork {
   // Odebere všechny kusy koleje z dlaždice
   removeTrack(x: number, y: number): void {
     this.pieces[y * this.map.width + x] = 0;
+    this.railType[y * this.map.width + x] = RailType.Rail;
     this.revision++;
     this.signals.delete(y * this.map.width + x);
     this.signalDirs.delete(y * this.map.width + x);
@@ -360,6 +387,7 @@ export class RailNetwork {
         this.map.isFree(t.x, t.y) ||
         (this.map.isType(t.x, t.y, TileType.Rail) &&
           (this.mask(t.x, t.y) | bit) === bit &&
+          this.railTypeAt(t.x, t.y) === this.buildType &&
           !this.map.isBridged(t.x, t.y) &&
           !this.bridgeAtHead(t.x, t.y)),
     );
@@ -375,6 +403,8 @@ export class RailNetwork {
     };
     for (const t of stationTiles(station)) {
       this.map.set(t.x, t.y, TileType.Station);
+      const i = t.y * this.map.width + t.x;
+      if (this.pieces[i] === 0) this.railType[i] = this.buildType;
       this.pieces[t.y * this.map.width + t.x] = 1 << axisPiece(station.axis);
       this.revision++;
     }
@@ -454,6 +484,7 @@ export class RailNetwork {
       this.map.set(t.x, t.y, station.kind === 'road' ? TileType.Road : TileType.Grass);
       this.pieces[t.y * this.map.width + t.x] = 0;
       this.electrified[t.y * this.map.width + t.x] = 0;
+      this.railType[t.y * this.map.width + t.x] = RailType.Rail;
       this.revision++;
     }
     this.stations.splice(this.stations.indexOf(station), 1);
@@ -566,6 +597,7 @@ export class RailNetwork {
   addDepot(x: number, y: number, entrance: Edge): Depot {
     const depot = { id: this.nextDepotId++, x, y, entrance };
     this.map.set(x, y, TileType.Depot);
+    this.railType[y * this.map.width + x] = this.buildType;
     this.pieces[y * this.map.width + x] = 1 << axisPiece(entrance % 2 === 0 ? 'y' : 'x');
     this.revision++;
     this.depots.push(depot);
@@ -574,6 +606,7 @@ export class RailNetwork {
 
   removeDepot(depot: Depot): void {
     this.electrified[depot.y * this.map.width + depot.x] = 0;
+    this.railType[depot.y * this.map.width + depot.x] = RailType.Rail;
     this.map.set(depot.x, depot.y, TileType.Grass);
     this.pieces[depot.y * this.map.width + depot.x] = 0;
     this.revision++;
@@ -752,7 +785,9 @@ export class RailNetwork {
       if (this.map.isBridged(head.x, head.y) || this.anyBridgeHead(head.x, head.y)) return 'Mosty se nesmí křížit.';
       const type = this.map.get(head.x, head.y);
       const straight =
-        type === TileType.Rail && (this.mask(head.x, head.y) | (1 << axisPiece(axis))) === 1 << axisPiece(axis);
+        type === TileType.Rail &&
+        (this.mask(head.x, head.y) | (1 << axisPiece(axis))) === 1 << axisPiece(axis) &&
+        this.railTypeAt(head.x, head.y) === this.buildType;
       if (!this.map.isFree(head.x, head.y) && !straight) {
         return 'Nájezd mostu musí být na volné zemi nebo na rovné koleji ve směru mostu.';
       }

@@ -48,7 +48,15 @@ export interface TrainModel {
   reliability: number;
   // Elektrická lokomotiva: jezdí jen po elektrizované trati a kupuje se v elektrizovaném depu
   electric?: boolean;
+  // Vlak jednokolejky nebo maglevu (vlastní síť a depo jako v OpenTTD); bez údaje železnice
+  railType?: 'monorail' | 'maglev';
 }
+
+// Druhy kolejí: od kdy je jde stavět (s prvním vlakem) a kolikrát dražší je dílek koleje než železnice
+export const MONORAIL_YEAR = 1990;
+export const MAGLEV_YEAR = 2015;
+export const MONORAIL_COST_FACTOR = 1.5;
+export const MAGLEV_COST_FACTOR = 2.2;
 
 // Elektrizace koleje (trolejové vedení) za dlaždici s kolejí; při stavbě elektrizované koleje se přičte
 export const ELECTRIFY_TILE_COST = 3_000;
@@ -152,6 +160,55 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     runningCost: 143_000,
     reliability: 0.95,
     electric: true,
+  },
+  // Jednokolejka a maglev: samostatné sítě, rychlejší než železnice své doby
+  {
+    id: 'monorail',
+    name: 'Jednokolejka X2001',
+    model: 'train-electric-subway-a',
+    wagonModel: 'train-electric-subway-b',
+    year: 1990,
+    price: 690_000,
+    speed: 8.0,
+    runningCost: 96_000,
+    reliability: 0.9,
+    railType: 'monorail',
+  },
+  {
+    id: 'monorail-2',
+    name: 'Jednokolejka Ultra',
+    model: 'train-tram-round',
+    wagonModel: 'train-electric-subway-b',
+    year: 2006,
+    price: 820_000,
+    speed: 10.0,
+    runningCost: 118_000,
+    reliability: 0.93,
+    railType: 'monorail',
+  },
+  {
+    id: 'maglev',
+    name: 'Maglev MX-1',
+    model: 'train-tram-modern',
+    wagonModel: 'train-electric-bullet-b',
+    year: 2015,
+    price: 1_050_000,
+    speed: 13.0,
+    runningCost: 165_000,
+    reliability: 0.95,
+    railType: 'maglev',
+  },
+  {
+    id: 'maglev-2',
+    name: 'Maglev Hyper',
+    model: 'train-electric-bullet-c',
+    wagonModel: 'train-electric-bullet-b',
+    year: 2032,
+    price: 1_280_000,
+    speed: 16.0,
+    runningCost: 198_000,
+    reliability: 0.96,
+    railType: 'maglev',
   },
 ];
 

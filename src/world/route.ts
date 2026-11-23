@@ -170,6 +170,8 @@ export function findRoute(
       cost += bridge.span;
     }
     if (!map.inBounds(nx, ny) || avoid?.(nx, ny)) return;
+    // Jednokolejka, maglev a železnice jsou oddělené sítě
+    if (rail.railTypeAt(nx, ny) !== rail.railTypeAt(from.x, from.y)) return;
     const k = key(nx, ny, opposite(from.exit), from.heading);
     if (cost >= (g.get(k) ?? Infinity)) return;
     g.set(k, cost);
@@ -276,6 +278,8 @@ export function railNetworks(rail: RailNetwork): Int32Array {
         if (!map.inBounds(nx, ny)) continue;
         const j = ny * width + nx;
         if (label[j] >= 0 || !(edges(nx, ny) & (1 << opposite(edge)))) continue;
+        // Různé druhy kolejí na sebe nenavazují
+        if (rail.railType[j] !== rail.railType[i]) continue;
         label[j] = next;
         stack.push(j);
       }
