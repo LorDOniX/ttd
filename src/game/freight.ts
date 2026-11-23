@@ -1,3 +1,4 @@
+import { consistCargos } from './consist';
 import { FEEDER_SHARE, FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDINGS } from './balance';
 import {
   CARGOS,
@@ -78,7 +79,7 @@ export class Freight {
   private servedBy(type: FreightType): Set<number> {
     // Vlak s vagony na tento náklad, nebo s příkazem přestavby na něj (pak jen zastávky od přestavby dál)
     const trains = this.game.fleet.trains.flatMap((t) => {
-      if (t.cargo === type) return stationOrders(t);
+      if (consistCargos(t).includes(type)) return stationOrders(t);
       return (t.orderFlags ?? []).some((f) => f.refit === type) ? refitLoadStops(t, type) : [];
     });
     const vehicles = this.game.roadFleet.vehicles

@@ -384,13 +384,14 @@ describe('nákup souprav', () => {
     expect(game.fleet.buyTrain(depot, TRAIN_MODELS[0], 'coal', 3)).toMatch(/Nedostatek/);
   });
 
-  it('vagon s jiným nákladem k vlaku nepřipojí, prázdnému vlaku nastaví náklad', () => {
+  it('vagon s jiným nákladem připojí jako smíšenou soupravu, prázdnému vlaku nastaví náklad', () => {
     const { game, depot } = buildLine();
     const train = game.fleet.buyTrain(depot, TRAIN_MODELS[0], 'passengers', 0) as Train;
     expect(game.fleet.addWagon(train, 'wood')).toBeNull();
     expect(train.cargo).toBe('wood');
-    expect(game.fleet.addWagon(train, 'coal')).toMatch(/veze dřevo/);
-    expect(train.wagons).toBe(1);
+    expect(game.fleet.addWagon(train, 'coal')).toBeNull();
+    expect(train.wagons).toBe(2);
+    expect(train.wagonCargo).toEqual(['wood', 'coal']);
   });
 
   it('klon má stejnou soupravu i jízdní řád a stojí v depu', () => {

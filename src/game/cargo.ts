@@ -41,6 +41,8 @@ export interface CargoSpec {
   // Modely vagonů z train kitu, střídají se po řadě; null = osobní vagon podle lokomotivy
   wagonModels: readonly string[] | null;
   color: string;
+  // Kapacita jednoho vagonu na tento náklad (jako v OpenTTD se liší podle nákladu)
+  wagonCapacity: number;
 }
 
 export const CARGOS: Record<Cargo, CargoSpec> = {
@@ -52,6 +54,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: FARE_TIERS,
     wagonModels: null,
     color: '#5a8fd9',
+    wagonCapacity: 30,
   },
   mail: {
     name: 'Pošta',
@@ -61,6 +64,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: MAIL_FARE_TIERS,
     wagonModels: ['train-carriage-box'],
     color: '#d94a4a',
+    wagonCapacity: 20,
   },
   coal: {
     name: 'Uhlí',
@@ -70,6 +74,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: COAL_FARE_TIERS,
     wagonModels: ['train-carriage-coal'],
     color: '#6b6b64',
+    wagonCapacity: 30,
   },
   wood: {
     name: 'Dřevo',
@@ -79,6 +84,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: WOOD_FARE_TIERS,
     wagonModels: ['train-carriage-wood'],
     color: '#8a5a2b',
+    wagonCapacity: 30,
   },
   oil: {
     name: 'Ropa',
@@ -88,6 +94,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: OIL_FARE_TIERS,
     wagonModels: ['train-carriage-tank'],
     color: '#4b3f6b',
+    wagonCapacity: 25,
   },
   'iron-ore': {
     name: 'Železná ruda',
@@ -97,6 +104,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: IRON_ORE_FARE_TIERS,
     wagonModels: ['train-carriage-dirt'],
     color: '#a0522d',
+    wagonCapacity: 30,
   },
   steel: {
     name: 'Ocel',
@@ -106,6 +114,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: STEEL_FARE_TIERS,
     wagonModels: ['train-carriage-flatbed'],
     color: '#8fa3b5',
+    wagonCapacity: 25,
   },
   goods: {
     name: 'Zboží',
@@ -115,6 +124,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: GOODS_FARE_TIERS,
     wagonModels: ['train-carriage-container-blue', 'train-carriage-container-red', 'train-carriage-container-green'],
     color: '#d9a441',
+    wagonCapacity: 20,
   },
   grain: {
     name: 'Obilí',
@@ -124,6 +134,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: GRAIN_FARE_TIERS,
     wagonModels: ['train-carriage-dirt'],
     color: '#c49a3a',
+    wagonCapacity: 30,
   },
   food: {
     name: 'Potraviny',
@@ -133,6 +144,7 @@ export const CARGOS: Record<Cargo, CargoSpec> = {
     fareTiers: FOOD_FARE_TIERS,
     wagonModels: ['train-carriage-box', 'train-carriage-container-green'],
     color: '#d97745',
+    wagonCapacity: 25,
   },
 };
 

@@ -8,7 +8,6 @@ import {
   TRAIN_MODELS,
   TRAIN_SELL_REFUND,
   VEHICLE_LENGTH,
-  WAGON_CAPACITY,
   WAGON_PRICE,
   WAGON_RUNNING_COST,
   MAX_SERVICE_INTERVAL_DAYS,
@@ -22,6 +21,16 @@ import { needsService, newMaintenance, rollBreakdown, service, wearOut, type Mai
 import { Rng } from '../world/rng';
 import { formatMoney, type Game } from './game';
 import { CARGOS, isCargo, isFreight, type Cargo } from './cargo';
+import {
+  cargoCapacity,
+  consistCargos,
+  loadOf,
+  loadState,
+  setConsist,
+  totalLoad,
+  wagonCargos,
+  type Consist,
+} from './consist';
 import { Reservations } from './reservations';
 import {
   axisPiece,
@@ -165,12 +174,12 @@ export function refitLoadStops(train: Train, cargo: Cargo): number[] {
   return stops;
 }
 
-export interface Train extends Maintained {
+export interface Train extends Maintained, Consist {
   id: number;
   name: string;
   modelId: string;
   wagons: number;
-  // Všechny vagony vlaku vezou stejný druh nákladu
+  // Náklad prvního vagonu; u smíšené soupravy vezou další vagony i jiné druhy (wagonCargo, holds)
   cargo: Cargo;
   depotId: number;
   // Příkazy, které vlak objíždí dokola: id nástupiště, u příkazu do depa id depa; v depu si je pamatuje
@@ -229,9 +238,23 @@ export function trainLength(train: Train): number {
   return (train.wagons + 1) * VEHICLE_LENGTH;
 }
 
-// Náklad na palubě a kapacita, např. „12 / 60 cestujících“ nebo „60 / 60 t uhlí“
+// Náklad na palubě a kapacita, např. „12 / 60 cestujících“ nebo „60 / 60 t uhlí, 10 / 20 t pošty“
 export function formatLoad(train: Train): string {
-  return `${train.passengers} / ${train.wagons * WAGON_CAPACITY} ${CARGOS[train.cargo].unit}`;
+  const cargos = consistCargos(train);
+  if (cargos.length === 0) return `0 / 0 ${CARGOS[train.cargo].unit}`;
+  return cargos.map((c) => `${loadOf(train, c)} / ${cargoCapacity(train, c)} ${CARGOS[c].unit}`).join(', ');
+}
+
+// Kolik vagonů každého druhu nákladu stojí u nástupiště
+export function wagonsAtStationByCargo(train: Train, station: StationShape): Map<Cargo, number> {
+  const tiles = new Set(stationTiles(station).map((t) => `${t.x},${t.y}`));
+  const cargos = wagonCargos(train);
+  const result = new Map<Cargo, number>();
+  for (let i = 1; i <= train.wagons; i++) {
+    const [x, y] = pointAt(train.path, train.pos - (i + 0.5) * VEHICLE_LENGTH);
+    if (tiles.has(`${Math.floor(x)},${Math.floor(y)}`)) result.set(cargos[i - 1], (result.get(cargos[i - 1]) ?? 0) + 1);
+  }
+  return result;
 }
 
 // Vagony stojící na nástupišti; jen ty nakládají a vykládají
@@ -417,17 +440,14 @@ export class Fleet {
     return null;
   }
 
-  // Přidá vagon; s druhem nákladu jen do vlaku bez vagonů nebo se stejným nákladem (vagony vezou jedno)
+  // Přidá vagon na konec soupravy; bez druhu nákladu na stejný náklad jako poslední vagon
   addWagon(train: Train, cargo?: Cargo): string | null {
     if (train.state !== 'depot') return 'Vagony lze měnit jen v depu.';
     if (train.wagons >= MAX_WAGONS) return `Vlak může mít nejvýš ${MAX_WAGONS} vagonů.`;
-    if (cargo && train.wagons > 0 && cargo !== train.cargo) {
-      return `${train.name} veze ${CARGOS[train.cargo].noun}, vagon na ${CARGOS[cargo].noun} k němu připojit nejde.`;
-    }
     if (this.game.money < WAGON_PRICE) return `Nedostatek peněz (${formatMoney(WAGON_PRICE)}).`;
     this.game.spend(WAGON_PRICE, 'vehicles');
-    if (cargo && train.wagons === 0) train.cargo = cargo;
-    train.wagons++;
+    const list = wagonCargos(train);
+    setConsist(train, [...list, cargo ?? list[list.length - 1] ?? train.cargo]);
     this.changed();
     return null;
   }
@@ -446,7 +466,10 @@ export class Fleet {
     if (error) return error;
     const train = this.trains[this.trains.length - 1];
     train.cargo = cargo;
-    train.wagons = count;
+    setConsist(
+      train,
+      Array.from({ length: count }, () => cargo),
+    );
     this.game.spend(count * WAGON_PRICE, 'vehicles');
     this.changed();
     return train;
@@ -459,6 +482,7 @@ export class Fleet {
     const model = models.find((m) => m.id === train.modelId) ?? models[models.length - 1];
     const copy = this.buyTrain(depot, model, train.cargo, train.wagons);
     if (typeof copy === 'string') return copy;
+    setConsist(copy, wagonCargos(train));
     if (train.group !== undefined) copy.group = train.group;
     if (share && train.orders) {
       this.shareOrders(copy, train);
@@ -470,11 +494,12 @@ export class Fleet {
     return copy;
   }
 
-  removeWagon(train: Train): void {
-    if (train.state !== 'depot' || train.wagons === 0) return;
-    train.wagons--;
-    // Náklad z odpojeného vagonu propadne
-    train.passengers = Math.min(train.passengers, train.wagons * WAGON_CAPACITY);
+  // Odpojí vagon (bez indexu poslední); náklad, který se do zbylých vagonů nevejde, propadne
+  removeWagon(train: Train, index = train.wagons - 1): void {
+    if (train.state !== 'depot' || train.wagons === 0 || index < 0 || index >= train.wagons) return;
+    const list = wagonCargos(train);
+    list.splice(index, 1);
+    setConsist(train, list);
     this.game.refund(Math.round(WAGON_PRICE * sellFactor(trainAge(train, this.game.clock.day))), 'vehicles');
     this.changed();
   }
@@ -617,28 +642,52 @@ export class Fleet {
     });
   }
 
-  // Cena přestavby všech vagonů na jiný náklad
+  // Cena přestavby všech vagonů na jiný náklad (platí se jen za vagony, které ho ještě nevezou)
   refitCost(train: Train, cargo: Cargo): number {
-    return cargo === train.cargo ? 0 : train.wagons * REFIT_COST_PER_WAGON;
+    return wagonCargos(train).filter((c) => c !== cargo).length * REFIT_COST_PER_WAGON;
   }
 
-  // Přestavba v depu jako v OpenTTD: všechny vagony na jiný druh nákladu za poplatek; dosavadní náklad propadne
+  // Přestavba v depu jako v OpenTTD: všechny vagony na jiný druh nákladu za poplatek; náklad přestavěných propadne
   setCargo(train: Train, cargo: Cargo): string | null {
     if (train.state !== 'depot') return 'Vagony lze přestavět jen v depu, nebo příkazem na stanici.';
-    if (cargo === train.cargo) return null;
+    if (train.wagons === 0) {
+      train.cargo = cargo;
+      this.changed();
+      return null;
+    }
     const cost = this.refitCost(train, cargo);
+    if (cost === 0) return null;
     if (this.game.money < cost) return `Na přestavbu chybí peníze (${formatMoney(cost)}).`;
-    if (cost > 0) this.game.spend(cost, 'vehicles');
+    this.game.spend(cost, 'vehicles');
     train.costs += cost;
-    train.passengers = 0;
-    train.cargo = cargo;
+    setConsist(
+      train,
+      wagonCargos(train).map(() => cargo),
+    );
+    this.changed();
+    return null;
+  }
+
+  // Přestavba jednoho vagonu v depu (jako v OpenTTD); jeho náklad propadne
+  refitWagon(train: Train, index: number, cargo: Cargo): string | null {
+    if (train.state !== 'depot') return 'Vagony lze přestavět jen v depu, nebo příkazem na stanici.';
+    const list = wagonCargos(train);
+    if (index < 0 || index >= list.length || list[index] === cargo) return null;
+    if (this.game.money < REFIT_COST_PER_WAGON) {
+      return `Na přestavbu chybí peníze (${formatMoney(REFIT_COST_PER_WAGON)}).`;
+    }
+    this.game.spend(REFIT_COST_PER_WAGON, 'vehicles');
+    train.costs += REFIT_COST_PER_WAGON;
+    list[index] = cargo;
+    // Přestavěný vagon jde prázdný; náklad jeho původního druhu se vejde jen do zbylých vagonů
+    setConsist(train, list);
     this.changed();
     return null;
   }
 
   // Přestavba podle příkazu na stanici: jen prázdné vagony a jen když je na ni
   private refitAtStation(train: Train, cargo: Cargo, station: Station): boolean {
-    if (train.passengers > 0) {
+    if (totalLoad(train) > 0) {
       this.game.news(
         `${train.name} se ve stanici ${station.name} nepřestavěl: ve vagonech zůstal náklad (${formatLoad(train)}).`,
         station,
@@ -652,7 +701,11 @@ export class Fleet {
     }
     if (cost > 0) this.game.spend(cost, 'vehicles');
     train.costs += cost;
-    train.cargo = cargo;
+    setConsist(
+      train,
+      wagonCargos(train).map(() => cargo),
+    );
+    if (train.wagons === 0) train.cargo = cargo;
     return true;
   }
 
@@ -899,8 +952,8 @@ export class Fleet {
 
   // Plné jsou všechny vagony, které stojí u nástupiště – ostatní naložit nejdou
   private isFull(train: Train, station: Station): boolean {
-    const loadable = Math.min(train.wagons, wagonsAtStation(train, station)) * WAGON_CAPACITY;
-    return train.passengers >= loadable;
+    const at = wagonsAtStationByCargo(train, station);
+    return consistCargos(train).every((c) => loadOf(train, c) >= (at.get(c) ?? 0) * CARGOS[c].wagonCapacity);
   }
 
   // Vlak stojí před tratí obsazenou jiným vlakem
@@ -994,13 +1047,13 @@ export class Fleet {
     const before = segmentIndexAt(train.path, train.pos);
     if (step < remaining) {
       train.pos += step;
-      train.tiles += tilesPassed(train.path, before, segmentIndexAt(train.path, train.pos));
+      this.addTiles(train, tilesPassed(train.path, before, segmentIndexAt(train.path, train.pos)));
       this.blocked.delete(train.id);
       reservations.sync(train, this.tail(train));
       return;
     }
     train.pos += remaining;
-    train.tiles += tilesPassed(train.path, before, segmentIndexAt(train.path, Math.max(0, train.pos - 1e-6)));
+    this.addTiles(train, tilesPassed(train.path, before, segmentIndexAt(train.path, Math.max(0, train.pos - 1e-6))));
     train.speed = 0;
     if (limit < pathEnd - 1e-6) {
       reservations.sync(train, this.tail(train));
@@ -1113,7 +1166,7 @@ export class Fleet {
       train.path = [];
       this.reservations.release(train);
       // Náklad zůstává ve vlaku a po výjezdu ho vlak vyloží na další zastávce
-      const load = train.passengers > 0 ? ` s nákladem ${formatLoad(train)}` : '';
+      const load = totalLoad(train) > 0 ? ` s nákladem ${formatLoad(train)}` : '';
       this.game.news(`${train.name} dorazil do depa${load}.`, this.position(train));
       if (train.renewing) this.finishRenewal(train);
     } else if (this.targetFlags(train).depot) {
@@ -1198,7 +1251,7 @@ export class Fleet {
     const flags = this.targetFlags(train);
     const options = { unload: flags.unload, load: flags.load === 'none' ? ('none' as const) : undefined };
     // Přestavba: nejdřív vyložit dosavadní náklad, pak přestavět prázdné vagony a naložit nový
-    if (flags.refit && flags.refit !== train.cargo && !loadOnly) {
+    if (flags.refit && wagonCargos(train).some((c) => c !== flags.refit) && !loadOnly) {
       const unloaded = this.transfer(train, station, false, { ...options, load: 'none' });
       // Bez přestavby (zbylý náklad, chybí peníze) vlak doloží, co veze
       if (this.refitAtStation(train, flags.refit, station)) this.changed();
@@ -1214,14 +1267,34 @@ export class Fleet {
     loadOnly: boolean,
     options: { unload?: OrderFlags['unload']; load?: 'none' },
   ): number {
-    const { cargo } = train;
-    const hold = {
-      atPlatform: wagonsAtStation(train, station) * WAGON_CAPACITY,
-      capacity: train.wagons * WAGON_CAPACITY,
-      speed: trainModel(train).speed,
-    };
-    if (isFreight(cargo)) return this.game.freight.exchange(train, hold, station, cargo, loadOnly, options);
-    return this.game.passengers.exchange(train, hold, station, loadOnly, options);
+    const at = wagonsAtStationByCargo(train, station);
+    let moved = 0;
+    // Každý druh nákladu soupravy zvlášť; vagony jiného druhu se chovají jako samostatné vozidlo
+    for (const cargo of consistCargos(train)) {
+      const state = loadState(train, cargo);
+      if (!state) continue;
+      const hold = {
+        atPlatform: (at.get(cargo) ?? 0) * CARGOS[cargo].wagonCapacity,
+        capacity: cargoCapacity(train, cargo),
+        speed: trainModel(train).speed,
+      };
+      const carrier = cargo === train.cargo ? train : { ...state, name: train.name, income: 0 };
+      moved += isFreight(cargo)
+        ? this.game.freight.exchange(carrier, hold, station, cargo, loadOnly, options)
+        : this.game.passengers.exchange(carrier, hold, station, loadOnly, options);
+      if (carrier !== train) {
+        const { name: _name, income, ...rest } = carrier;
+        Object.assign(state, rest);
+        train.income += income;
+      }
+    }
+    return moved;
+  }
+
+  // Ujeté dlaždice pro jízdné všech druhů nákladu na palubě
+  private addTiles(train: Train, tiles: number): void {
+    train.tiles += tiles;
+    for (const hold of train.holds ?? []) hold.tiles += tiles;
   }
 
   // Naplánuje cestu k dalšímu cíli; vlak může pokračovat vpřed, nebo se otočit

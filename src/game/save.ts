@@ -29,6 +29,7 @@ import type { GameDate } from './clock';
 import type { Job } from './construction';
 import { roadVehicleReliability, type RoadVehicle } from './roadVehicles';
 import { isBreakdownSetting, restoreMaintenance } from './reliability';
+import { setConsist, wagonCargos } from './consist';
 import { cleanFlags, type OrderFlags, type Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
@@ -482,6 +483,19 @@ export function restoreGame(data: SaveData): Game {
         agingWarned: t.agingWarned ?? false,
         renewing: t.renewing ?? false,
         cargo: isCargo(t.cargo) ? t.cargo : ('passengers' as const),
+        // Smíšená souprava (starší uložení ji nemají): náklad každého vagonu a náklad dalších druhů
+        wagonCargo:
+          Array.isArray(t.wagonCargo) && t.wagonCargo.length === t.wagons && t.wagonCargo.every(isCargo)
+            ? t.wagonCargo
+            : undefined,
+        holds: Array.isArray(t.holds)
+          ? t.holds.filter(
+              (hold) =>
+                isObject(hold) &&
+                isCargo(hold.cargo) &&
+                [hold.passengers, hold.boardedStation, hold.boardedAt, hold.tiles].every((n) => Number.isFinite(n)),
+            )
+          : undefined,
         orderFlags,
         serviceUntil: Number.isFinite(t.serviceUntil) ? t.serviceUntil : undefined,
         feeder: Number.isFinite(t.feeder) ? t.feeder : 0,
@@ -506,6 +520,8 @@ export function restoreGame(data: SaveData): Game {
       };
     }),
   );
+  // Souprava se znovu sestaví: neplatné údaje o vagonech a nákladu se srovnají
+  for (const train of game.fleet.trains) setConsist(train, wagonCargos(train));
   game.fleet.nextId = data.fleet.nextId;
   game.fleet.nextGroupId = Math.max(0, ...game.fleet.trains.map((t) => t.orderGroup ?? 0)) + 1;
   // Starší uložení auta nemá; vozidla neznámého modelu se zahodí

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { loadModel } from '../assets';
-import { VEHICLE_LENGTH, WAGON_CAPACITY } from '../game/balance';
-import { CARGOS } from '../game/cargo';
+import { VEHICLE_LENGTH } from '../game/balance';
+import { loadOf, wagonCargos } from '../game/consist';
+import { CARGOS, type Cargo } from '../game/cargo';
 import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
 import { heightAt, pointAt } from '../world/route';
@@ -91,7 +92,7 @@ function addSteelLoad(wagon: THREE.Object3D): void {
 }
 
 function trainKey(train: Train): string {
-  return `${train.modelId}:${train.wagons}:${train.cargo}`;
+  return `${train.modelId}:${wagonCargos(train).join(',') || train.cargo}`;
 }
 
 // Soupravy jedoucích vlaků; vozy sledují trasu vlaku za hlavou soupravy
@@ -168,11 +169,23 @@ export class TrainsView {
       cab: null,
       smoke: null,
     };
-    const wagonModels = CARGOS[train.cargo].wagonModels ?? [model.wagonModel];
-    const names = [model.model, ...Array.from({ length: train.wagons }, (_, i) => wagonModels[i % wagonModels.length])];
+    const cargos = wagonCargos(train);
+    // Modely vagonů téhož nákladu se střídají po řadě
+    const seen = new Map<Cargo, number>();
+    const names = [
+      model.model,
+      ...cargos.map((cargo) => {
+        const models = CARGOS[cargo].wagonModels ?? [model.wagonModel];
+        const i = seen.get(cargo) ?? 0;
+        seen.set(cargo, i + 1);
+        return models[i % models.length];
+      }),
+    ];
     void Promise.all(names.map((n) => loadModel('train kit', n))).then((objects) => {
       const [, ...wagons] = objects;
-      if (train.cargo === 'steel') wagons.forEach(addSteelLoad);
+      wagons.forEach((w, i) => {
+        if (cargos[i] === 'steel') addSteelLoad(w);
+      });
       const [headlights, tailLights] = trainLightMarkers();
       objects[0].add(headlights);
       objects[objects.length - 1].add(tailLights);
@@ -192,10 +205,14 @@ export class TrainsView {
   }
 
   private place(train: Train, view: TrainView, frustum: ViewFrustums): void {
-    // Vagony se plní od lokomotivy
-    const loaded = Math.ceil(train.passengers / WAGON_CAPACITY);
+    // Vagony každého nákladu se plní od lokomotivy
+    const cargos = wagonCargos(train);
+    const filled = new Map<Cargo, number>();
     view.loads.forEach((load, i) => {
-      if (load) load.visible = i < loaded;
+      const cargo = cargos[i] ?? train.cargo;
+      const before = filled.get(cargo) ?? 0;
+      filled.set(cargo, before + 1);
+      if (load) load.visible = before < Math.ceil(loadOf(train, cargo) / CARGOS[cargo].wagonCapacity);
     });
     const count = view.vehicles.length;
     for (let i = 0; i < count; i++) {

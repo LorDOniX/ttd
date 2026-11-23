@@ -23,8 +23,14 @@ import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
 import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
 import { brokenText } from '../game/reliability';
+import { consistCargos } from '../game/consist';
 import { h } from './dom';
 import type { WindowManager } from './windows';
+
+// Veze vlak (aspoň jedním vagonem) daný náklad? Vlak bez vagonů patří ke svému druhu nákladu
+function carries(train: Train, cargo: Cargo): boolean {
+  return train.wagons === 0 ? train.cargo === cargo : consistCargos(train).includes(cargo);
+}
 
 export function stateText(game: Game, train: Train): string {
   if (train.brokenDays > 0) return brokenText(train);
@@ -344,7 +350,7 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
   const render = (): HTMLElement => {
     const all = game.fleet.trains;
     if (all.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádné vlaky.');
-    const used = (Object.keys(CARGOS) as Cargo[]).filter((c) => all.some((t) => t.cargo === c));
+    const used = (Object.keys(CARGOS) as Cargo[]).filter((c) => all.some((t) => carries(t, c)));
     if (filter && !used.includes(filter)) filter = null;
     const lines = [...new Set(all.map((t) => t.orderGroup).filter((g): g is number => g !== null))].sort(
       (a, b) => a - b,
@@ -352,7 +358,7 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
     if (line !== null && !lines.includes(line)) line = null;
     group = validFilter(game, 'train', group);
     const trains = all.filter(
-      (t) => (!filter || t.cargo === filter) && (line === null || t.orderGroup === line) && inGroup(t, group),
+      (t) => (!filter || carries(t, filter)) && (line === null || t.orderGroup === line) && inGroup(t, group),
     );
     const panel = groupPanel(game, 'train', group, (value) => {
       group = value;
@@ -383,7 +389,7 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
             { className: 'train__actions' },
             'Náklad:',
             filterButton(`Vše (${all.length})`, null),
-            ...used.map((c) => filterButton(`${CARGOS[c].name} (${all.filter((t) => t.cargo === c).length})`, c)),
+            ...used.map((c) => filterButton(`${CARGOS[c].name} (${all.filter((t) => carries(t, c)).length})`, c)),
           )
         : null;
     const lineFilters =

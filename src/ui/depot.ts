@@ -2,7 +2,6 @@ import {
   MAX_WAGONS,
   TRAIN_LIFETIME_YEARS,
   TRAIN_MODELS,
-  WAGON_CAPACITY,
   WAGON_PRICE,
   WAGON_RUNNING_COST,
   speedKmh,
@@ -10,6 +9,7 @@ import {
   REFIT_COST_PER_WAGON,
 } from '../game/balance';
 import { CARGOS, type Cargo } from '../game/cargo';
+import { isMixed, wagonCargos } from '../game/consist';
 import { Game, formatMoney, formatMoneyShort } from '../game/game';
 import {
   formatLoad,
@@ -52,16 +52,19 @@ function wagonModelName(model: TrainModel, cargo: Cargo, index: number): string 
 }
 
 function capacityText(cargo: Cargo, wagons: number): string {
-  return `${wagons * WAGON_CAPACITY} ${CARGOS[cargo].unit}`;
+  return `${wagons * CARGOS[cargo].wagonCapacity} ${CARGOS[cargo].unit}`;
 }
 
-// Souprava z boku: lokomotiva vlevo, za ní vagony
-function consistImages(model: TrainModel, cargo: Cargo, wagons: number, scale: number): HTMLImageElement[] {
+// Souprava z boku: lokomotiva vlevo, za ní vagony (každý podle svého nákladu)
+function consistImages(model: TrainModel, cargos: readonly Cargo[], scale: number): HTMLImageElement[] {
+  const seen = new Map<Cargo, number>();
   return [
     sideImage(KIT, model.model, scale, 'consist__image'),
-    ...Array.from({ length: wagons }, (_, i) =>
-      sideImage(KIT, wagonModelName(model, cargo, i), scale, 'consist__image'),
-    ),
+    ...cargos.map((cargo) => {
+      const i = seen.get(cargo) ?? 0;
+      seen.set(cargo, i + 1);
+      return sideImage(KIT, wagonModelName(model, cargo, i), scale, 'consist__image');
+    }),
   ];
 }
 
@@ -87,6 +90,8 @@ export function openDepot(
   };
   // Sestava nového vlaku přežije obnovy okna
   const config = { modelId: newest().id, cargo: 'passengers' as Cargo, wagons: Math.min(3, MAX_WAGONS) };
+  // Vagon vybraný k přestavbě (podle vlaku)
+  const selectedWagon = new Map<number, number>();
   const openDetail = (train: Train): void =>
     openTrain(windows, game, train, { focus, ride, openDepot: (d) => openDepot(windows, game, d, focus, ride) });
 
@@ -128,20 +133,37 @@ export function openDepot(
     return select;
   };
 
-  // Souprava vlaku: v depu má každý vagon „×“ (prodat) a na konci „+“ (přidat vagon stejného nákladu)
+  // Souprava vlaku: v depu má každý vagon „×“ (prodat), kliknutím se vybere k přestavbě,
+  // na konci „+“ (přidat vagon jako vybraný nebo poslední)
   const consist = (train: Train): HTMLElement => {
     const model = trainModel(train);
     const inDepot = train.state === 'depot';
-    const [loco, ...wagons] = consistImages(model, train.cargo, train.wagons, TRAIN_SCALE);
+    const cargos = wagonCargos(train);
+    const selected = inDepot ? selectedWagon.get(train.id) : undefined;
+    if (selected !== undefined && selected >= cargos.length) selectedWagon.delete(train.id);
+    const [loco, ...wagons] = consistImages(model, cargos, TRAIN_SCALE);
     const strip = h('div', { className: 'consist' });
     const locoCar = h('span', { className: 'consist__car', title: `${model.name} – otevřít detail vlaku` }, loco);
     locoCar.addEventListener('click', () => openDetail(train));
     strip.append(locoCar);
-    wagons.forEach((img) => {
-      const car = h('span', { className: 'consist__car' }, img);
+    wagons.forEach((img, index) => {
+      const chosen = selected === index;
+      const car = h(
+        'span',
+        {
+          className: `consist__car${inDepot ? ' consist__car--wagon' : ''}${chosen ? ' consist__car--selected' : ''}`,
+          title: `Vagon ${index + 1}: ${CARGOS[cargos[index]].name} (${CARGOS[cargos[index]].wagonCapacity} ${CARGOS[cargos[index]].unit})${inDepot ? ' – kliknutím vybrat k přestavbě' : ''}`,
+        },
+        img,
+      );
       if (inDepot) {
+        car.addEventListener('click', () => {
+          if (chosen) selectedWagon.delete(train.id);
+          else selectedWagon.set(train.id, index);
+          refresh();
+        });
         car.append(
-          button('×', () => fleet.removeWagon(train), {
+          button('×', () => fleet.removeWagon(train, index), {
             className: 'consist__remove',
             title: `Prodat vagon (vrátí ${formatMoney(Math.round(WAGON_PRICE * sellFactor(trainAge(train, game.clock.day))))})`,
           }),
@@ -150,10 +172,11 @@ export function openDepot(
       strip.append(car);
     });
     if (inDepot && train.wagons < MAX_WAGONS) {
+      const addCargo = cargos[selected ?? cargos.length - 1] ?? train.cargo;
       strip.append(
-        button('+', () => report(fleet.addWagon(train)), {
+        button('+', () => report(fleet.addWagon(train, addCargo)), {
           className: 'consist__add',
-          title: `Přidat vagon na ${CARGOS[train.cargo].noun} (${formatMoney(WAGON_PRICE)})`,
+          title: `Přidat vagon na ${CARGOS[addCargo].noun} (${formatMoney(WAGON_PRICE)})`,
         }),
       );
     }
@@ -198,12 +221,25 @@ export function openDepot(
       return card;
     }
 
-    const refitCost = train.wagons * REFIT_COST_PER_WAGON;
+    // Přestavba vybraného vagonu, bez výběru celé soupravy
+    const index = selectedWagon.get(train.id);
+    const wagonCargo = index === undefined ? undefined : wagonCargos(train)[index];
+    const mixed = isMixed(train);
+    const refitCost = wagonCargo !== undefined ? REFIT_COST_PER_WAGON : train.wagons * REFIT_COST_PER_WAGON;
     const cargo = h('select', {
-      title: `Přestavět všechny vagony na jiný náklad za ${formatMoney(refitCost)}; dosavadní náklad propadne`,
+      title:
+        wagonCargo !== undefined
+          ? `Přestavět vagon ${index! + 1} na jiný náklad za ${formatMoney(REFIT_COST_PER_WAGON)}; jeho náklad propadne`
+          : `Přestavět všechny vagony na jiný náklad za ${formatMoney(REFIT_COST_PER_WAGON)} za vagon; dosavadní náklad propadne`,
     });
-    for (const c of CARGO_LIST) cargo.append(h('option', { value: c, selected: c === train.cargo }, CARGOS[c].name));
-    cargo.addEventListener('change', () => report(fleet.setCargo(train, cargo.value as Cargo)));
+    if (wagonCargo === undefined && mixed) cargo.append(h('option', { value: '', selected: true }, 'smíšená souprava'));
+    const current = wagonCargo ?? (mixed ? null : train.cargo);
+    for (const c of CARGO_LIST) cargo.append(h('option', { value: c, selected: c === current }, CARGOS[c].name));
+    cargo.addEventListener('change', () => {
+      if (!cargo.value) return;
+      const c = cargo.value as Cargo;
+      report(index !== undefined ? fleet.refitWagon(train, index, c) : fleet.setCargo(train, c));
+    });
     const renewal = fleet.renewalOffer(train);
     card.append(
       h(
@@ -212,7 +248,7 @@ export function openDepot(
         h(
           'label',
           { className: 'depot-train__cargo' },
-          'Náklad ',
+          index !== undefined ? `Vagon ${index + 1} ` : 'Náklad ',
           cargo,
           ...(refitCost > 0 ? [h('small', {}, ` přestavba ${formatMoneyShort(refitCost)}`)] : []),
         ),
@@ -362,7 +398,11 @@ export function openDepot(
       h(
         'div',
         { className: 'consist consist--preview' },
-        ...consistImages(model, config.cargo, config.wagons, PREVIEW_SCALE),
+        ...consistImages(
+          model,
+          Array.from({ length: config.wagons }, () => config.cargo),
+          PREVIEW_SCALE,
+        ),
       ),
     );
 

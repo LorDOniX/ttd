@@ -1894,6 +1894,16 @@ body.pegman-dragging * {
   cursor: pointer;
 }
 
+.consist__car--wagon {
+  cursor: pointer;
+}
+
+.consist__car--selected .consist__image {
+  outline: 2px solid var(--accent, #e0a020);
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+
 .consist__car:hover .consist__image {
   filter: brightness(1.12);
 }
