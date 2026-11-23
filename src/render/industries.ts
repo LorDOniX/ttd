@@ -565,7 +565,7 @@ export class IndustriesView {
       return;
     }
     const { area, label } = view;
-    area.add(...parts);
+    if (parts.length > 0) area.add(...parts);
     area.traverse((part) => {
       const update = part.userData.updateAnimation;
       if (typeof update === 'function') view.animations.push(update as (seconds: number) => void);

@@ -286,8 +286,9 @@ export class TreesView {
       for (const old of group.children as THREE.InstancedMesh[]) old.dispose();
       group.clear();
     }
-    this.detailed.add(...detailed.flat());
-    this.simplified.add(...simplified.flat());
+    // add() bez argumentu (mapa bez stromů) three hlásí jako chybu
+    if (detailed.flat().length > 0) this.detailed.add(...detailed.flat());
+    if (simplified.flat().length > 0) this.simplified.add(...simplified.flat());
     this.meshesByModel = detailed.map((meshes, model) => [...meshes, ...simplified[model]]);
     this.instancesByTile = instancesByTile;
     this.built = true;

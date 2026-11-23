@@ -303,7 +303,9 @@ export class AnimalsView {
 
     for (const child of this.object.children as THREE.InstancedMesh[]) child.dispose();
     this.object.clear();
-    this.object.add(...meshesByModel.flat());
+    // Bez zvířat (např. malá nebo zastavěná mapa) by add() bez argumentu three nahlásil jako chybu
+    const meshes = meshesByModel.flat();
+    if (meshes.length > 0) this.object.add(...meshes);
     this.meshesByModel = meshesByModel;
     this.prototypesByModel = ANIMAL_MODELS.map((model) => prototypes.get(model) ?? []);
     this.roamers = roamers;
