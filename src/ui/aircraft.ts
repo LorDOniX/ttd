@@ -20,6 +20,7 @@ import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
 import { liveWindow, maintenanceRows, openVehicleWindow, refitControl, type VehicleStatus } from './vehicleWindow';
 import { brokenText } from '../game/reliability';
+import { latenessText, openTimetableWindow, timesNote, vehicleTimetable } from './timetable';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -78,7 +79,7 @@ export function aircraftStateText(game: Game, plane: Aircraft): string {
   }
 }
 
-function airOrders(game: Game, plane: Aircraft, links: AircraftLinks): OrdersSource {
+function airOrders(game: Game, plane: Aircraft, links: AircraftLinks, windows: WindowManager): OrdersSource {
   const { airFleet } = game;
   return {
     id: `aircraft-orders-${plane.id}`,
@@ -114,6 +115,23 @@ function airOrders(game: Game, plane: Aircraft, links: AircraftLinks): OrdersSou
     },
     subscribe: (refresh) => [game.events.on('aircraftChanged', refresh), game.clock.events.on('day', refresh)],
     exists: () => airFleet.aircraft.includes(plane),
+    openTimetable: () =>
+      openTimetableWindow(
+        windows,
+        vehicleTimetable(game, plane, {
+          id: `aircraft-timetable-${plane.id}`,
+          stationName: (stationId) => airFleet.stationName(stationId),
+          inDepot: () => plane.state === 'hangar',
+          fleet: {
+            setTimetable: (index, patch) => airFleet.setTimetable(plane, index, patch),
+            setAutofill: (on) => airFleet.setAutofill(plane, on),
+            clear: () => airFleet.clearTimetable(plane),
+          },
+          exists: () => airFleet.aircraft.includes(plane),
+          noun: 'Letadlo',
+        }),
+      ),
+    timesText: (index) => timesNote(plane, index),
   };
 }
 
@@ -130,6 +148,7 @@ function airDetails(game: Game, plane: Aircraft, links: AircraftLinks): HTMLElem
     row('Model', `${model.name} (${model.year})`),
     row('Náklad', formatAircraftLoad(plane), 'num'),
     row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
+    row('Letový řád', latenessText(plane), (plane.lateness ?? 0) > 0 ? 'num warning' : 'num'),
     row(
       'Stáří',
       `${formatYears(aircraftAge(plane, today))} z ${AIRCRAFT_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
@@ -223,7 +242,7 @@ export function openAircraft(windows: WindowManager, game: Game, plane: Aircraft
       {
         icon: '☰',
         title: 'Letový řád',
-        onClick: () => openOrders(windows, airOrders(game, plane, links)),
+        onClick: () => openOrders(windows, airOrders(game, plane, links, windows)),
         active: windows.isOpen(ordersId),
       },
       {

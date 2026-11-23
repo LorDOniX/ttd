@@ -34,6 +34,10 @@ export interface OrdersSource {
   focusStation: (stationId: number) => void;
   // Doplňky pod řádem (sdílení řádu u vlaků)
   extra?: () => HTMLElement | null;
+  // Okno časů jízdního řádu (auta, letadla, lodě; vlaky ho mají ve volbách příkazů)
+  openTimetable?: () => void;
+  // Časy u příkazu do popisku řádku, např. „[jízda 5 d, stání 2 d]“
+  timesText?: (index: number) => string;
   // Volby příkazů jako v OpenTTD (zatím jen vlaky): nakládání, vykládání, projet, servis v depu
   flags?: {
     get: (index: number) => OrderFlags;
@@ -207,10 +211,11 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
       { className: 'ottd-orders__list', tabIndex: 0 },
       ...orders.map((stationId, i) => {
         if (!source.flags) {
+          const notes = [source.fullLoad(stationId) ? 'Do plna' : '', source.timesText?.(i) ?? ''].filter(Boolean);
           return row(
             i,
             `${i + 1}: Jet do ${source.stationName(stationId)}`,
-            source.fullLoad(stationId) ? '[Do plna]' : '',
+            notes.length > 0 ? `[${notes.join(', ')}]` : '',
           );
         }
         const f = flags[i];
@@ -246,7 +251,11 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
       chosen === undefined,
     );
     fullLoad.classList.toggle('small-button--active', chosen !== undefined && source.fullLoad(chosen));
-    const flagBar = source.flags ? flagControls(source.flags) : [fullLoad];
+    const openTimes = source.openTimetable;
+    const times = openTimes
+      ? [button('⏱ Časy', 'Časy jízdního řádu: plán jízdy a stání, zpoždění', () => openTimes(), false)]
+      : [];
+    const flagBar = source.flags ? flagControls(source.flags) : [fullLoad, ...times];
 
     const skipTarget = selected !== END && selected !== current ? selected : (current + 1) % Math.max(1, orders.length);
     const skip = button(

@@ -19,6 +19,7 @@ import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
 import { liveWindow, maintenanceRows, openVehicleWindow, refitControl, type VehicleStatus } from './vehicleWindow';
 import { brokenText } from '../game/reliability';
+import { latenessText, openTimetableWindow, timesNote, vehicleTimetable } from './timetable';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -62,7 +63,7 @@ export function vehicleStateText(game: Game, vehicle: RoadVehicle): string {
   }
 }
 
-function roadOrders(game: Game, vehicle: RoadVehicle, links: VehicleLinks): OrdersSource {
+function roadOrders(game: Game, vehicle: RoadVehicle, links: VehicleLinks, windows: WindowManager): OrdersSource {
   const { roadFleet } = game;
   return {
     id: `vehicle-orders-${vehicle.id}`,
@@ -87,6 +88,23 @@ function roadOrders(game: Game, vehicle: RoadVehicle, links: VehicleLinks): Orde
     },
     subscribe: (refresh) => [game.events.on('vehiclesChanged', refresh), game.clock.events.on('day', refresh)],
     exists: () => roadFleet.vehicles.includes(vehicle),
+    openTimetable: () =>
+      openTimetableWindow(
+        windows,
+        vehicleTimetable(game, vehicle, {
+          id: `vehicle-timetable-${vehicle.id}`,
+          stationName: (stationId) => roadFleet.stationName(stationId),
+          inDepot: () => vehicle.state === 'depot',
+          fleet: {
+            setTimetable: (index, patch) => roadFleet.setTimetable(vehicle, index, patch),
+            setAutofill: (on) => roadFleet.setAutofill(vehicle, on),
+            clear: () => roadFleet.clearTimetable(vehicle),
+          },
+          exists: () => roadFleet.vehicles.includes(vehicle),
+          noun: 'Auto',
+        }),
+      ),
+    timesText: (index) => timesNote(vehicle, index),
   };
 }
 
@@ -103,6 +121,7 @@ function roadDetails(game: Game, vehicle: RoadVehicle, links: VehicleLinks): HTM
     row('Model', `${model.name} (${model.year})`),
     row('Náklad', formatVehicleLoad(vehicle), 'num'),
     row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
+    row('Jízdní řád', latenessText(vehicle), (vehicle.lateness ?? 0) > 0 ? 'num warning' : 'num'),
     row(
       'Stáří',
       `${formatYears(vehicleAge(vehicle, today))} z ${ROAD_VEHICLE_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
@@ -199,7 +218,7 @@ export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: Roa
       {
         icon: '☰',
         title: 'Jízdní řád',
-        onClick: () => openOrders(windows, roadOrders(game, vehicle, links)),
+        onClick: () => openOrders(windows, roadOrders(game, vehicle, links, windows)),
         active: windows.isOpen(ordersId),
       },
       {

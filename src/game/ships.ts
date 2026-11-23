@@ -11,6 +11,14 @@ import {
 } from './balance';
 import { CARGOS, isFreight, type Cargo } from './cargo';
 import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
+import {
+  arrived,
+  clearVehicleTimetable,
+  departed,
+  remapTimetable,
+  setTimetableEntry,
+  type Timetabled,
+} from './vehicleTimetable';
 import { formatMoney, type Game } from './game';
 import { seasonBlendForDate, seasonWeight } from './seasons';
 import {
@@ -58,7 +66,7 @@ export function waterFrozen(date: Parameters<typeof seasonBlendForDate>[0]): boo
 // waiting – čeká před obsazeným kotvištěm; loading – kotví a nakládá; lost – nemá cestu po vodě
 export type ShipState = 'depot' | 'sailing' | 'waiting' | 'loading' | 'lost';
 
-export interface Ship extends Maintained {
+export interface Ship extends Maintained, Timetabled {
   id: number;
   name: string;
   modelId: string;
@@ -250,6 +258,22 @@ export class ShipFleet {
     return null;
   }
 
+  // Časy jízdního řádu (jako u vlaků)
+  setTimetable(ship: Ship, index: number, patch: { travel?: number | null; wait?: number | null }): void {
+    setTimetableEntry(ship, index, patch);
+    this.changed();
+  }
+
+  clearTimetable(ship: Ship): void {
+    clearVehicleTimetable(ship);
+    this.changed();
+  }
+
+  setAutofill(ship: Ship, on: boolean): void {
+    ship.autofill = on || undefined;
+    this.changed();
+  }
+
   setServiceInterval(ship: Ship, days: number): void {
     ship.serviceInterval = clampServiceInterval(days);
     this.changed();
@@ -297,6 +321,7 @@ export class ShipFleet {
       this.arrive(ship);
     } else {
       ship.target = 0;
+      departed(ship, this.game.clock.now);
       this.sailTo(ship, orders[0]);
     }
     this.changed();
@@ -312,6 +337,7 @@ export class ShipFleet {
     const error = this.ordersError(orders);
     if (error) return error;
     const current = ship.orders?.[ship.target];
+    remapTimetable(ship, ship.orders ?? [], orders);
     ship.orders = [...orders];
     ship.fullLoad = ship.fullLoad.filter((id) => orders.includes(id));
     ship.target = Math.max(0, current === undefined ? -1 : orders.indexOf(current));
@@ -597,6 +623,9 @@ export class ShipFleet {
     const port = this.port(ship.portId);
     if (port) ship.waitDays += this.exchange(ship, port) / LOADING_PER_DAY;
     if (ship.orders && ship.orders[ship.target] === ship.portId) {
+      // Plavební řád s časy: stání aspoň podle plánu; kdo připlul dřív, počká
+      const plan = arrived(ship, ship.target, this.game.clock.now);
+      ship.waitDays = Math.max(ship.waitDays, plan.wait) + plan.early;
       ship.target = (ship.target + 1) % ship.orders.length;
     }
     this.changed();
@@ -637,6 +666,7 @@ export class ShipFleet {
       this.changed();
       return;
     }
+    departed(ship, this.game.clock.now);
     this.sailTo(ship, next);
   }
 

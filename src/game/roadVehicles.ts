@@ -44,6 +44,14 @@ import {
 } from './reliability';
 import { Rng } from '../world/rng';
 import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
+import {
+  arrived,
+  clearVehicleTimetable,
+  departed,
+  remapTimetable,
+  setTimetableEntry,
+  type Timetabled,
+} from './vehicleTimetable';
 
 const DAYS_PER_YEAR = 365.25;
 const LOST_RETRY_DAYS = 5;
@@ -62,7 +70,7 @@ export type RoadVehicleState = 'depot' | 'running' | 'loading' | 'lost';
 
 // Autobus nebo nákladní auto; náklad určuje model. Jede po středech dlaždic cesty (path),
 // pos je vzdálenost od první dlaždice v dlaždicích.
-export interface RoadVehicle extends Maintained {
+export interface RoadVehicle extends Maintained, Timetabled {
   id: number;
   name: string;
   modelId: string;
@@ -416,6 +424,22 @@ export class RoadFleet {
     return null;
   }
 
+  // Časy jízdního řádu (jako u vlaků)
+  setTimetable(vehicle: RoadVehicle, index: number, patch: { travel?: number | null; wait?: number | null }): void {
+    setTimetableEntry(vehicle, index, patch);
+    this.changed();
+  }
+
+  clearTimetable(vehicle: RoadVehicle): void {
+    clearVehicleTimetable(vehicle);
+    this.changed();
+  }
+
+  setAutofill(vehicle: RoadVehicle, on: boolean): void {
+    vehicle.autofill = on || undefined;
+    this.changed();
+  }
+
   setServiceInterval(vehicle: RoadVehicle, days: number): void {
     vehicle.serviceInterval = clampServiceInterval(days);
     this.changed();
@@ -455,6 +479,7 @@ export class RoadFleet {
     vehicle.path = route;
     vehicle.pos = 0;
     vehicle.state = 'running';
+    departed(vehicle, this.game.clock.now);
     this.changed();
     return null;
   }
@@ -469,6 +494,7 @@ export class RoadFleet {
     const error = this.ordersError(orders);
     if (error) return error;
     const current = vehicle.orders && vehicle.target >= 0 ? vehicle.orders[vehicle.target] : undefined;
+    remapTimetable(vehicle, vehicle.orders ?? [], orders);
     if (vehicle.servicing !== undefined && vehicle.orders) {
       vehicle.servicing = Math.max(0, orders.indexOf(vehicle.orders[vehicle.servicing]));
     }
@@ -734,6 +760,9 @@ export class RoadFleet {
     vehicle.waitDays = TRAIN_LOADING_DAYS;
     const station = this.goal(vehicle);
     if (station) vehicle.waitDays += this.exchange(vehicle, station) / LOADING_PER_DAY;
+    // Jízdní řád s časy: stání aspoň podle plánu; kdo přijel dřív, počká
+    const plan = arrived(vehicle, vehicle.target, this.game.clock.now);
+    vehicle.waitDays = Math.max(vehicle.waitDays, plan.wait) + plan.early;
     this.changed();
   }
 
@@ -764,6 +793,7 @@ export class RoadFleet {
 
   private depart(vehicle: RoadVehicle): void {
     if (vehicle.orders && vehicle.target !== -1) vehicle.target = (vehicle.target + 1) % vehicle.orders.length;
+    departed(vehicle, this.game.clock.now);
     this.planService(vehicle);
     this.replan(vehicle);
   }

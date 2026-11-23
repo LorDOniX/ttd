@@ -56,6 +56,26 @@ export function groupPanel(
       add,
     ),
   ];
+  // Hromadné akce pro vozidla ve výběru (jako u skupiny v OpenTTD)
+  const members = all.filter((v) => inGroup(v, filter));
+  const depotWord = kind === 'train' ? 'depa' : kind === 'road' ? 'garáže' : kind === 'air' ? 'hangáru' : 'loděnice';
+  const toDepot = h('button', { className: 'small-button', textContent: `Vše do ${depotWord}` });
+  toDepot.title = `Poslat všechna vozidla ve výběru do ${depotWord}`;
+  toDepot.disabled = members.length === 0;
+  toDepot.addEventListener('click', () => {
+    const count = game.sendAllToDepot(kind, members);
+    game.news(count > 0 ? `Do ${depotWord} posláno vozidel: ${count}.` : `Žádné vozidlo ve výběru nejede.`);
+  });
+  const startAll = h('button', { className: 'small-button', textContent: 'Vypravit vše' });
+  startAll.title = `Vypravit z ${depotWord} všechna vozidla ve výběru, která mají jízdní řád`;
+  startAll.disabled = members.length === 0;
+  startAll.addEventListener('click', () => {
+    const { count, error } = game.startAll(kind, members);
+    game.news(
+      error ?? (count > 0 ? `Vypraveno vozidel: ${count}.` : `Ve výběru nečeká žádné vozidlo s jízdním řádem.`),
+    );
+  });
+  rows.push(h('div', { className: 'train__actions vehicle-groups__bulk' }, toDepot, startAll));
   const group = typeof filter === 'number' ? game.groups.byId(filter) : undefined;
   if (group) {
     const stats = groupStats(game.groups.members(group));

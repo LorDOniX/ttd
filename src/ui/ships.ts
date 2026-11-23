@@ -19,6 +19,7 @@ import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
 import { liveWindow, maintenanceRows, openVehicleWindow, refitControl, type VehicleStatus } from './vehicleWindow';
 import { brokenText } from '../game/reliability';
+import { latenessText, openTimetableWindow, timesNote, vehicleTimetable } from './timetable';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -68,7 +69,7 @@ export function shipStateText(game: Game, ship: Ship): string {
   }
 }
 
-function shipOrders(game: Game, ship: Ship, links: ShipLinks): OrdersSource {
+function shipOrders(game: Game, ship: Ship, links: ShipLinks, windows: WindowManager): OrdersSource {
   const { shipFleet } = game;
   return {
     id: `ship-orders-${ship.id}`,
@@ -100,6 +101,23 @@ function shipOrders(game: Game, ship: Ship, links: ShipLinks): OrdersSource {
     },
     subscribe: (refresh) => [game.events.on('shipsChanged', refresh), game.clock.events.on('day', refresh)],
     exists: () => shipFleet.ships.includes(ship),
+    openTimetable: () =>
+      openTimetableWindow(
+        windows,
+        vehicleTimetable(game, ship, {
+          id: `ship-timetable-${ship.id}`,
+          stationName: (stationId) => shipFleet.stationName(stationId),
+          inDepot: () => ship.state === 'depot',
+          fleet: {
+            setTimetable: (index, patch) => shipFleet.setTimetable(ship, index, patch),
+            setAutofill: (on) => shipFleet.setAutofill(ship, on),
+            clear: () => shipFleet.clearTimetable(ship),
+          },
+          exists: () => shipFleet.ships.includes(ship),
+          noun: 'Plavidlo',
+        }),
+      ),
+    timesText: (index) => timesNote(ship, index),
   };
 }
 
@@ -116,6 +134,7 @@ function shipDetails(game: Game, ship: Ship, links: ShipLinks): HTMLElement {
     row('Model', `${model.name} (${model.year})`),
     row('Náklad', formatShipLoad(ship), 'num'),
     row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
+    row('Plavební řád', latenessText(ship), (ship.lateness ?? 0) > 0 ? 'num warning' : 'num'),
     row(
       'Stáří',
       `${formatYears(shipAge(ship, today))} z ${SHIP_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
@@ -209,7 +228,7 @@ export function openShip(windows: WindowManager, game: Game, ship: Ship, links: 
       {
         icon: '☰',
         title: 'Plavební řád',
-        onClick: () => openOrders(windows, shipOrders(game, ship, links)),
+        onClick: () => openOrders(windows, shipOrders(game, ship, links, windows)),
         active: windows.isOpen(ordersId),
       },
       {

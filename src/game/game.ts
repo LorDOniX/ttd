@@ -174,6 +174,67 @@ export class Game {
     return this.shipFleet.ships;
   }
 
+  // Hromadné akce skupiny jako v OpenTTD: všechna vozidla do depa; vrací počet poslaných
+  sendAllToDepot(kind: GroupKind, vehicles: readonly Groupable[]): number {
+    let count = 0;
+    for (const v of vehicles) {
+      if (kind === 'train') {
+        const train = this.fleet.trains.find((t) => t === v);
+        if (!train || train.state === 'depot' || train.target === -1) continue;
+        this.fleet.sendToDepot(train);
+      } else if (kind === 'road') {
+        const vehicle = this.roadFleet.vehicles.find((r) => r === v);
+        if (!vehicle || vehicle.state === 'depot' || (vehicle.target === -1 && vehicle.servicing === undefined))
+          continue;
+        this.roadFleet.sendToDepot(vehicle);
+      } else if (kind === 'air') {
+        const plane = this.airFleet.aircraft.find((p) => p === v);
+        if (!plane || plane.state === 'hangar' || plane.toHangar) continue;
+        this.airFleet.sendToHangar(plane);
+      } else {
+        const ship = this.shipFleet.ships.find((s) => s === v);
+        if (!ship || ship.state === 'depot' || ship.toDepot) continue;
+        this.shipFleet.sendToDepot(ship);
+      }
+      count++;
+    }
+    return count;
+  }
+
+  // Vypraví z depa všechna vozidla, která mají jízdní řád; vrací počet vypravených a první chybu
+  startAll(kind: GroupKind, vehicles: readonly Groupable[]): { count: number; error: string | null } {
+    let count = 0;
+    let error: string | null = null;
+    const attempt = (result: string | null): void => {
+      if (result) error ??= result;
+      else count++;
+    };
+    for (const v of vehicles) {
+      if (kind === 'train') {
+        const train = this.fleet.trains.find((t) => t === v);
+        if (train?.state === 'depot' && train.orders && train.orders.length >= 2) {
+          attempt(this.fleet.start(train, train.orders, train.orderFlags));
+        }
+      } else if (kind === 'road') {
+        const vehicle = this.roadFleet.vehicles.find((r) => r === v);
+        if (vehicle?.state === 'depot' && vehicle.orders && vehicle.orders.length >= 2) {
+          attempt(this.roadFleet.start(vehicle, vehicle.orders));
+        }
+      } else if (kind === 'air') {
+        const plane = this.airFleet.aircraft.find((p) => p === v);
+        if (plane?.state === 'hangar' && plane.orders && plane.orders.length >= 2) {
+          attempt(this.airFleet.start(plane, plane.orders));
+        }
+      } else {
+        const ship = this.shipFleet.ships.find((s) => s === v);
+        if (ship?.state === 'depot' && ship.orders && ship.orders.length >= 2) {
+          attempt(this.shipFleet.start(ship, ship.orders));
+        }
+      }
+    }
+    return { count, error };
+  }
+
   get lastYear(): YearRecord | null {
     return this.history.at(-1) ?? null;
   }

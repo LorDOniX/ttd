@@ -16,6 +16,14 @@ import {
 } from './balance';
 import { CARGOS, isFreight, type Cargo } from './cargo';
 import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
+import {
+  arrived,
+  clearVehicleTimetable,
+  departed,
+  remapTimetable,
+  setTimetableEntry,
+  type Timetabled,
+} from './vehicleTimetable';
 import { formatMoney, type Game } from './game';
 import {
   approachPoint,
@@ -57,7 +65,7 @@ const BROKEN_FLIGHT_SPEED_SHARE = 0.5;
 // takeoff – vzlétá; flying – letí k letišti airportId; holding – krouží nad ním; landing – přistává; loading – na stání
 export type AircraftState = 'hangar' | 'taxi' | 'waiting' | 'takeoff' | 'flying' | 'holding' | 'landing' | 'loading';
 
-export interface Aircraft extends Maintained {
+export interface Aircraft extends Maintained, Timetabled {
   id: number;
   name: string;
   modelId: string;
@@ -253,6 +261,22 @@ export class AirFleet {
     return null;
   }
 
+  // Časy jízdního řádu (jako u vlaků)
+  setTimetable(plane: Aircraft, index: number, patch: { travel?: number | null; wait?: number | null }): void {
+    setTimetableEntry(plane, index, patch);
+    this.changed();
+  }
+
+  clearTimetable(plane: Aircraft): void {
+    clearVehicleTimetable(plane);
+    this.changed();
+  }
+
+  setAutofill(plane: Aircraft, on: boolean): void {
+    plane.autofill = on || undefined;
+    this.changed();
+  }
+
   setServiceInterval(plane: Aircraft, days: number): void {
     plane.serviceInterval = clampServiceInterval(days);
     this.changed();
@@ -291,6 +315,7 @@ export class AirFleet {
     plane.target = Math.max(0, home);
     plane.toHangar = false;
     plane.airportId = airport.id;
+    departed(plane, this.game.clock.now);
     if (stand >= 0) {
       plane.stand = stand;
       this.taxi(plane, this.taxiVia(airport, this.point(plane), standPoint(airport, airport.airport!, stand)), 'stand');
@@ -312,6 +337,7 @@ export class AirFleet {
     const error = this.ordersError(plane, orders);
     if (error) return error;
     const current = plane.orders?.[plane.target];
+    remapTimetable(plane, plane.orders ?? [], orders);
     plane.orders = [...orders];
     plane.fullLoad = plane.fullLoad.filter((id) => orders.includes(id));
     const kept = current === undefined ? -1 : orders.indexOf(current);
@@ -581,6 +607,9 @@ export class AirFleet {
     if (airport) plane.waitDays += this.exchange(plane, airport) / LOADING_PER_DAY;
     // Cíl splněn: další v řádu je následující letiště
     if (plane.orders && plane.orders[plane.target] === plane.airportId) {
+      // Letový řád s časy: stání aspoň podle plánu; kdo přiletěl dřív, počká
+      const plan = arrived(plane, plane.target, this.game.clock.now);
+      plane.waitDays = Math.max(plane.waitDays, plan.wait) + plan.early;
       plane.target = (plane.target + 1) % plane.orders.length;
     }
     this.changed();
@@ -625,6 +654,7 @@ export class AirFleet {
     } else {
       this.taxi(plane, taxiToRunway(airport, airport.airport!, stand >= 0 ? stand : null), 'runway');
     }
+    if (valid && !plane.toHangar) departed(plane, this.game.clock.now);
     this.changed();
   }
 

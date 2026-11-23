@@ -29,6 +29,7 @@ import type { GameDate } from './clock';
 import type { Job } from './construction';
 import { roadVehicleModel, roadVehicleReliability, type RoadVehicle } from './roadVehicles';
 import { refitOptions, type RefitVehicle } from './vehicleRefit';
+import { restoreTimetable } from './vehicleTimetable';
 import { isBreakdownSetting, restoreMaintenance } from './reliability';
 import { setConsist, wagonCargos } from './consist';
 import { cleanFlags, type OrderFlags, type Train } from './trains';
@@ -537,6 +538,8 @@ export function restoreGame(data: SaveData): Game {
         servicing: Number.isInteger(v.servicing) && v.servicing! >= 0 ? v.servicing : undefined,
         // Přestavba (starší uložení ji nemají); nepovolený náklad se zahodí
         cargo: refitted('road', roadVehicleModel(v).cargo, v.cargo),
+        // Časy jízdního řádu (starší uložení je nemají)
+        timetable: restoreTimetable(v.timetable, Array.isArray(v.orders) ? v.orders.length : 0),
       })),
   );
   game.roadFleet.nextId = Number.isInteger(roadFleet.nextId) ? roadFleet.nextId : 1;
@@ -558,6 +561,7 @@ export function restoreGame(data: SaveData): Game {
         ...restoreMaintenance(p, aircraftReliability(p), data.clock.day),
         servicing: p.servicing === true || undefined,
         cargo: refitted('air', aircraftModel(p).cargo, p.cargo),
+        timetable: restoreTimetable(p.timetable, Array.isArray(p.orders) ? p.orders.length : 0),
       })),
   );
   game.airFleet.nextId = Number.isInteger(airFleet.nextId) ? airFleet.nextId : 1;
@@ -579,6 +583,7 @@ export function restoreGame(data: SaveData): Game {
         ...restoreMaintenance(s, shipReliability(s), data.clock.day),
         servicing: s.servicing === true || undefined,
         cargo: refitted('ship', shipModel(s).cargo, s.cargo),
+        timetable: restoreTimetable(s.timetable, Array.isArray(s.orders) ? s.orders.length : 0),
       })),
   );
   game.shipFleet.nextId = Number.isInteger(shipFleet.nextId) ? shipFleet.nextId : 1;
