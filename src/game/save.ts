@@ -61,6 +61,8 @@ export interface SaveData {
   industryDensity?: number;
   rail: {
     pieces: string;
+    // Trolejové vedení po dlaždicích; starší uložení ho nemají
+    electrified?: string;
     stations: Station[];
     depots: Depot[];
     nextStationId: number;
@@ -154,6 +156,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
     industryDensity: world.industryDensity ?? 1,
     rail: {
       pieces: encode(rail.pieces),
+      electrified: encode(rail.electrified),
       stations: rail.stations,
       depots: rail.depots,
       nextStationId: rail.nextStationId,
@@ -424,6 +427,14 @@ export function restoreGame(data: SaveData): Game {
   game.history = data.game.history.map(year);
   game.rng.state = data.game.rngState;
   game.subsidies.restore(data.subsidies);
+  // Trolejové vedení jen na dlaždicích s kolejí; starší uložení ho nemají – jezdí-li v nich elektrické
+  // vlaky (dřív jezdily kudykoli), dostane vedení celá železnice, aby nezůstaly stát
+  if (typeof data.rail.electrified === 'string') {
+    const wires = decode(data.rail.electrified, width * height);
+    for (let i = 0; i < wires.length; i++) if (wires[i] && rail.pieces[i]) rail.electrified[i] = 1;
+  } else if (data.fleet.trains.some((t) => TRAIN_MODELS.find((m) => m.id === t.modelId)?.electric)) {
+    for (let i = 0; i < rail.pieces.length; i++) if (rail.pieces[i]) rail.electrified[i] = 1;
+  }
   game.clock.date = data.clock.date;
   game.clock.day = data.clock.day;
   game.clock.dayProgress = data.clock.dayProgress;

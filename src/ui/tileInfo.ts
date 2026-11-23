@@ -92,11 +92,15 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
           ['Projíždějí', users.map((t) => t.name).join(', ') || 'žádné vlaky'],
         );
       }
+      rows.push(['Trolejové vedení', rail.isElectrified(x, y) ? 'ano (elektrizovaná trať)' : 'ne']);
       const owner = game.fleet.reservations.ownerAt(x, y);
       const holder = game.fleet.trains.find((t) => t.id === owner);
       if (holder) rows.push(['Rezervuje', holder.name]);
     }
 
+    if ((type === TileType.Station || type === TileType.Depot) && rail.isElectrified(x, y)) {
+      rows.push(['Trolejové vedení', 'ano (elektrizovaná trať)']);
+    }
     const station = rail.stationAt(x, y);
     if (station) {
       rows.push(...stationRows(game, station));

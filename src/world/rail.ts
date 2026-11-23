@@ -244,8 +244,37 @@ export class RailNetwork {
   readonly waypoints: Waypoint[] = [];
   nextWaypointId = 0;
 
+  // Elektrizovaná trať (trolejové vedení) jako druh koleje v OpenTTD: 1 = celá dlaždice s kolejí, nástupištěm
+  // nebo depem je pod vedením; elektrické lokomotivy jezdí jen tudy
+  readonly electrified: Uint8Array;
+
   constructor(readonly map: GameMap) {
     this.pieces = new Uint8Array(map.width * map.height);
+    this.electrified = new Uint8Array(map.width * map.height);
+  }
+
+  isElectrified(x: number, y: number): boolean {
+    return this.map.inBounds(x, y) && this.electrified[y * this.map.width + x] === 1;
+  }
+
+  setElectrified(x: number, y: number, on: boolean): void {
+    const i = y * this.map.width + x;
+    if ((this.electrified[i] === 1) === on) return;
+    this.electrified[i] = on ? 1 : 0;
+    this.revision++;
+  }
+
+  // Dlaždice s kolejí, kterou jde elektrizovat (trať, přejezd, nájezd mostu, nástupiště, depo)
+  hasTrack(x: number, y: number): boolean {
+    return this.map.inBounds(x, y) && this.pieces[y * this.map.width + x] !== 0;
+  }
+
+  // Projede tu elektrická lokomotiva? Pole mostu má vedení podle nájezdu
+  electricPassable(x: number, y: number): boolean {
+    if (this.isElectrified(x, y)) return true;
+    if (!this.map.isBridged(x, y) || this.hasTrack(x, y)) return false;
+    const bridge = this.bridges.find((b) => bridgeSpanTiles(b).some((t) => t.x === x && t.y === y));
+    return bridge !== undefined && this.isElectrified(bridge.x, bridge.y);
   }
 
   mask(x: number, y: number): number {
@@ -311,6 +340,7 @@ export class RailNetwork {
     this.revision++;
     this.signals.delete(y * this.map.width + x);
     this.signalDirs.delete(y * this.map.width + x);
+    this.electrified[y * this.map.width + x] = 0;
     const waypoint = this.waypointAt(x, y);
     if (waypoint) this.waypoints.splice(this.waypoints.indexOf(waypoint), 1);
     const type = this.map.get(x, y);
@@ -419,6 +449,7 @@ export class RailNetwork {
       // Ze zastávky aut zůstane silnice i s vlastníkem
       this.map.set(t.x, t.y, station.kind === 'road' ? TileType.Road : TileType.Grass);
       this.pieces[t.y * this.map.width + t.x] = 0;
+      this.electrified[t.y * this.map.width + t.x] = 0;
       this.revision++;
     }
     this.stations.splice(this.stations.indexOf(station), 1);
@@ -538,6 +569,7 @@ export class RailNetwork {
   }
 
   removeDepot(depot: Depot): void {
+    this.electrified[depot.y * this.map.width + depot.x] = 0;
     this.map.set(depot.x, depot.y, TileType.Grass);
     this.pieces[depot.y * this.map.width + depot.x] = 0;
     this.revision++;

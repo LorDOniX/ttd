@@ -80,9 +80,10 @@ export function openDepot(
     if (error) game.news(error);
   };
   const pendingOrders = new Map<number, [number, number]>();
+  // Nejnovější lokomotiva, kterou jde v depu koupit (elektrická jen v elektrizovaném)
   const newest = (): TrainModel => {
-    const models = fleet.available();
-    return models[models.length - 1];
+    const models = fleet.available().filter((m) => fleet.fitsDepot(m, depot));
+    return models[models.length - 1] ?? fleet.available()[0];
   };
   // Sestava nového vlaku přežije obnovy okna
   const config = { modelId: newest().id, cargo: 'passengers' as Cargo, wagons: Math.min(3, MAX_WAGONS) };
@@ -278,7 +279,7 @@ export function openDepot(
   // Sestavení nového vlaku: lokomotiva, náklad, počet vagonů, náhled a souhrn
   const renderShop = (): HTMLElement => {
     const models = fleet.available();
-    const model = models.find((m) => m.id === config.modelId) ?? newest();
+    const model = models.find((m) => m.id === config.modelId && fleet.fitsDepot(m, depot)) ?? newest();
     config.modelId = model.id;
     const upcoming = TRAIN_MODELS.find((m) => m.year > game.clock.date.year);
     const set = (change: () => void): void => {
@@ -289,6 +290,8 @@ export function openDepot(
 
     const list = h('div', { className: 'depot-models' });
     for (const m of [...models].reverse()) {
+      // Elektrická lokomotiva jen v depu s trolejovým vedením (jako druhy kolejí v OpenTTD)
+      const fits = fleet.fitsDepot(m, depot);
       list.append(
         button(
           [
@@ -296,12 +299,21 @@ export function openDepot(
             h(
               'span',
               { className: 'depot-models__text' },
-              h('strong', {}, m.name),
-              h('small', {}, `${speedKmh(m.speed)} km/h · ${formatMoney(m.price)} · od ${m.year}`),
+              h('strong', {}, `${m.electric ? '⚡ ' : ''}${m.name}`),
+              h(
+                'small',
+                {},
+                fits
+                  ? `${speedKmh(m.speed)} km/h · ${formatMoney(m.price)} · od ${m.year}`
+                  : 'jen v elektrizovaném depu (nástroj Elektrizace)',
+              ),
             ),
           ],
           () => set(() => (config.modelId = m.id)),
-          { className: `depot-models__row${m.id === model.id ? ' depot-models__row--active' : ''}` },
+          {
+            className: `depot-models__row${m.id === model.id ? ' depot-models__row--active' : ''}${fits ? '' : ' depot-models__row--soon'}`,
+            disabled: !fits,
+          },
         ),
       );
     }
@@ -362,6 +374,7 @@ export function openDepot(
       'dl',
       { className: 'depot-stats' },
       ...stat('Rychlost', `${speedKmh(model.speed)} km/h`),
+      ...stat('Trať', model.electric ? '⚡ jen elektrizovaná' : 'jakákoli'),
       ...stat('Kapacita', config.wagons > 0 ? capacityText(config.cargo, config.wagons) : 'jen lokomotiva'),
       ...stat('Délka', `${formatTiles(length)} (nástupiště aspoň ${Math.ceil(length)})`),
       ...stat('Provoz', `${formatMoney(running)} / rok`),

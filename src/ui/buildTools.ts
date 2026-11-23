@@ -14,6 +14,7 @@ import {
   SIGNAL_COST,
   STATION_LENGTH,
   STATION_SPREAD,
+  ELECTRIFY_TILE_COST,
   TRACK_PIECE_COST,
   WAYPOINT_COST,
   type AirportType,
@@ -70,6 +71,7 @@ export type BuildTool =
   | 'depot'
   | 'signal'
   | 'waypoint'
+  | 'electrify'
   | 'road'
   | 'road-stop'
   | 'road-depot'
@@ -160,6 +162,8 @@ export class BuildTools {
   private signalDensity = 4;
   private showCoverage = true;
   private removeMode = false;
+  // Druh koleje ke stavbě jako v OpenTTD: běžná, nebo elektrizovaná (koleje, nástupiště a depa s trolejemi)
+  private electricRail = false;
   private estimateMode = false;
   // Tlačítka okna voleb a jejich stav (obnovuje se při každé změně)
   private optionButtons: { el: HTMLButtonElement; active: () => boolean; disabled?: () => boolean }[] = [];
@@ -289,6 +293,7 @@ export class BuildTools {
         ['bridge', '🌉', 'Most', 'J', `${formatMoneyShort(BRIDGE_PIECE_COST)} / pole`],
         ['signal', '🚦', 'Návěstidla', 'B', `${formatMoneyShort(SIGNAL_COST)} / kus`],
         ['waypoint', '🚩', 'Průjezdný bod', 'C', formatMoneyShort(WAYPOINT_COST)],
+        ['electrify', '⚡', 'Elektrizace', '—', `${formatMoneyShort(ELECTRIFY_TILE_COST)} / pole`],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Koleje (autorail jako v OpenTTD): kliknutím položíte dílek pod kurzorem (u rohu dlaždice zatáčku), ' +
@@ -297,8 +302,29 @@ export class BuildTools {
         'Most: táhněte od nájezdu k nájezdu přes koleje, silnice, vodu i trávu, provoz pod ním zůstane. ' +
         'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. Průjezdný bod na rovné koleji ' +
         'lze dát do jízdního řádu: vlak jím projede bez zastavení (vybere tak trasu); kliknutím na bod ho odstraníte. ' +
-        'R – otočit, Esc – zrušit nástroj.',
+        'Elektrizace natáhne trolejové vedení tažením přes koleje (s Ctrl/Cmd ho sundá); elektrické ' +
+        'lokomotivy jezdí jen pod vedením a kupují se v elektrizovaném depu. R – otočit, Esc – zrušit nástroj.',
+      this.railTypeToggle(),
     );
+  }
+
+  // Přepínač druhu koleje: s ním se koleje, nástupiště i depa staví rovnou s trolejovým vedením
+  private railTypeToggle(): HTMLElement {
+    const button = h('button', { className: 'small-button' });
+    const sync = (): void => {
+      button.textContent = this.electricRail ? '⚡ Elektrizovaná trať' : '🛤️ Běžná trať';
+      button.title = this.electricRail
+        ? `Koleje, nástupiště a depa se staví s trolejovým vedením (+${formatMoneyShort(ELECTRIFY_TILE_COST)} za pole)`
+        : 'Koleje, nástupiště a depa se staví bez trolejí';
+      button.classList.toggle('small-button--active', this.electricRail);
+    };
+    button.addEventListener('click', () => {
+      this.electricRail = !this.electricRail;
+      sync();
+      this.refresh();
+    });
+    sync();
+    return h('div', { className: 'train__actions' }, 'Druh koleje:', button);
   }
 
   openRoadWindow(): void {
@@ -399,6 +425,7 @@ export class BuildTools {
     title: string,
     tools: [SceneIcon, string, string, string, string][],
     hint: string,
+    extra?: HTMLElement,
   ): void {
     const buttons = new Map<BuildTool, HTMLButtonElement>();
     const row = h('div', { className: 'build-tools' });
@@ -427,7 +454,7 @@ export class BuildTools {
       ),
       h('div', { className: 'form__hint' }, hint),
     );
-    this.windows.open(id, title, h('div', { className: 'form' }, row, text), {
+    this.windows.open(id, title, h('div', { className: 'form' }, row, ...(extra ? [extra] : []), text), {
       onClose: () => {
         this.buttons.delete(id);
         if (this.tool && buttons.has(this.tool)) this.setTool(null);
@@ -708,11 +735,16 @@ export class BuildTools {
     }
     if (this.tool === 'station' && !this.stationDrag) {
       const shape = this.stationShape();
-      if (shape) this.placeStation(stationTiles(shape), (join) => this.game.construction.buildStation(shape, join));
+      if (shape) {
+        this.placeStation(stationTiles(shape), (join) =>
+          this.game.construction.buildStation(shape, join, this.electricRail),
+        );
+      }
     } else if (
       this.tool === 'track' ||
       this.tool === 'road' ||
       this.tool === 'demolish' ||
+      this.tool === 'electrify' ||
       this.tool === 'station' ||
       this.tool === 'signal' ||
       this.tool === 'bridge'
@@ -740,7 +772,7 @@ export class BuildTools {
       const site = industrySite(tile);
       this.report(this.game.industryLife.fund(this.industryKind, site.x, site.y, this.industryRotation));
     } else {
-      this.report(this.game.construction.buildDepot(tile.x, tile.y, this.depotEntrance(tile)));
+      this.report(this.game.construction.buildDepot(tile.x, tile.y, this.depotEntrance(tile), this.electricRail));
     }
     this.refresh();
   }
@@ -777,7 +809,8 @@ export class BuildTools {
     const { construction } = this.game;
     if (this.tool === 'track' && this.path && !this.estimateMode) {
       if (this.removeMode) this.report(construction.removeTrack(this.path.steps));
-      else if (this.path.steps.some((s) => s.isNew)) construction.buildTrack(this.path.steps);
+      else if (this.path.steps.some((s) => s.isNew) || this.unwired(this.path.steps).length > 0)
+        construction.buildTrack(this.path.steps, this.electricRail);
       else if (this.path.blocked.length > 0) this.report('Sem kolej položit nelze.');
     }
     if (this.tool === 'road' && this.roadPath) construction.buildRoad(this.roadPath);
@@ -789,9 +822,12 @@ export class BuildTools {
       }
     }
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
+    if (this.tool === 'electrify') this.report(construction.electrify(this.demolishArea(), this.removeMode));
     if (this.tool === 'station') {
       const shape = this.stationShape();
-      if (shape) this.placeStation(stationTiles(shape), (join) => construction.buildStation(shape, join));
+      if (shape) {
+        this.placeStation(stationTiles(shape), (join) => construction.buildStation(shape, join, this.electricRail));
+      }
     }
     this.dragStart = null;
     this.path = null;
@@ -1099,14 +1135,30 @@ export class BuildTools {
       return `${prefix}Odebrat ${n} ${plural(n, 'dílek', 'dílky', 'dílků')} · vrátí ${formatMoneyShort(refund)}`;
     }
     const fresh = plan.steps.filter((s) => s.isNew);
-    const cost = fresh.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y), 0);
+    const wires = this.unwired(plan.steps).length;
+    const cost = fresh.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y), 0) + wires * ELECTRIFY_TILE_COST;
     const bridges = fresh.filter((s) => map.get(s.x, s.y) === TileType.Water).length;
     this.preview.showTrack(plan.steps, cost <= this.game.money, plan.blocked);
     const blocked = plan.blocked.length > 0 ? ' · dál překážka' : '';
+    if (fresh.length === 0 && wires > 0)
+      return `${prefix}Trolejové vedení na ${wires} polích · ${formatMoneyShort(cost)}`;
     if (fresh.length === 0)
       return plan.steps.length > 0 ? `Kolej už je postavená${blocked}` : 'Sem kolej položit nelze';
     const n = fresh.length;
     return `${prefix}${n} ${plural(n, 'dílek', 'dílky', 'dílků')}${bridges > 0 ? ` (most ${bridges})` : ''} · ${formatMoneyShort(cost)}${blocked}`;
+  }
+
+  // Dlaždice plánu, které při stavbě elektrizované trati dostanou trolejové vedení
+  private unwired(steps: readonly TilePos[]): TilePos[] {
+    if (!this.electricRail) return [];
+    const { rail } = this.game.world;
+    const seen = new Set<string>();
+    return steps.filter((s) => {
+      const key = `${s.x},${s.y}`;
+      if (seen.has(key) || rail.isElectrified(s.x, s.y)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   // Náhled návěstidel; vrací text pro popisek u kurzoru
@@ -1277,6 +1329,22 @@ export class BuildTools {
       text =
         problem ??
         `${INDUSTRY_TYPES[this.industryKind].name} · ${formatMoneyShort(cost)}${affordable ? '' : ' · nedostatek peněz'}`;
+    } else if (this.tool === 'electrify' && tile) {
+      const area = this.demolishArea();
+      const { count, cost } = this.game.construction.electrifyCost(area, this.removeMode);
+      const tracks = area.filter((t) => rail.hasTrack(t.x, t.y));
+      this.preview.showArea(
+        tracks.length > 0 ? tracks : area,
+        count > 0 ? (this.removeMode ? 'demolish' : 'valid') : 'invalid',
+      );
+      text =
+        count === 0
+          ? this.removeMode
+            ? 'Tady trolejové vedení není'
+            : 'Tady není kolej bez trolejí'
+          : this.removeMode
+            ? `Sundat vedení z ${count} polí · vrátí ${formatMoneyShort(-cost)}`
+            : `Trolejové vedení na ${count} polích · ${formatMoneyShort(cost)}`;
     } else if (this.tool === 'demolish' && tile) {
       const plan = this.game.construction.demolishPlan(this.demolishArea());
       this.preview.showArea(plan.tiles, 'demolish');

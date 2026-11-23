@@ -380,6 +380,7 @@ export class Fleet {
   }
 
   buy(depot: Depot, model: TrainModel): string | null {
+    if (!this.fitsDepot(model, depot)) return `${model.name} potřebuje elektrizované depo (trolejové vedení).`;
     if (this.game.money < model.price) return `Nedostatek peněz (${formatMoney(model.price)}).`;
     this.game.spend(model.price, 'vehicles');
     const id = this.nextId++;
@@ -454,7 +455,7 @@ export class Fleet {
   // Klon jako v OpenTTD: stejná lokomotiva (nebo nejnovější, když stará už není), vagony, náklad i jízdní řád;
   // se sdílením (Ctrl) se klon připojí k lince původního vlaku
   clone(train: Train, depot: Depot, share = false): Train | string {
-    const models = this.available();
+    const models = this.available().filter((m) => this.fitsDepot(m, depot));
     const model = models.find((m) => m.id === train.modelId) ?? models[models.length - 1];
     const copy = this.buyTrain(depot, model, train.cargo, train.wagons);
     if (typeof copy === 'string') return copy;
@@ -486,9 +487,17 @@ export class Fleet {
   }
 
   // Nejnovější dostupný model a doplatek za něj po započtení staré lokomotivy
+  // Lze lokomotivu koupit v tomto depu? Elektrická jen v elektrizovaném
+  fitsDepot(model: TrainModel, depot: Depot): boolean {
+    return !model.electric || this.game.world.rail.isElectrified(depot.x, depot.y);
+  }
+
   renewalOffer(train: Train): { model: TrainModel; cost: number } {
-    const models = this.available();
-    const model = models[models.length - 1];
+    // Nejnovější lokomotiva stejného druhu koleje (jako autoreplace v OpenTTD): parní a motorová
+    // za neelektrickou, elektrická za elektrickou
+    const electric = trainModel(train).electric === true;
+    const models = this.available().filter((m) => (m.electric === true) === electric);
+    const model = models[models.length - 1] ?? trainModel(train);
     const tradeIn = trainModel(train).price * sellFactor(trainAge(train, this.game.clock.day));
     return { model, cost: Math.round(model.price - tradeIn) };
   }
@@ -880,7 +889,7 @@ export class Fleet {
     let best: { depot: Depot; length: number } | null = null;
     for (const depot of candidates) {
       for (const start of starts) {
-        const route = this.findGoal(start, depot);
+        const route = this.findGoal(start, depot, undefined, train);
         const length = route ? pathLength(route) : Infinity;
         if (length <= SERVICE_MAX_ROUTE && (!best || length < best.length)) best = { depot, length };
       }
@@ -909,6 +918,22 @@ export class Fleet {
 
   stationName(id: number): string {
     return this.station(id)?.name ?? '?';
+  }
+
+  // Důvod, proč z dlaždic nejde sundat trolejové vedení (stojí na nich elektrický vlak), nebo null
+  electricBlocker(tiles: readonly { x: number; y: number }[]): string | null {
+    const keys = new Set(tiles.map((t) => `${t.x},${t.y}`));
+    for (const train of this.trains) {
+      if (!trainModel(train).electric) continue;
+      if (train.state === 'depot') {
+        const depot = this.depot(train);
+        if (depot && keys.has(`${depot.x},${depot.y}`)) return `V depu stojí elektrický vlak ${train.name}.`;
+        continue;
+      }
+      if (this.body(train).some((s) => keys.has(`${s.x},${s.y}`)))
+        return `Pod vedením stojí elektrický vlak ${train.name}.`;
+    }
+    return null;
   }
 
   // Důvod, proč dlaždici nejde zbourat, nebo null
@@ -1012,7 +1037,7 @@ export class Fleet {
     if (!goal || reach <= 0 || reach >= train.path.length) return false;
     const blocked = this.reservations.blockerOf(train);
     if (blocked === undefined) return false;
-    const route = this.findGoal(segmentStart(train.path[reach - 1]), goal, this.avoidFor(train, goal));
+    const route = this.findGoal(segmentStart(train.path[reach - 1]), goal, this.avoidFor(train, goal), train);
     if (!route) return false;
     const current = pathLength(train.path.slice(reach));
     if (pathLength(route) > current * DETOUR_MAX_RATIO + DETOUR_MAX_EXTRA) return false;
@@ -1259,7 +1284,15 @@ export class Fleet {
           : 'waypoint' in goal
             ? ` přes průjezdný bod ${goal.name}`
             : ` do stanice ${goal.name}`;
-      this.game.news(`${train.name} nemůže najít cestu${where}.`, this.position(train));
+      // Elektrická lokomotiva: koleje k cíli vedou (stejná kolejová síť), jen někde chybí trolejové vedení
+      const body = this.body(train);
+      const head = body[body.length - 1];
+      const network = head ? this.networkAt(head.x, head.y) : -1;
+      const wires =
+        goal && trainModel(train).electric && network >= 0 && network === this.networkAt(goal.x, goal.y)
+          ? ' – trať nemá všude trolejové vedení (nástroj Elektrizace)'
+          : '';
+      this.game.news(`${train.name} nemůže najít cestu${where}${wires}.`, this.position(train));
     }
     train.state = 'lost';
     train.speed = 0;
@@ -1293,7 +1326,7 @@ export class Fleet {
   // Přednostně trasa mimo koleje jiných vlaků (např. volná kolej nástupiště), jinak nejkratší a vlak počká
   private routeTo(start: RouteStart, goal: Goal, train?: Train): Segment[] | null {
     const avoid = train ? this.avoidFor(train, goal) : undefined;
-    return (avoid && this.findGoal(start, goal, avoid)) || this.findGoal(start, goal);
+    return (avoid && this.findGoal(start, goal, avoid, train)) || this.findGoal(start, goal, undefined, train);
   }
 
   // Cizí rezervace; u cílového nástupiště celá kolej, na které už stojí jiný vlak –
@@ -1314,8 +1347,16 @@ export class Fleet {
     return (x, y) => blocked(x, y) || occupied.has(y * width + x);
   }
 
-  private findGoal(start: RouteStart, goal: Goal, avoid?: (x: number, y: number) => boolean): Segment[] | null {
+  // Trasa k cíli; elektrická lokomotiva jen po elektrizované trati (jako druhy kolejí v OpenTTD)
+  private findGoal(
+    start: RouteStart,
+    goal: Goal,
+    soft?: (x: number, y: number) => boolean,
+    train?: Train,
+  ): Segment[] | null {
     const { rail } = this.game.world;
+    const electric = train !== undefined && trainModel(train).electric === true;
+    const avoid = electric ? (x: number, y: number) => soft?.(x, y) || !rail.isElectrified(x, y) : soft;
     if (!isStation(goal)) {
       return findRoute(rail, start, (x, y) => x === goal.x && y === goal.y, goal, avoid);
     }
@@ -1368,7 +1409,11 @@ export class Fleet {
       const againstSignal = train.path.some(
         (s, i) => i > head && !s.span && !rail.allowsExit(s.x, s.y, s.piece, s.exit),
       );
-      if (!this.goal(train) || againstSignal || !train.path.every((s) => segmentStillExists(rail, s))) {
+      // Elektrický vlak musí přeplánovat, když mu na cestě zmizelo trolejové vedení
+      const lostWires =
+        trainModel(train).electric === true &&
+        train.path.some((s, i) => i > head && !s.span && !rail.isElectrified(s.x, s.y));
+      if (!this.goal(train) || againstSignal || lostWires || !train.path.every((s) => segmentStillExists(rail, s))) {
         this.replan(train);
       }
     }

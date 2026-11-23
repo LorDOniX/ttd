@@ -27,6 +27,7 @@ import { RoadVehiclesView } from './roadVehicles';
 import { RoadView } from './roads';
 import { SignalsView } from './signals';
 import { WaypointsView } from './waypoints';
+import { CatenaryView } from './catenary';
 import { TerrainView } from './terrain';
 import { updateWater } from './water';
 import { TrafficLightsView } from './trafficLights';
@@ -85,6 +86,7 @@ export class GameView {
   private readonly crossings: CrossingsView;
   private readonly signals: SignalsView;
   private readonly waypoints: WaypointsView;
+  private readonly catenary: CatenaryView;
   private readonly roads: RoadView;
   private readonly trafficLights: TrafficLights;
   private readonly hemisphere: THREE.HemisphereLight;
@@ -164,6 +166,8 @@ export class GameView {
     this.signals.rebuild();
     this.waypoints = new WaypointsView(world.rail);
     this.waypoints.rebuild();
+    this.catenary = new CatenaryView(world.rail);
+    this.catenary.rebuild();
     this.trains = new TrainsView(game.fleet, map, world.rail);
     this.vehicles = new RoadVehiclesView(game.roadFleet, map);
     this.aircraft = new AircraftView3D(game.airFleet);
@@ -191,6 +195,7 @@ export class GameView {
       railView.object,
       this.signals.object,
       this.waypoints.object,
+      this.catenary.object,
       this.trains.object,
       this.vehicles.object,
       this.aircraft.object,
@@ -253,6 +258,7 @@ export class GameView {
         this.portLamps = portLamps(world.rail.ports() as PortShape[]);
         this.signals.rebuild();
         this.waypoints.rebuild();
+        this.catenary.rebuild();
         rebuildStationLabels();
       }
     };

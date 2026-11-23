@@ -46,7 +46,12 @@ export interface TrainModel {
   runningCost: number;
   // Nejvyšší spolehlivost (po servisu), 0–1; novější modely jsou spolehlivější
   reliability: number;
+  // Elektrická lokomotiva: jezdí jen po elektrizované trati a kupuje se v elektrizovaném depu
+  electric?: boolean;
 }
+
+// Elektrizace koleje (trolejové vedení) za dlaždici s kolejí; při stavbě elektrizované koleje se přičte
+export const ELECTRIFY_TILE_COST = 3_000;
 
 // Převod rychlosti na km/h pro zobrazení: 0,0469 dlaždice/den na km/h jako u silničních vozidel
 export const TILES_PER_DAY_PER_KMH = 0.0469;
@@ -110,6 +115,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     speed: 6.2,
     runningCost: 73_000,
     reliability: 0.89,
+    electric: true,
   },
   {
     id: 'electric-double',
@@ -121,6 +127,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     speed: 7.5,
     runningCost: 92_000,
     reliability: 0.91,
+    electric: true,
   },
   {
     id: 'electric-city',
@@ -132,6 +139,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     speed: 9.0,
     runningCost: 114_000,
     reliability: 0.93,
+    electric: true,
   },
   {
     id: 'bullet',
@@ -143,6 +151,7 @@ export const TRAIN_MODELS: readonly TrainModel[] = [
     speed: 10.8,
     runningCost: 143_000,
     reliability: 0.95,
+    electric: true,
   },
 ];
 

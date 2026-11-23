@@ -15,7 +15,7 @@ import { GameView } from '../render/gameView';
 import { createLoadButton } from '../ui/dialogs';
 import { h, isDevHost } from '../ui/dom';
 import { generateWorld } from '../world/generator';
-import { Edge, defaultStationShape, type Station } from '../world/rail';
+import { Edge, defaultStationShape, stationTiles, type Station } from '../world/rail';
 import { findTrackPath } from '../world/railPath';
 import { hashSeed } from '../world/rng';
 import { TOWN_LAYOUTS, TOWN_LAYOUT_LABELS, growTown, type Town, type TownLayout } from '../world/town';
@@ -57,6 +57,10 @@ function buildDemoLine(game: Game, from: Town, to: Town, model: TrainModel): boo
   if (!a || !b || !path) return false;
   for (const step of path) rail.addPiece(step.x, step.y, step.piece);
   const depot = rail.addDepot(a.x - 2, a.y, Edge.E);
+  // Elektrická lokomotiva potřebuje trolejové vedení po celé lince
+  if (model.electric) {
+    for (const t of [...path, ...stationTiles(a), ...stationTiles(b), depot]) rail.setElectrified(t.x, t.y, true);
+  }
   game.fleet.buy(depot, model);
   const train = game.fleet.trains[game.fleet.trains.length - 1];
   for (let i = 0; i < 3; i++) game.fleet.addWagon(train);

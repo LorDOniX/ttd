@@ -6,6 +6,7 @@ import {
   DEMOLISH_TOWN_ROAD_COST,
   DEMOLISH_TREES_COST,
   DEPOT_COST,
+  ELECTRIFY_TILE_COST,
   PLATFORM_TILE_COST,
   PORT_COST,
   ROAD_BRIDGE_COST,
@@ -79,6 +80,7 @@ export function infrastructureValue(world: World): number {
     }
   }
   for (const station of rail.stations) value += stationCost(station);
+  for (const on of rail.electrified) value += on * ELECTRIFY_TILE_COST;
   for (const bridge of rail.bridges) value += bridgeCost(bridge.span);
   return (
     value +
@@ -89,7 +91,8 @@ export function infrastructureValue(world: World): number {
   );
 }
 
-export type Job = { kind: 'track'; step: PathStep } | { kind: 'road'; step: RoadStep };
+// U koleje electric = elektrizovaná trať (trolejové vedení)
+export type Job = { kind: 'track'; step: PathStep; electric?: boolean } | { kind: 'road'; step: RoadStep };
 
 export interface DemolishPlan {
   tiles: TilePos[];
@@ -120,8 +123,8 @@ export class Construction {
     this.elapsed = 0;
   }
 
-  buildTrack(steps: PathStep[]): void {
-    this.queue.push(...steps.map((step) => ({ kind: 'track' as const, step })));
+  buildTrack(steps: PathStep[], electric = false): void {
+    this.queue.push(...steps.map((step) => ({ kind: 'track' as const, step, ...(electric ? { electric } : {}) })));
   }
 
   buildRoad(steps: RoadStep[]): void {
@@ -190,9 +193,9 @@ export class Construction {
   }
 
   // Vrací chybovou hlášku, nebo null při úspěchu
-  buildStation(shape: StationShape, join?: number | null): string | null {
+  buildStation(shape: StationShape, join?: number | null, electric = false): string | null {
     const { rail } = this.game.world;
-    const cost = stationCost(shape);
+    const cost = stationCost(shape) + (electric ? stationTiles(shape).length * ELECTRIFY_TILE_COST : 0);
     if (!rail.canPlaceStation(shape)) return 'Sem nástupiště postavit nelze.';
     if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
     const target = this.joinTarget(stationTiles(shape), join);
@@ -200,6 +203,7 @@ export class Construction {
     const { name, townId } = this.partName(shape, target);
     this.game.spend(cost, 'construction');
     const part = rail.addStation({ ...shape, name, townId });
+    if (electric) for (const t of stationTiles(shape)) rail.setElectrified(t.x, t.y, true);
     this.finishPart(part, target, 'Postaveno nástupiště', 'Nástupiště připojeno', shape);
     return null;
   }
@@ -408,15 +412,20 @@ export class Construction {
     return owner ? `Na mostě je ${owner.name}.` : null;
   }
 
-  buildDepot(x: number, y: number, entrance: Edge): string | null {
+  buildDepot(x: number, y: number, entrance: Edge, electric = false): string | null {
     const { rail } = this.game.world;
     if (!rail.canPlaceDepot(x, y)) return 'Sem depo postavit nelze.';
-    const { cost, links } = this.depotCost(x, y, entrance);
+    const { links } = this.depotCost(x, y, entrance);
+    const cost = this.depotCost(x, y, entrance).cost + (electric ? (1 + links.length) * ELECTRIFY_TILE_COST : 0);
     if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
     this.game.spend(cost, 'construction');
     rail.addDepot(x, y, entrance);
+    if (electric) rail.setElectrified(x, y, true);
     // Depo se samo napojí na kolej před vjezdem
-    for (const link of links) rail.addPiece(link.x, link.y, link.piece);
+    for (const link of links) {
+      rail.addPiece(link.x, link.y, link.piece);
+      if (electric) rail.setElectrified(link.x, link.y, true);
+    }
     this.game.events.emit('railChanged');
     return null;
   }
@@ -663,13 +672,12 @@ export class Construction {
     while (this.elapsed >= interval && this.queue.length > 0) {
       const job = this.queue[0];
       // Hotové nebo mezitím zabrané místo (např. růstem města) se přeskočí
-      if (!(job.kind === 'track' ? this.trackPlaceable(job.step) : this.roadPlaceable(job.step))) {
+      if (!(job.kind === 'track' ? this.trackPlaceable(job.step, job.electric) : this.roadPlaceable(job.step))) {
         this.queue.shift();
         continue;
       }
       const { map } = this.game.world;
-      const cost =
-        job.kind === 'track' ? trackPieceCost(map, job.step.x, job.step.y) : roadPieceCost(map, job.step.x, job.step.y);
+      const cost = job.kind === 'track' ? this.trackJobCost(job) : roadPieceCost(map, job.step.x, job.step.y);
       if (this.game.money < cost) {
         this.queue = [];
         this.game.events.emit('outOfMoney');
@@ -679,7 +687,9 @@ export class Construction {
       this.elapsed -= interval;
       this.game.spend(cost, 'construction');
       if (job.kind === 'track') {
-        this.game.world.rail.addPiece(job.step.x, job.step.y, job.step.piece);
+        const { rail } = this.game.world;
+        if (!rail.has(job.step.x, job.step.y, job.step.piece)) rail.addPiece(job.step.x, job.step.y, job.step.piece);
+        if (job.electric) rail.setElectrified(job.step.x, job.step.y, true);
         railChanged = true;
       } else {
         this.placeRoad(job.step);
@@ -691,9 +701,45 @@ export class Construction {
     if (roadsChanged) this.game.events.emit('roadsChanged');
   }
 
-  private trackPlaceable(step: PathStep): boolean {
+  // Nový kus koleje, nebo u elektrizované stavby existující kolej bez trolejí (dostane vedení)
+  private trackPlaceable(step: PathStep, electric = false): boolean {
     const { rail } = this.game.world;
-    return !rail.has(step.x, step.y, step.piece) && rail.canPlace(step.x, step.y, step.piece);
+    if (rail.has(step.x, step.y, step.piece)) return electric && !rail.isElectrified(step.x, step.y);
+    return rail.canPlace(step.x, step.y, step.piece);
+  }
+
+  private trackJobCost(job: { step: PathStep; electric?: boolean }): number {
+    const { map, rail } = this.game.world;
+    const { x, y, piece } = job.step;
+    const track = rail.has(x, y, piece) ? 0 : trackPieceCost(map, x, y);
+    return track + (job.electric && !rail.isElectrified(x, y) ? ELECTRIFY_TILE_COST : 0);
+  }
+
+  // Elektrizace jako převod druhu koleje v OpenTTD: na dlaždicích s kolejí natáhne trolejové vedení,
+  // s remove ho odstraní (vrátí polovinu ceny). Vrací chybu, nebo null.
+  electrify(tiles: readonly TilePos[], remove = false): string | null {
+    const { rail } = this.game.world;
+    const targets = tiles.filter((t) => rail.hasTrack(t.x, t.y) && rail.isElectrified(t.x, t.y) === remove);
+    if (targets.length === 0) return remove ? 'Tady trolejové vedení není.' : 'Tady není kolej bez trolejí.';
+    if (remove) {
+      const blocker = this.game.fleet.electricBlocker(targets);
+      if (blocker) return blocker;
+      for (const t of targets) rail.setElectrified(t.x, t.y, false);
+      this.game.refund(targets.length * ELECTRIFY_TILE_COST * DEMOLISH_REFUND, 'construction');
+    } else {
+      const cost = targets.length * ELECTRIFY_TILE_COST;
+      if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+      this.game.spend(cost, 'construction');
+      for (const t of targets) rail.setElectrified(t.x, t.y, true);
+    }
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
+  electrifyCost(tiles: readonly TilePos[], remove = false): { count: number; cost: number } {
+    const { rail } = this.game.world;
+    const count = tiles.filter((t) => rail.hasTrack(t.x, t.y) && rail.isElectrified(t.x, t.y) === remove).length;
+    return { count, cost: count * ELECTRIFY_TILE_COST * (remove ? -DEMOLISH_REFUND : 1) };
   }
 
   private roadPlaceable(step: RoadStep): boolean {
