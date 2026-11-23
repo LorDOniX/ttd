@@ -14,6 +14,7 @@ import { openDepot } from '../ui/depot';
 import { openNewsLog, openSaveLoad, openSettings, openTown } from '../ui/dialogs';
 import { h, isDevHost } from '../ui/dom';
 import { openFinance } from '../ui/finance';
+import { openSubsidies } from '../ui/subsidies';
 import { FirstPersonMode, createPegmanDock } from '../ui/firstPerson';
 import { Hud, type ToolbarActions } from '../ui/hud';
 import { openMinimap } from '../ui/minimap';
@@ -187,6 +188,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
         { mode: scene.season(), setMode: (mode) => scene.setSeason(mode) },
       ),
     openFinance: () => openFinance(windows, game),
+    openSubsidies: () => openSubsidies(windows, game, focus),
     openRailBuild: () => buildTools.openRailWindow(),
     openRoadBuild: () => buildTools.openRoadWindow(),
     openAirBuild: () => buildTools.openAirWindow(),
@@ -277,6 +279,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     },
     { codes: ['KeyI'], key: 'I', label: 'Informace o dlaždici („?“)', run: actions.toggleInfo },
     { codes: ['KeyF'], key: 'F', label: 'Finance', run: actions.openFinance },
+    { codes: ['KeyY'], key: 'Y', label: 'Dotace', run: actions.openSubsidies },
     { codes: ['KeyV'], key: 'V', label: 'Seznam vlaků', run: actions.openTrainList },
     { codes: ['KeyA'], key: 'A', label: 'Seznam aut', run: actions.openVehicleList },
     { codes: ['KeyO'], key: 'O', label: 'Seznam letadel', run: actions.openAircraftList },

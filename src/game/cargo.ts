@@ -175,6 +175,8 @@ export interface Carrier {
   income: number;
   // Virtuální příjem z překládek, který náklad na palubě nese (při doručení se odečte od příjmu vozidla)
   feeder?: number;
+  // Stanice, kde náklad na palubě poprvé nastoupil (i před překládkou); kvůli dotacím
+  origin?: number;
 }
 
 // Volby vykládky a nakládky z příkazu jízdního řádu (jako v OpenTTD)
@@ -191,6 +193,8 @@ export interface TransferPacket {
   boardedAt: number;
   tiles: number;
   feeder: number;
+  // Stanice, kde náklad poprvé nastoupil (starší uložení ji nemají)
+  origin?: number;
 }
 
 export type Transfers = Partial<Record<Cargo, TransferPacket[]>>;
@@ -225,7 +229,13 @@ export function transferOut(
   const share = feederShare(carrier, amount);
   const transfers = (station.transfers ??= {});
   const list = (transfers[cargo] ??= []);
-  list.push({ amount, boardedAt: carrier.boardedAt, tiles: carrier.tiles, feeder: share + credit });
+  list.push({
+    amount,
+    boardedAt: carrier.boardedAt,
+    tiles: carrier.tiles,
+    feeder: share + credit,
+    origin: carrier.origin ?? carrier.boardedStation,
+  });
   carrier.feeder = Math.max(0, (carrier.feeder ?? 0) - share);
   carrier.passengers -= amount;
   carrier.income += credit;
@@ -254,6 +264,7 @@ export function loadCargo(
     carrier.boardedAt = now;
     carrier.tiles = 0;
     carrier.feeder = 0;
+    carrier.origin = undefined;
   }
   let left = Math.max(0, room);
   let transferred = 0;
@@ -263,6 +274,7 @@ export function loadCargo(
     const n = Math.min(left, packet.amount);
     const part = (packet.feeder * n) / packet.amount;
     merge(carrier, n, packet.boardedAt, packet.tiles);
+    carrier.origin ??= packet.origin ?? station.id;
     carrier.feeder = (carrier.feeder ?? 0) + part;
     packet.feeder -= part;
     packet.amount -= n;
@@ -271,7 +283,10 @@ export function loadCargo(
     if (packet.amount <= 0) list.shift();
   }
   const boarding = Math.max(0, Math.min(left, Math.floor(fresh)));
-  if (boarding > 0) merge(carrier, boarding, now, 0);
+  if (boarding > 0) {
+    merge(carrier, boarding, now, 0);
+    carrier.origin ??= station.id;
+  }
   if (transferred + boarding > 0 || carrier.passengers === 0) carrier.boardedStation = station.id;
   return { transferred, fresh: boarding };
 }

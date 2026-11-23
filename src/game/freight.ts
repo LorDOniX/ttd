@@ -12,6 +12,7 @@ import {
   type Hold,
 } from './cargo';
 import { formatMoney, type Game } from './game';
+import { bonusText } from './subsidies';
 import { catchmentArea, fare, type Area } from './passengers';
 import { inflowFactor, recordVisit } from './rating';
 import { aircraftModel } from './aircraft';
@@ -127,7 +128,9 @@ export class Freight {
         const share = feederShare(train, unloaded);
         train.feeder = Math.max(0, (train.feeder ?? 0) - share);
         train.passengers -= unloaded;
-        const income = fare(unloaded, train.tiles, days, spec.fareTiers);
+        const base = fare(unloaded, train.tiles, days, spec.fareTiers);
+        const bonus = game.subsidies.bonus(type, train.origin ?? train.boardedStation, station, base);
+        const income = base + bonus;
         game.earn(income);
         game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
         game.thisYear.freight[type] += unloaded;
@@ -140,7 +143,7 @@ export class Freight {
         }
         game.news(
           `${train.name} přivezl ${unloaded} ${spec.unit} do stanice ${station.name}: ` +
-            `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}.`,
+            `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${bonusText(bonus)}.`,
           station,
         );
       }

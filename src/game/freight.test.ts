@@ -180,6 +180,8 @@ describe('vyvážení', () => {
     // Města jako na začátku hry
     townA.population = townB.population = 1500;
     if (cargo === 'coal') game.world.industries[0].production = 105;
+    // Vyvážení samotného jízdného: bez náhodných dotací
+    game.subsidies.offer = () => false;
     const train = buyTrain(game, depot, 4);
     game.fleet.setCargo(train, cargo);
     game.fleet.start(train, [a.id, b.id]);

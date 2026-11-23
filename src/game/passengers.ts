@@ -16,6 +16,7 @@ import {
   type Hold,
 } from './cargo';
 import { formatMoney, type Game } from './game';
+import { bonusText } from './subsidies';
 import { inflowFactor, leaveShare, recordVisit, updateRating } from './rating';
 import { TileType } from '../world/map';
 import { stationTiles, type Station, type StationShape } from '../world/rail';
@@ -180,7 +181,9 @@ export class Passengers {
         train.feeder = Math.max(0, (train.feeder ?? 0) - share);
         train.passengers -= unloaded;
         const stayed = train.passengers > 0 ? ` (${train.passengers} nevystoupilo z vagonů mimo nástupiště)` : '';
-        const income = fare(unloaded, train.tiles, days);
+        const base = fare(unloaded, train.tiles, days);
+        const bonus = game.subsidies.bonus('passengers', train.origin ?? train.boardedStation, station, base);
+        const income = base + bonus;
         game.earn(income);
         game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
         game.thisYear.passengers += unloaded;
@@ -188,7 +191,7 @@ export class Passengers {
         train.income += income - share;
         game.news(
           `${train.name} přivezl ${unloaded} cestujících do stanice ${station.name}: ` +
-            `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${stayed}.`,
+            `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${bonusText(bonus)}${stayed}.`,
           station,
         );
       } else {

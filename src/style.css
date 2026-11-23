@@ -426,6 +426,41 @@ body {
   background: var(--hover);
 }
 
+.subsidy-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.subsidy {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--surface);
+}
+
+.subsidy small {
+  color: var(--text-muted);
+}
+
+.subsidy__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+}
+
+.subsidy__place {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .table--clickable tr:not(:first-child) {
   cursor: pointer;
 }

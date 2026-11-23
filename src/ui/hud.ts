@@ -10,6 +10,7 @@ export interface ToolbarActions {
   openSaveLoad: () => void;
   openSettings: () => void;
   openFinance: () => void;
+  openSubsidies: () => void;
   openTraffic: () => void;
   // Den/noc a roční období
   scene: SceneControls;
@@ -113,7 +114,10 @@ export class Hud {
         dayNight,
         season,
       ],
-      [windowButton('finance', '💰', 'Finance (F)', actions.openFinance)],
+      [
+        windowButton('finance', '💰', 'Finance (F)', actions.openFinance),
+        windowButton('subsidies', '🎖️', 'Dotace (Y)', actions.openSubsidies),
+      ],
       [
         // Pořadí jako u stavby: auta, vlaky, lodě, letadla
         windowButton('vehicle-list', '🚌', 'Seznam aut (A)', actions.openVehicleList, toolbarIcon('list-road')),

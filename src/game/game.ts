@@ -10,6 +10,7 @@ import { IndustryLife } from './industryLife';
 import { Passengers } from './passengers';
 import { RoadFleet } from './roadVehicles';
 import { ShipFleet } from './ships';
+import { Subsidies } from './subsidies';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
@@ -68,6 +69,8 @@ type GameEvents = {
   // Lodě: nákup, prodej, stav nebo řád
   shipsChanged: [];
   stationsChanged: [];
+  // Nabídka, udělení nebo konec dotace
+  subsidiesChanged: [];
   // Závod vznikl nebo zanikl
   industriesChanged: [];
   treesChanged: [];
@@ -112,6 +115,7 @@ export class Game {
   readonly passengers: Passengers;
   readonly freight: Freight;
   readonly industryLife: IndustryLife;
+  readonly subsidies: Subsidies;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
   // Staré vlaky se samy pošlou do depa na obnovu
@@ -141,6 +145,8 @@ export class Game {
     this.freight = new Freight(this);
     // Až po Freight, aby měsíční změny viděly uzavřený odvoz
     this.industryLife = new IndustryLife(this);
+    // Až po IndustryLife: měsíční nabídky vidí uzavřený odvoz a zaniklé závody
+    this.subsidies = new Subsidies(this);
     this.clock.events.on('month', () => this.payMonthly());
     this.events.on('railChanged', () => (this.infrastructure = null));
     this.clock.events.on('year', (year) => this.onYearEnd(year));

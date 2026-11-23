@@ -3,6 +3,8 @@ import { AD_CAMPAIGN_COST, AD_RATING_BOOST } from '../game/balance';
 import { formatDate } from '../game/clock';
 import { SEASON_MODES, type SeasonMode } from '../game/seasons';
 import { BREAKDOWN_LABELS, BREAKDOWN_SETTINGS, isBreakdownSetting } from '../game/reliability';
+import { SUBSIDY_MULTIPLIERS } from '../game/balance';
+import { isSubsidyMultiplier, multiplierText } from '../game/subsidies';
 import { Game, formatMoney } from '../game/game';
 import { parseSave, serializeGame } from '../game/save';
 import { advertise, fundBuildings, fundBuildingsCost } from '../game/townActions';
@@ -58,6 +60,20 @@ export function openSettings(
   breakdownSelect.addEventListener('change', () => {
     if (isBreakdownSetting(breakdownSelect.value)) game.breakdowns = breakdownSelect.value;
   });
+  const subsidySelect = h(
+    'select',
+    {},
+    ...SUBSIDY_MULTIPLIERS.map((m) =>
+      h('option', { value: String(m), selected: m === game.subsidies.multiplier }, multiplierText(m)),
+    ),
+  );
+  subsidySelect.addEventListener('change', () => {
+    const value = Number(subsidySelect.value);
+    if (isSubsidyMultiplier(value)) {
+      game.subsidies.multiplier = value;
+      game.events.emit('subsidiesChanged');
+    }
+  });
 
   const theme = loadTheme();
   const themeSelect = h(
@@ -93,6 +109,7 @@ export function openSettings(
     h('label', { className: 'form__row' }, fpsInput, ' Zobrazit FPS'),
     h('label', { className: 'form__row' }, renewInput, ' Automaticky obnovovat staré vlaky'),
     h('label', { className: 'form__field' }, 'Poruchy vozidel', breakdownSelect),
+    h('label', { className: 'form__field' }, 'Dotace (násobek jízdného)', subsidySelect),
     h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),
     h('div', { className: 'form__hint' }, `Seed mapy: ${seed}`),

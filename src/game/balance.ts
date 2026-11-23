@@ -888,3 +888,21 @@ export const BUILDING_CAPACITY = { house: 12, low: 25, office: 40, skyscraper: 1
 export const SKYSCRAPER_YEAR = 2010;
 // Pravděpodobnost, že se budova v centru během roku přestaví na mrakodrap
 export const REDEVELOP_CHANCE = 0.12;
+
+// Dotace jako v OpenTTD: nabídka přepravy ze zdroje do cíle; první dodávka ji získá a pak se za tuto
+// přepravu po dobu dotace platí násobek jízdného
+export const SUBSIDY_MULTIPLIERS = [1.5, 2, 3, 4] as const;
+export const SUBSIDY_DEFAULT_MULTIPLIER = 2;
+// Jak dlouho platí nabídka a jak dlouho se po udělení dotace platí (měsíce)
+export const SUBSIDY_OFFER_MONTHS = 12;
+export const SUBSIDY_DURATION_MONTHS = 12;
+// Současně nabízených dotací a šance na novou nabídku každý měsíc
+export const SUBSIDY_MAX_OFFERS = 4;
+export const SUBSIDY_OFFER_CHANCE = 0.4;
+// Vzdálenost zdroje a cíle (součet rozdílů souřadnic v dlaždicích)
+export const SUBSIDY_MIN_DISTANCE = 12;
+export const SUBSIDY_MAX_DISTANCE = 70;
+// Cestující a poštu nabízí jen město s aspoň tolika obyvateli (i jako cíl)
+export const SUBSIDY_MIN_POPULATION = 400;
+// Náklad nabízí jen závod, ze kterého se minulý měsíc odvezlo nejvýš tolik výroby
+export const SUBSIDY_MAX_TRANSPORTED = 0.42;

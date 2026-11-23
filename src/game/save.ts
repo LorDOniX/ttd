@@ -78,6 +78,8 @@ export interface SaveData {
     autoRenew?: boolean;
     breakdowns?: string;
   };
+  // Dotace; starší uložení je nemají
+  subsidies?: unknown;
   clock: { date: GameDate; day: number; dayProgress: number };
   // Starší uložení pohled kamery ani rozpracovanou výstavbu nemají
   view?: ViewState;
@@ -162,6 +164,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       autoRenew: game.autoRenew,
       breakdowns: game.breakdowns,
     },
+    subsidies: game.subsidies.serialize(),
     ...(game.view ? { view: game.view } : {}),
     ...(game.construction.busy ? { construction: [...game.construction.pending] } : {}),
     clock: { date: clock.date, day: clock.day, dayProgress: clock.dayProgress },
@@ -392,6 +395,7 @@ export function restoreGame(data: SaveData): Game {
   game.thisYear = year(data.game.thisYear);
   game.history = data.game.history.map(year);
   game.rng.state = data.game.rngState;
+  game.subsidies.restore(data.subsidies);
   game.clock.date = data.clock.date;
   game.clock.day = data.clock.day;
   game.clock.dayProgress = data.clock.dayProgress;
