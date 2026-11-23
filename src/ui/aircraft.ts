@@ -9,6 +9,7 @@ import {
   canUseAirport,
   formatAircraftLoad,
   isOldAircraft,
+  aircraftReliability,
   type Aircraft,
 } from '../game/aircraft';
 import { Game, formatMoney } from '../game/game';
@@ -16,7 +17,8 @@ import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { brokenText } from '../game/reliability';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -50,6 +52,9 @@ export function aircraftStateText(game: Game, plane: Aircraft): string {
   const { airFleet } = game;
   const where = airFleet.stationName(plane.airportId);
   const hangar = plane.toHangar ? ' (pak do hangáru)' : '';
+  const broken = plane.brokenDays > 0 ? ' – porucha, letí pomaleji' : '';
+  if (plane.brokenDays > 0 && (plane.state === 'taxi' || plane.state === 'waiting')) return brokenText(plane);
+  if (plane.servicing && plane.state === 'taxi') return `Pojíždí na servis do hangáru: ${where}`;
   switch (plane.state) {
     case 'hangar':
       return `V hangáru: ${airFleet.stationName(plane.depotId)}`;
@@ -61,7 +66,7 @@ export function aircraftStateText(game: Game, plane: Aircraft): string {
     case 'takeoff':
       return `Vzlétá: ${where}`;
     case 'flying':
-      return `Letí: ${where}${hangar}`;
+      return `Letí: ${where}${hangar}${broken}`;
     case 'holding':
       return `Krouží nad letištěm (plno): ${where}${hangar}`;
     case 'landing':
@@ -128,6 +133,13 @@ function airDetails(game: Game, plane: Aircraft, links: AircraftLinks): HTMLElem
       'Stáří',
       `${formatYears(aircraftAge(plane, today))} z ${AIRCRAFT_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
       old ? 'num warning' : 'num',
+    ),
+    ...maintenanceRows(
+      game,
+      plane,
+      aircraftReliability(plane),
+      (days) => game.airFleet.setServiceInterval(plane, days),
+      'Poruchy jsou vypnuté, letadlo do hangáru na servis nezajíždí.',
     ),
     row('Provoz ročně', formatMoney(0 - aircraftRunningCost(plane, today)), 'num'),
     row('Příjmy letos', formatMoney(plane.income), 'num'),

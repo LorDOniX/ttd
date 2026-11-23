@@ -1,6 +1,6 @@
 import { latenessText, openTimetable } from './timetable';
 import { editingGroups, groupPanel, groupSelect, inGroup, validFilter, type GroupFilter } from './groups';
-import { SERVICE_INTERVAL_STEP, TRAIN_LIFETIME_YEARS } from '../game/balance';
+import { TRAIN_LIFETIME_YEARS } from '../game/balance';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
 import {
@@ -21,13 +21,13 @@ import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { brokenText } from '../game/reliability';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
 export function stateText(game: Game, train: Train): string {
-  if (train.brokenDays > 0)
-    return `Porucha – oprava ještě ${Math.ceil(train.brokenDays)} ${train.brokenDays > 1 ? 'dny' : 'den'}`;
+  if (train.brokenDays > 0) return brokenText(train);
   if (train.servicing && train.state === 'running') return `Jede na servis: Depo ${train.servicing.depotId + 1}`;
   const target = train.target === -1 ? 'depo' : train.orders ? game.fleet.orderName(train, train.target) : '';
   switch (train.state) {
@@ -175,34 +175,6 @@ function trainOrders(windows: WindowManager, game: Game, train: Train, links: Tr
 }
 
 // Interval servisu s tlačítky −/+ jako v okně podrobností vozidla v OpenTTD
-function serviceRow(game: Game, train: Train): HTMLTableRowElement {
-  const step = (delta: number, label: string, title: string): HTMLButtonElement => {
-    const b = h('button', { className: 'small-button', title }, label);
-    b.addEventListener('click', (e) =>
-      game.fleet.setServiceInterval(train, train.serviceInterval + delta * (e.shiftKey ? 5 : 1)),
-    );
-    return b;
-  };
-  const off = game.breakdowns === 'none';
-  return h(
-    'tr',
-    {},
-    h('td', {}, 'Servis'),
-    h(
-      'td',
-      { className: 'num' },
-      h(
-        'span',
-        { className: 'service-interval' },
-        step(-SERVICE_INTERVAL_STEP, '−', 'Častěji (Shift po 50 dnech)'),
-        ` každých ${train.serviceInterval} dní `,
-        step(SERVICE_INTERVAL_STEP, '+', 'Méně často (Shift po 50 dnech)'),
-      ),
-      off ? h('div', { className: 'form__hint' }, 'Poruchy jsou vypnuté, vlak na servis nejezdí.') : '',
-    ),
-  );
-}
-
 // Podrobnosti vlaku: model, stáří, hospodaření, obnova
 function trainDetails(game: Game, train: Train, links: TrainLinks): HTMLElement {
   const model = trainModel(train);
@@ -229,17 +201,13 @@ function trainDetails(game: Game, train: Train, links: TrainLinks): HTMLElement 
       `${formatYears(trainAge(train, today))} z ${TRAIN_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
       old ? 'num warning' : 'num',
     ),
-    row(
-      'Spolehlivost',
-      `${Math.round(train.reliability * 100)} % (max ${Math.round(model.reliability * 100)} %)`,
-      train.reliability < model.reliability - 0.25 ? 'num warning' : 'num',
+    ...maintenanceRows(
+      game,
+      train,
+      model.reliability,
+      (days) => game.fleet.setServiceInterval(train, days),
+      'Poruchy jsou vypnuté, vlak na servis nejezdí.',
     ),
-    row(
-      'Poslední servis',
-      `před ${Math.max(0, Math.floor(game.clock.now - train.lastService))} dny · poruch od něj ${train.breakdowns}`,
-      'num',
-    ),
-    serviceRow(game, train),
     row('Provoz ročně', formatMoney(0 - yearlyRunningCost(train, today)), 'num'),
     row('Příjmy letos', formatMoney(train.income), 'num'),
     row('Provoz letos', formatMoney(0 - train.costs), 'num'),

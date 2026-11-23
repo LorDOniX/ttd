@@ -5,6 +5,7 @@ import { Game, formatMoney } from '../game/game';
 import {
   formatVehicleLoad,
   isOldVehicle,
+  roadVehicleReliability,
   roadVehicleModel,
   vehicleAge,
   vehicleCargo,
@@ -16,7 +17,8 @@ import { modelThumb } from '../render/icons';
 import type { Depot, Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { brokenText } from '../game/reliability';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -45,6 +47,8 @@ export function vehicleStateText(game: Game, vehicle: RoadVehicle): string {
   const { roadFleet } = game;
   const orders = vehicle.orders;
   const target = vehicle.target === -1 ? 'garáž' : orders ? roadFleet.stationName(orders[vehicle.target]) : '';
+  if (vehicle.brokenDays > 0 && vehicle.state === 'running') return brokenText(vehicle);
+  if (vehicle.servicing !== undefined && vehicle.state === 'running') return 'Jede na servis do garáže';
   switch (vehicle.state) {
     case 'depot':
       return 'V garáži';
@@ -103,6 +107,13 @@ function roadDetails(game: Game, vehicle: RoadVehicle, links: VehicleLinks): HTM
       'Stáří',
       `${formatYears(vehicleAge(vehicle, today))} z ${ROAD_VEHICLE_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
       old ? 'num warning' : 'num',
+    ),
+    ...maintenanceRows(
+      game,
+      vehicle,
+      roadVehicleReliability(vehicle),
+      (days) => roadFleet.setServiceInterval(vehicle, days),
+      'Poruchy jsou vypnuté, auto do garáže na servis nejezdí.',
     ),
     row('Provoz ročně', formatMoney(0 - vehicleRunningCost(vehicle, today)), 'num'),
     row('Příjmy letos', formatMoney(vehicle.income), 'num'),
@@ -182,8 +193,8 @@ export function openRoadVehicle(windows: WindowManager, game: Game, vehicle: Roa
             icon: '⌂',
             title: 'Poslat do garáže',
             onClick: () => roadFleet.sendToDepot(vehicle),
-            disabled: vehicle.target === -1,
-            active: vehicle.target === -1,
+            disabled: vehicle.target === -1 && vehicle.servicing === undefined,
+            active: vehicle.target === -1 && vehicle.servicing === undefined,
           },
       {
         icon: '☰',

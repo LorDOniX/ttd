@@ -10,8 +10,8 @@ import {
   TRAIN_MODELS,
   INDUSTRY_HISTORY_MONTHS,
 } from './balance';
-import type { Aircraft } from './aircraft';
-import type { Ship } from './ships';
+import { aircraftReliability, type Aircraft } from './aircraft';
+import { shipReliability, type Ship } from './ships';
 import {
   CARGO_TYPES,
   FREIGHT_TYPES,
@@ -27,8 +27,8 @@ import {
 import { Game, emptyYear, type ViewState, type YearRecord, type YearStats } from './game';
 import type { GameDate } from './clock';
 import type { Job } from './construction';
-import type { RoadVehicle } from './roadVehicles';
-import { isBreakdownSetting } from './reliability';
+import { roadVehicleReliability, type RoadVehicle } from './roadVehicles';
+import { isBreakdownSetting, restoreMaintenance } from './reliability';
 import { cleanFlags, type OrderFlags, type Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
@@ -498,37 +498,54 @@ export function restoreGame(data: SaveData): Game {
   // Starší uložení auta nemá; vozidla neznámého modelu se zahodí
   const roadFleet = isObject(data.roadFleet) ? data.roadFleet : { vehicles: [], nextId: 1 };
   game.roadFleet.vehicles.push(
-    ...(Array.isArray(roadFleet.vehicles) ? roadFleet.vehicles : []).filter(
-      (v) => isObject(v) && ROAD_VEHICLE_MODELS.some((m) => m.id === v.modelId) && Array.isArray(v.path),
-    ),
+    ...(Array.isArray(roadFleet.vehicles) ? roadFleet.vehicles : [])
+      .filter((v) => isObject(v) && ROAD_VEHICLE_MODELS.some((m) => m.id === v.modelId) && Array.isArray(v.path))
+      .map((v) => ({
+        ...v,
+        // Starší uložení údržbu neznají: auto je jako po servisu
+        ...restoreMaintenance(v, roadVehicleReliability(v), data.clock.day),
+        servicing: Number.isInteger(v.servicing) && v.servicing! >= 0 ? v.servicing : undefined,
+      })),
   );
   game.roadFleet.nextId = Number.isInteger(roadFleet.nextId) ? roadFleet.nextId : 1;
   // Starší uložení letadla nemá; letadla neznámého modelu nebo bez letiště se zahodí
   const airFleet = isObject(data.airFleet) ? data.airFleet : { aircraft: [], nextId: 1 };
   const airports = new Set(rail.stations.filter((s) => s.kind === 'air').map((s) => s.id));
   game.airFleet.aircraft.push(
-    ...(Array.isArray(airFleet.aircraft) ? airFleet.aircraft : []).filter(
-      (p) =>
-        isObject(p) &&
-        AIRCRAFT_MODELS.some((m) => m.id === p.modelId) &&
-        Array.isArray(p.route) &&
-        airports.has(p.depotId) &&
-        airports.has(p.airportId),
-    ),
+    ...(Array.isArray(airFleet.aircraft) ? airFleet.aircraft : [])
+      .filter(
+        (p) =>
+          isObject(p) &&
+          AIRCRAFT_MODELS.some((m) => m.id === p.modelId) &&
+          Array.isArray(p.route) &&
+          airports.has(p.depotId) &&
+          airports.has(p.airportId),
+      )
+      .map((p) => ({
+        ...p,
+        ...restoreMaintenance(p, aircraftReliability(p), data.clock.day),
+        servicing: p.servicing === true || undefined,
+      })),
   );
   game.airFleet.nextId = Number.isInteger(airFleet.nextId) ? airFleet.nextId : 1;
   // Starší uložení lodě nemá; lodě neznámého modelu nebo bez přístavu se zahodí
   const shipFleet = isObject(data.shipFleet) ? data.shipFleet : { ships: [], nextId: 1 };
   const ports = new Set(rail.stations.filter((s) => s.kind === 'water').map((s) => s.id));
   game.shipFleet.ships.push(
-    ...(Array.isArray(shipFleet.ships) ? shipFleet.ships : []).filter(
-      (s) =>
-        isObject(s) &&
-        SHIP_MODELS.some((m) => m.id === s.modelId) &&
-        Array.isArray(s.path) &&
-        ports.has(s.depotId) &&
-        ports.has(s.portId),
-    ),
+    ...(Array.isArray(shipFleet.ships) ? shipFleet.ships : [])
+      .filter(
+        (s) =>
+          isObject(s) &&
+          SHIP_MODELS.some((m) => m.id === s.modelId) &&
+          Array.isArray(s.path) &&
+          ports.has(s.depotId) &&
+          ports.has(s.portId),
+      )
+      .map((s) => ({
+        ...s,
+        ...restoreMaintenance(s, shipReliability(s), data.clock.day),
+        servicing: s.servicing === true || undefined,
+      })),
   );
   game.shipFleet.nextId = Number.isInteger(shipFleet.nextId) ? shipFleet.nextId : 1;
   // Skupiny až po vozidlech: vozidla z neexistující skupiny se z ní vyjmou

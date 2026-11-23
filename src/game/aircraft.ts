@@ -6,6 +6,7 @@ import {
   LOADING_PER_DAY,
   OLD_TRAIN_COST_FACTOR,
   RUNWAY_SPEED_SHARE,
+  SERVICE_INTERVAL_DAYS,
   TAXI_SPEED,
   TRAIN_LOADING_DAYS,
   TRAIN_MIN_SELL,
@@ -33,16 +34,29 @@ import {
   type RouteSample,
 } from '../world/airport';
 import type { Station } from '../world/rail';
+import {
+  clampServiceInterval,
+  needsService,
+  newMaintenance,
+  reliabilityForYear,
+  rollBreakdown,
+  service,
+  wearOut,
+  type Maintained,
+} from './reliability';
+import { Rng } from '../world/rng';
 
 const DAYS_PER_YEAR = 365.25;
 // Letadlo čekající na plné naložení zkouší doložit jednou denně
 const FULL_LOAD_CHECK_DAYS = 1;
+// Porouchané letadlo ve vzduchu doletí sníženou rychlostí, na zemi stojí
+const BROKEN_FLIGHT_SPEED_SHARE = 0.5;
 
 // hangar – stojí v hangáru letiště depotId; taxi – pojíždí (taxiTo říká kam); waiting – čeká před ranvejí;
 // takeoff – vzlétá; flying – letí k letišti airportId; holding – krouží nad ním; landing – přistává; loading – na stání
 export type AircraftState = 'hangar' | 'taxi' | 'waiting' | 'takeoff' | 'flying' | 'holding' | 'landing' | 'loading';
 
-export interface Aircraft {
+export interface Aircraft extends Maintained {
   id: number;
   name: string;
   modelId: string;
@@ -77,6 +91,13 @@ export interface Aircraft {
   group?: number;
   builtDay: number;
   agingWarned: boolean;
+  // Pojíždí do hangáru na servis; po něm pokračuje podle řádu
+  servicing?: boolean;
+}
+
+// Nejvyšší spolehlivost letadla (po servisu)
+export function aircraftReliability(plane: Aircraft): number {
+  return reliabilityForYear(aircraftModel(plane).year);
 }
 
 export function aircraftModel(plane: Aircraft): AircraftModel {
@@ -120,8 +141,10 @@ export function canUseAirport(model: AircraftModel, type: AirportType | undefine
 export class AirFleet {
   readonly aircraft: Aircraft[] = [];
   nextId = 1;
+  private readonly breakdownRng: Rng;
 
   constructor(private readonly game: Game) {
+    this.breakdownRng = new Rng(game.world.seed ^ 0x3d4f7a21);
     game.clock.events.on('month', () => this.chargeRunningCosts());
     game.clock.events.on('year', (ended) => {
       for (const m of AIRCRAFT_MODELS) {
@@ -189,9 +212,15 @@ export class AirFleet {
       lastCosts: 0,
       builtDay: this.game.clock.day,
       agingWarned: false,
+      ...newMaintenance(reliabilityForYear(model.year), this.game.clock.now, SERVICE_INTERVAL_DAYS),
     });
     this.changed();
     return null;
+  }
+
+  setServiceInterval(plane: Aircraft, days: number): void {
+    plane.serviceInterval = clampServiceInterval(days);
+    this.changed();
   }
 
   sell(plane: Aircraft): void {
@@ -282,6 +311,7 @@ export class AirFleet {
   sendToHangar(plane: Aircraft): void {
     if (plane.state === 'hangar' || plane.toHangar) return;
     plane.toHangar = true;
+    plane.servicing = undefined;
     const airport = this.airport(plane.airportId);
     if (airport && (plane.state === 'loading' || plane.state === 'waiting' || plane.state === 'taxi')) {
       this.taxiToHangar(plane, airport);
@@ -292,6 +322,23 @@ export class AirFleet {
   update(days: number): void {
     if (days <= 0) return;
     for (const plane of this.aircraft) {
+      if (plane.state === 'hangar') continue;
+      wearOut(plane, days, isOldAircraft(plane, this.game.clock.day));
+      if (plane.brokenDays > 0) {
+        plane.brokenDays = Math.max(0, plane.brokenDays - days);
+        if (plane.brokenDays === 0) this.changed();
+        // Na zemi porouchané letadlo stojí; ve vzduchu letí pomaleji (viz speed)
+        if (plane.state === 'taxi' || plane.state === 'waiting') continue;
+      } else if (
+        plane.state === 'flying' &&
+        rollBreakdown(plane, days, this.game.breakdowns, this.breakdownRng.next())
+      ) {
+        this.game.news(
+          `${plane.name} má poruchu – letí pomaleji a po přistání zajede na servis do hangáru.`,
+          this.position(plane),
+        );
+        this.changed();
+      }
       switch (plane.state) {
         case 'taxi':
         case 'takeoff':
@@ -388,9 +435,9 @@ export class AirFleet {
       case 'landing':
         return Math.max(TAXI_SPEED * 2, speed * RUNWAY_SPEED_SHARE);
       case 'holding':
-        return speed * HOLDING_SPEED_SHARE;
+        return speed * HOLDING_SPEED_SHARE * (plane.brokenDays > 0 ? BROKEN_FLIGHT_SPEED_SHARE : 1);
       default:
-        return speed;
+        return speed * (plane.brokenDays > 0 ? BROKEN_FLIGHT_SPEED_SHARE : 1);
     }
   }
 
@@ -532,6 +579,13 @@ export class AirFleet {
     if (plane.toHangar || !valid) {
       plane.toHangar = true;
       this.taxiToHangar(plane, airport);
+    } else if (
+      this.game.breakdowns !== 'none' &&
+      (plane.breakdowns > 0 || needsService(plane, this.game.clock.now, this.game.breakdowns))
+    ) {
+      // Po intervalu nebo po poruše zajede na servis do hangáru letiště, pak poletí dál
+      plane.servicing = true;
+      this.taxiToHangar(plane, airport);
     } else {
       this.taxi(plane, taxiToRunway(airport, airport.airport!, stand >= 0 ? stand : null), 'runway');
     }
@@ -539,6 +593,17 @@ export class AirFleet {
   }
 
   private parkInHangar(plane: Aircraft): void {
+    service(plane, aircraftReliability(plane), this.game.clock.now);
+    const airport = this.airport(plane.airportId);
+    if (plane.servicing && airport) {
+      // Servis cestou: z hangáru rovnou k ranveji
+      plane.servicing = undefined;
+      plane.stand = -1;
+      this.taxi(plane, taxiToRunway(airport, airport.airport!, null), 'runway');
+      this.changed();
+      return;
+    }
+    plane.servicing = undefined;
     plane.state = 'hangar';
     plane.depotId = plane.airportId;
     plane.route = [];
@@ -547,7 +612,6 @@ export class AirFleet {
     plane.stand = -1;
     plane.toHangar = false;
     const load = plane.passengers > 0 ? ` s nákladem ${formatAircraftLoad(plane)}` : '';
-    const airport = this.airport(plane.airportId);
     this.game.news(
       `${plane.name} je v hangáru${airport ? ` letiště ${airport.name}` : ''}${load}.`,
       this.position(plane),

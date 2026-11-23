@@ -1,6 +1,7 @@
 import {
   LOADING_PER_DAY,
   OLD_TRAIN_COST_FACTOR,
+  SERVICE_INTERVAL_DAYS,
   SHIP_LIFETIME_YEARS,
   SHIP_MODELS,
   TRAIN_LOADING_DAYS,
@@ -25,10 +26,23 @@ import {
   type PortShape,
 } from '../world/port';
 import type { Station } from '../world/rail';
+import {
+  clampServiceInterval,
+  needsService,
+  newMaintenance,
+  reliabilityForYear,
+  rollBreakdown,
+  service,
+  wearOut,
+  type Maintained,
+} from './reliability';
+import { Rng } from '../world/rng';
 
 const DAYS_PER_YEAR = 365.25;
 const LOST_RETRY_DAYS = 5;
 const FULL_LOAD_CHECK_DAYS = 1;
+// Servis v loděnici přístavu při odplutí
+const SHIP_SERVICE_DAYS = 2;
 // Na tolik dlaždic před kotvištěm se loď zastaví, je-li kotviště obsazené
 const BERTH_APPROACH = 1.2;
 // Vodu pokryje led, když zima převažuje (zhruba od poloviny prosince do poloviny března, stejně jako vykreslený led)
@@ -43,7 +57,7 @@ export function waterFrozen(date: Parameters<typeof seasonBlendForDate>[0]): boo
 // waiting – čeká před obsazeným kotvištěm; loading – kotví a nakládá; lost – nemá cestu po vodě
 export type ShipState = 'depot' | 'sailing' | 'waiting' | 'loading' | 'lost';
 
-export interface Ship {
+export interface Ship extends Maintained {
   id: number;
   name: string;
   modelId: string;
@@ -72,6 +86,13 @@ export interface Ship {
   group?: number;
   builtDay: number;
   agingWarned: boolean;
+  // Před odplutím prochází servisem v loděnici přístavu
+  servicing?: boolean;
+}
+
+// Nejvyšší spolehlivost lodi (po servisu)
+export function shipReliability(ship: Ship): number {
+  return reliabilityForYear(shipModel(ship).year);
 }
 
 export function shipModel(ship: Ship): ShipModel {
@@ -125,8 +146,10 @@ export class ShipFleet {
   private bodies: Int32Array | null = null;
   // Stav ledu při poslední aktualizaci, aby šlo ohlásit zamrznutí a tání
   private wasFrozen: boolean | null = null;
+  private readonly breakdownRng: Rng;
 
   constructor(private readonly game: Game) {
+    this.breakdownRng = new Rng(game.world.seed ^ 0x71c2e5a9);
     game.clock.events.on('month', () => this.chargeRunningCosts());
     game.clock.events.on('year', (ended) => {
       for (const m of SHIP_MODELS) {
@@ -186,9 +209,15 @@ export class ShipFleet {
       lastCosts: 0,
       builtDay: this.game.clock.day,
       agingWarned: false,
+      ...newMaintenance(reliabilityForYear(model.year), this.game.clock.now, SERVICE_INTERVAL_DAYS),
     });
     this.changed();
     return null;
+  }
+
+  setServiceInterval(ship: Ship, days: number): void {
+    ship.serviceInterval = clampServiceInterval(days);
+    this.changed();
   }
 
   sell(ship: Ship): void {
@@ -281,6 +310,7 @@ export class ShipFleet {
   sendToDepot(ship: Ship): void {
     if (ship.state === 'depot' || ship.toDepot) return;
     ship.toDepot = true;
+    ship.servicing = undefined;
     if (ship.state === 'loading') this.dock(ship);
     this.changed();
   }
@@ -305,8 +335,24 @@ export class ShipFleet {
       return;
     }
     for (const ship of this.ships) {
+      if (ship.state === 'depot') continue;
+      wearOut(ship, days, isOldShip(ship, this.game.clock.day));
+      if (ship.brokenDays > 0) {
+        // Porouchaná loď stojí na místě, dokud ji posádka neopraví
+        ship.brokenDays = Math.max(0, ship.brokenDays - days);
+        if (ship.brokenDays === 0) this.changed();
+        if (ship.state === 'sailing' || ship.state === 'waiting') continue;
+      }
       switch (ship.state) {
         case 'sailing':
+          if (rollBreakdown(ship, days, this.game.breakdowns, this.breakdownRng.next())) {
+            this.game.news(
+              `${ship.name} má poruchu – pár dní stojí. Pravidelný servis poruchám předchází.`,
+              this.position(ship),
+            );
+            this.changed();
+            break;
+          }
           this.sail(ship, days);
           break;
         case 'waiting':
@@ -547,11 +593,23 @@ export class ShipFleet {
       this.dock(ship);
       return;
     }
+    if (ship.servicing) {
+      ship.servicing = undefined;
+      service(ship, shipReliability(ship), this.game.clock.now);
+    } else if (needsService(ship, this.game.clock.now, this.game.breakdowns)) {
+      // Každý přístav má loděnici: servis proběhne u kotviště, pak loď vypluje
+      ship.servicing = true;
+      ship.waitDays = SHIP_SERVICE_DAYS;
+      this.changed();
+      return;
+    }
     this.sailTo(ship, next);
   }
 
   // Zajede do loděnice přístavu, u kterého je
   private dock(ship: Ship): void {
+    service(ship, shipReliability(ship), this.game.clock.now);
+    ship.servicing = undefined;
     ship.state = 'depot';
     ship.depotId = ship.portId;
     ship.path = [];

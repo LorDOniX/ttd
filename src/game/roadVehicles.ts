@@ -3,6 +3,8 @@ import {
   OLD_TRAIN_COST_FACTOR,
   ROAD_VEHICLE_LIFETIME_YEARS,
   ROAD_VEHICLE_MODELS,
+  SERVICE_INTERVAL_DAYS,
+  SERVICE_MAX_ROUTE,
   TRAIN_LOADING_DAYS,
   TRAIN_MIN_SELL,
   TRAIN_SELL_REFUND,
@@ -22,6 +24,17 @@ import {
 } from './roadJunctions';
 import type { TrafficLights } from './trafficLights';
 import type { RoadTrafficObstacle } from './cityTraffic';
+import {
+  clampServiceInterval,
+  needsService,
+  newMaintenance,
+  reliabilityForYear,
+  rollBreakdown,
+  service,
+  wearOut,
+  type Maintained,
+} from './reliability';
+import { Rng } from '../world/rng';
 
 const DAYS_PER_YEAR = 365.25;
 const LOST_RETRY_DAYS = 5;
@@ -40,7 +53,7 @@ export type RoadVehicleState = 'depot' | 'running' | 'loading' | 'lost';
 
 // Autobus nebo nákladní auto; náklad určuje model. Jede po středech dlaždic cesty (path),
 // pos je vzdálenost od první dlaždice v dlaždicích.
-export interface RoadVehicle {
+export interface RoadVehicle extends Maintained {
   id: number;
   name: string;
   modelId: string;
@@ -66,6 +79,13 @@ export interface RoadVehicle {
   group?: number;
   builtDay: number;
   agingWarned: boolean;
+  // Jede na servis do garáže; po něm pokračuje na zastávku s tímto indexem v řádu
+  servicing?: number;
+}
+
+// Nejvyšší spolehlivost auta (po servisu)
+export function roadVehicleReliability(vehicle: RoadVehicle): number {
+  return reliabilityForYear(roadVehicleModel(vehicle).year);
 }
 
 export function roadVehicleModel(vehicle: RoadVehicle): RoadVehicleModel {
@@ -275,11 +295,13 @@ export function safeVehiclePosition(
 export class RoadFleet {
   readonly vehicles: RoadVehicle[] = [];
   nextId = 1;
+  private readonly breakdownRng: Rng;
   private pedestrianCrossings: ReadonlySet<number> = new Set();
   private trafficObstacles: readonly RoadTrafficObstacle[] = [];
   private trafficLights?: TrafficLights;
 
   constructor(private readonly game: Game) {
+    this.breakdownRng = new Rng(game.world.seed ^ 0x5e7a19b3);
     game.clock.events.on('month', () => this.chargeRunningCosts());
     game.clock.events.on('year', (ended) => {
       for (const m of ROAD_VEHICLE_MODELS) {
@@ -344,9 +366,15 @@ export class RoadFleet {
       lastCosts: 0,
       builtDay: this.game.clock.day,
       agingWarned: false,
+      ...newMaintenance(reliabilityForYear(model.year), this.game.clock.now, SERVICE_INTERVAL_DAYS),
     });
     this.changed();
     return null;
+  }
+
+  setServiceInterval(vehicle: RoadVehicle, days: number): void {
+    vehicle.serviceInterval = clampServiceInterval(days);
+    this.changed();
   }
 
   sell(vehicle: RoadVehicle): void {
@@ -397,6 +425,9 @@ export class RoadFleet {
     const error = this.ordersError(orders);
     if (error) return error;
     const current = vehicle.orders && vehicle.target >= 0 ? vehicle.orders[vehicle.target] : undefined;
+    if (vehicle.servicing !== undefined && vehicle.orders) {
+      vehicle.servicing = Math.max(0, orders.indexOf(vehicle.orders[vehicle.servicing]));
+    }
     vehicle.orders = [...orders];
     vehicle.fullLoad = vehicle.fullLoad.filter((id) => orders.includes(id));
     if (vehicle.target !== -1) {
@@ -421,6 +452,7 @@ export class RoadFleet {
       this.depart(vehicle);
     } else {
       vehicle.target = index;
+      vehicle.servicing = undefined;
       this.replan(vehicle);
     }
     this.changed();
@@ -435,8 +467,9 @@ export class RoadFleet {
 
   // Pošle auto do nejbližší garáže; tam zůstane stát
   sendToDepot(vehicle: RoadVehicle): void {
-    if (vehicle.state === 'depot' || vehicle.target === -1) return;
+    if (vehicle.state === 'depot' || (vehicle.target === -1 && vehicle.servicing === undefined)) return;
     vehicle.target = -1;
+    vehicle.servicing = undefined;
     this.replan(vehicle);
   }
 
@@ -454,8 +487,24 @@ export class RoadFleet {
       this.trafficLights && ((from, to) => this.trafficLights!.allows(from, to)),
     );
     for (const vehicle of this.vehicles) {
+      if (vehicle.state === 'depot') continue;
+      wearOut(vehicle, days, isOldVehicle(vehicle, this.game.clock.day));
+      if (vehicle.brokenDays > 0) {
+        // Porouchané auto stojí na místě a zdržuje auta za sebou
+        vehicle.brokenDays = Math.max(0, vehicle.brokenDays - days);
+        if (vehicle.brokenDays === 0) this.changed();
+        if (vehicle.state === 'running') continue;
+      }
       switch (vehicle.state) {
         case 'running':
+          if (rollBreakdown(vehicle, days, this.game.breakdowns, this.breakdownRng.next())) {
+            this.game.news(
+              `${vehicle.name} má poruchu – pár dní stojí. Pravidelný servis poruchám předchází.`,
+              this.position(vehicle),
+            );
+            this.changed();
+            break;
+          }
           this.move(vehicle, days, priorities);
           break;
         case 'loading':
@@ -605,6 +654,17 @@ export class RoadFleet {
     if (vehicle.target === -1) {
       const depot = this.game.world.rail.roadDepotAt(last.x, last.y);
       if (depot) vehicle.depotId = depot.id;
+      service(vehicle, roadVehicleReliability(vehicle), this.game.clock.now);
+      if (vehicle.servicing !== undefined && vehicle.orders) {
+        // Servis cestou: auto se v garáži otočí a pokračuje podle řádu
+        vehicle.target = vehicle.servicing % vehicle.orders.length;
+        vehicle.servicing = undefined;
+        vehicle.path = [last];
+        vehicle.pos = 0;
+        this.replan(vehicle);
+        return;
+      }
+      vehicle.servicing = undefined;
       vehicle.state = 'depot';
       vehicle.path = [];
       vehicle.pos = 0;
@@ -650,7 +710,21 @@ export class RoadFleet {
 
   private depart(vehicle: RoadVehicle): void {
     if (vehicle.orders && vehicle.target !== -1) vehicle.target = (vehicle.target + 1) % vehicle.orders.length;
+    this.planService(vehicle);
     this.replan(vehicle);
+  }
+
+  // Při odjezdu ze zastávky po intervalu servisu zajede do nejbližší garáže, je-li blízko
+  private planService(vehicle: RoadVehicle): void {
+    if (!vehicle.orders || vehicle.target === -1 || vehicle.servicing !== undefined) return;
+    if (!needsService(vehicle, this.game.clock.now, this.game.breakdowns)) return;
+    const { rail } = this.game.world;
+    const here = vehicle.path[vehicle.path.length - 1];
+    if (!here) return;
+    const route = findRoadRoute(rail, here, (x, y) => rail.roadDepotAt(x, y) !== undefined);
+    if (!route || route.length > SERVICE_MAX_ROUTE) return;
+    vehicle.servicing = vehicle.target;
+    vehicle.target = -1;
   }
 
   // Naplánuje cestu k cíli z místa, kde auto je; jedoucí auto dojede rozjetý úsek

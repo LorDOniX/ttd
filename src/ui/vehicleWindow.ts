@@ -1,3 +1,6 @@
+import { SERVICE_INTERVAL_STEP } from '../game/balance';
+import type { Game } from '../game/game';
+import type { Maintained } from '../game/reliability';
 import { h } from './dom';
 import type { VehicleViewport } from './vehicleViewport';
 import type { WindowManager } from './windows';
@@ -101,4 +104,51 @@ export function liveWindow(
     },
   });
   return refresh;
+}
+
+// Řádky údržby do podrobností vozidla: spolehlivost, poslední servis a interval servisu (− / +)
+export function maintenanceRows(
+  game: Game,
+  vehicle: Maintained,
+  maxReliability: number,
+  setInterval: (days: number) => void,
+  offHint: string,
+): HTMLTableRowElement[] {
+  const row = (label: string, value: string | HTMLElement, className = ''): HTMLTableRowElement =>
+    h('tr', {}, h('td', {}, label), h('td', { className }, value));
+  const step = (delta: number, label: string, title: string): HTMLButtonElement => {
+    const b = h('button', { className: 'small-button', title }, label);
+    b.addEventListener('click', (e) => setInterval(vehicle.serviceInterval + delta * (e.shiftKey ? 5 : 1)));
+    return b;
+  };
+  const off = game.breakdowns === 'none';
+  return [
+    row(
+      'Spolehlivost',
+      `${Math.round(vehicle.reliability * 100)} % (max ${Math.round(maxReliability * 100)} %)`,
+      vehicle.reliability < maxReliability - 0.25 ? 'num warning' : 'num',
+    ),
+    row(
+      'Poslední servis',
+      `před ${Math.max(0, Math.floor(game.clock.now - vehicle.lastService))} dny · poruch od něj ${vehicle.breakdowns}`,
+      'num',
+    ),
+    h(
+      'tr',
+      {},
+      h('td', {}, 'Servis'),
+      h(
+        'td',
+        { className: 'num' },
+        h(
+          'span',
+          { className: 'service-interval' },
+          step(-SERVICE_INTERVAL_STEP, '−', 'Častěji (Shift po 50 dnech)'),
+          ` každých ${vehicle.serviceInterval} dní `,
+          step(SERVICE_INTERVAL_STEP, '+', 'Méně často (Shift po 50 dnech)'),
+        ),
+        off ? h('div', { className: 'form__hint' }, offHint) : '',
+      ),
+    ),
+  ];
 }

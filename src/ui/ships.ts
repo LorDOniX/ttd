@@ -5,6 +5,7 @@ import { Game, formatMoney } from '../game/game';
 import {
   formatShipLoad,
   isOldShip,
+  shipReliability,
   shipAge,
   shipModel,
   shipRunningCost,
@@ -15,7 +16,8 @@ import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { brokenText } from '../game/reliability';
 import { h } from './dom';
 import { ModelPicker } from './modelPicker';
 import { formatYears } from './trainWindow';
@@ -48,6 +50,8 @@ export function shipStateText(game: Game, ship: Ship): string {
   if (shipFleet.frozen && ship.state !== 'depot') {
     return ship.state === 'loading' ? `Kotví v zamrzlém přístavu: ${where}` : `Zamrzlá v ledu, cíl ${where}${depot}`;
   }
+  if (ship.brokenDays > 0 && (ship.state === 'sailing' || ship.state === 'waiting')) return brokenText(ship);
+  if (ship.servicing && ship.state === 'loading') return `Servis v loděnici: ${where}`;
   switch (ship.state) {
     case 'depot':
       return `V loděnici: ${shipFleet.stationName(ship.depotId)}`;
@@ -115,6 +119,13 @@ function shipDetails(game: Game, ship: Ship, links: ShipLinks): HTMLElement {
       'Stáří',
       `${formatYears(shipAge(ship, today))} z ${SHIP_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
       old ? 'num warning' : 'num',
+    ),
+    ...maintenanceRows(
+      game,
+      ship,
+      shipReliability(ship),
+      (days) => shipFleet.setServiceInterval(ship, days),
+      'Poruchy jsou vypnuté, loď servis v loděnici nepotřebuje.',
     ),
     row('Provoz ročně', formatMoney(0 - shipRunningCost(ship, today)), 'num'),
     row('Příjmy letos', formatMoney(ship.income), 'num'),

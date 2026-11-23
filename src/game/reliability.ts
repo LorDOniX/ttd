@@ -1,9 +1,12 @@
 import {
   BREAKDOWN_DAYS,
   BREAKDOWN_RATE,
+  MAX_SERVICE_INTERVAL_DAYS,
+  MIN_SERVICE_INTERVAL_DAYS,
   OLD_VEHICLE_DECAY_FACTOR,
   REDUCED_BREAKDOWN_FACTOR,
   RELIABILITY_DECAY_PER_DAY,
+  SERVICE_INTERVAL_DAYS,
 } from './balance';
 
 // Poruchy vozidel jako v nastavení OpenTTD: žádné, snížené, běžné
@@ -70,4 +73,36 @@ export function service(vehicle: Maintained, maxReliability: number, now: number
   vehicle.reliability = maxReliability;
   vehicle.lastService = now;
   vehicle.breakdowns = 0;
+}
+
+// Nejvyšší spolehlivost modelu podle roku uvedení (auta, letadla a lodě ji v modelu nemají):
+// první generace kolem 78 %, nejnovější přes 94 % jako u vlaků
+export function reliabilityForYear(year: number): number {
+  const t = Math.max(0, Math.min(1, (year - 1950) / 75));
+  return Math.round((0.78 + t * 0.17) * 100) / 100;
+}
+
+// Interval servisu v povolených mezích
+export function clampServiceInterval(days: number): number {
+  return Math.max(MIN_SERVICE_INTERVAL_DAYS, Math.min(MAX_SERVICE_INTERVAL_DAYS, Math.round(days)));
+}
+
+// Údržba vozidla z uložení; starší uložení ji nemají: vozidlo je jako po servisu
+export function restoreMaintenance(value: Partial<Maintained>, maxReliability: number, day: number): Maintained {
+  const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+  return {
+    reliability: finite(value.reliability) ? Math.min(1, Math.max(0, value.reliability)) : maxReliability,
+    lastService: finite(value.lastService) ? value.lastService : day,
+    serviceInterval: finite(value.serviceInterval)
+      ? clampServiceInterval(value.serviceInterval)
+      : SERVICE_INTERVAL_DAYS,
+    brokenDays: finite(value.brokenDays) ? Math.max(0, value.brokenDays) : 0,
+    breakdowns: Number.isInteger(value.breakdowns) ? (value.breakdowns as number) : 0,
+  };
+}
+
+// Text stavu pro porouchané vozidlo
+export function brokenText(vehicle: Maintained): string {
+  const days = Math.ceil(vehicle.brokenDays);
+  return `Porucha – oprava ještě ${days} ${days === 1 ? 'den' : days <= 4 ? 'dny' : 'dní'}`;
 }
