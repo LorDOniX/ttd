@@ -62,6 +62,8 @@ export interface RoadVehicle {
   costs: number;
   lastIncome: number;
   lastCosts: number;
+  // Skupina vozidel (jako v OpenTTD); bez údaje žádná
+  group?: number;
   builtDay: number;
   agingWarned: boolean;
 }

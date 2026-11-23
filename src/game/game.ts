@@ -11,6 +11,7 @@ import { Passengers } from './passengers';
 import { RoadFleet } from './roadVehicles';
 import { ShipFleet } from './ships';
 import { Subsidies } from './subsidies';
+import { VehicleGroups, type GroupKind, type Groupable } from './groups';
 import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
@@ -64,6 +65,8 @@ type GameEvents = {
   trainsChanged: [];
   // Silniční vozidla: nákup, prodej, stav nebo řád
   vehiclesChanged: [];
+  // Skupiny vozidel: nová, přejmenovaná, zrušená, nebo změna členů
+  groupsChanged: [];
   // Letadla: nákup, prodej, stav nebo řád
   aircraftChanged: [];
   // Lodě: nákup, prodej, stav nebo řád
@@ -116,6 +119,7 @@ export class Game {
   readonly freight: Freight;
   readonly industryLife: IndustryLife;
   readonly subsidies: Subsidies;
+  readonly groups: VehicleGroups;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
   // Staré vlaky se samy pošlou do depa na obnovu
@@ -147,12 +151,24 @@ export class Game {
     this.industryLife = new IndustryLife(this);
     // Až po IndustryLife: měsíční nabídky vidí uzavřený odvoz a zaniklé závody
     this.subsidies = new Subsidies(this);
+    this.groups = new VehicleGroups(
+      (kind) => this.vehiclesOf(kind),
+      () => this.events.emit('groupsChanged'),
+    );
     this.clock.events.on('month', () => this.payMonthly());
     this.events.on('railChanged', () => (this.infrastructure = null));
     this.clock.events.on('year', (year) => this.onYearEnd(year));
     this.clock.events.on('end', () =>
       this.news(`${formatDate(this.clock.date)}: konec hry. Konečný stav účtu ${formatMoney(this.money)}.`),
     );
+  }
+
+  // Vozidla jednoho druhu (pro skupiny)
+  vehiclesOf(kind: GroupKind): Groupable[] {
+    if (kind === 'train') return this.fleet.trains;
+    if (kind === 'road') return this.roadFleet.vehicles;
+    if (kind === 'air') return this.airFleet.aircraft;
+    return this.shipFleet.ships;
   }
 
   get lastYear(): YearRecord | null {

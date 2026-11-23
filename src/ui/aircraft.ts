@@ -1,3 +1,4 @@
+import { editingGroups, groupPanel, groupSelect, inGroup, validFilter, type GroupFilter } from './groups';
 import { AIRCRAFT_LIFETIME_YEARS, AIRPORT_TYPES } from '../game/balance';
 import { CARGOS } from '../game/cargo';
 import {
@@ -396,6 +397,7 @@ export function openHangar(windows: WindowManager, game: Game, airport: Station,
 
 // Seznam všech letadel; kliknutím na řádek se otevře okno letadla
 export function openAircraftList(windows: WindowManager, game: Game, links: AircraftLinks): void {
+  let group: GroupFilter = 'all';
   const render = (): HTMLElement => {
     const all = game.airFleet.aircraft;
     if (all.length === 0) {
@@ -406,7 +408,12 @@ export function openAircraftList(windows: WindowManager, game: Game, links: Airc
       );
     }
     const today = game.clock.day;
-    return h(
+    group = validFilter(game, 'air', group);
+    const panel = groupPanel(game, 'air', group, (value) => {
+      group = value;
+      refresh();
+    });
+    const table = h(
       'table',
       { className: 'table table--clickable' },
       h(
@@ -417,28 +424,37 @@ export function openAircraftList(windows: WindowManager, game: Game, links: Airc
         h('th', { className: 'num' }, 'Stáří'),
         h('th', { className: 'num' }, 'Náklad'),
         h('th', { className: 'num' }, 'Zisk letos'),
+        h('th', { className: 'table__group' }, 'Skupina'),
       ),
-      ...all.map((p) => {
-        const tr = h(
-          'tr',
-          { title: 'Otevřít okno letadla' },
-          h('td', { className: 'table__name' }, modelThumb('airplanes', aircraftModel(p).model), p.name),
-          h('td', {}, aircraftStateText(game, p)),
-          h('td', { className: isOldAircraft(p, today) ? 'num warning' : 'num' }, formatYears(aircraftAge(p, today))),
-          h('td', { className: 'num' }, formatAircraftLoad(p)),
-          h('td', { className: 'num' }, formatMoney(p.income - p.costs)),
-        );
-        tr.addEventListener('click', () => openAircraft(windows, game, p, links));
-        return tr;
-      }),
+      ...all
+        .filter((p) => inGroup(p, group))
+        .map((p) => {
+          const tr = h(
+            'tr',
+            { title: 'Otevřít okno letadla' },
+            h('td', { className: 'table__name' }, modelThumb('airplanes', aircraftModel(p).model), p.name),
+            h('td', {}, aircraftStateText(game, p)),
+            h('td', { className: isOldAircraft(p, today) ? 'num warning' : 'num' }, formatYears(aircraftAge(p, today))),
+            h('td', { className: 'num' }, formatAircraftLoad(p)),
+            h('td', { className: 'num' }, formatMoney(p.income - p.costs)),
+            h('td', {}, groupSelect(game, 'air', p)),
+          );
+          tr.addEventListener('click', () => openAircraft(windows, game, p, links));
+          return tr;
+        }),
     );
+    return h('div', { className: 'form' }, panel, table);
   };
   const refresh = (): void => {
-    if (windows.isOpen('aircraft-list')) windows.update('aircraft-list', render());
+    if (windows.isOpen('aircraft-list') && !editingGroups()) windows.update('aircraft-list', render());
   };
-  const unsubscribe = [game.events.on('aircraftChanged', refresh), game.clock.events.on('day', refresh)];
+  const unsubscribe = [
+    game.events.on('aircraftChanged', refresh),
+    game.events.on('groupsChanged', refresh),
+    game.clock.events.on('day', refresh),
+  ];
   windows.open('aircraft-list', 'Letadla', render(), {
-    width: 500,
+    width: 580,
     onClose: () => unsubscribe.forEach((off) => off()),
   });
 }

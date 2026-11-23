@@ -1,3 +1,5 @@
+import { latenessText, openTimetable } from './timetable';
+import { editingGroups, groupPanel, groupSelect, inGroup, validFilter, type GroupFilter } from './groups';
 import { SERVICE_INTERVAL_STEP, TRAIN_LIFETIME_YEARS } from '../game/balance';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
@@ -118,7 +120,7 @@ function sharingEditor(game: Game, train: Train, choice: { train: number | null 
 }
 
 // Jízdní řád vlaku pro společné okno řádu
-function trainOrders(game: Game, train: Train, links: TrainLinks): OrdersSource {
+function trainOrders(windows: WindowManager, game: Game, train: Train, links: TrainLinks): OrdersSource {
   const { fleet } = game;
   const shareChoice = { train: null as number | null };
   return {
@@ -144,6 +146,7 @@ function trainOrders(game: Game, train: Train, links: TrainLinks): OrdersSource 
         if (depot) links.focus(depot.x + 0.5, depot.y + 0.5);
       },
       waypoints: () => game.world.rail.waypoints.map((w) => ({ id: w.id, name: w.name })),
+      openTimetable: () => openTimetable(windows, game, train),
       focusWaypoint: (waypointId) => {
         const waypoint = fleet.waypointById(waypointId);
         if (waypoint) links.focus(waypoint.x + 0.5, waypoint.y + 0.5);
@@ -220,6 +223,7 @@ function trainDetails(game: Game, train: Train, links: TrainLinks): HTMLElement 
       warning ? 'num warning' : 'num',
     ),
     row('Rychlost', `${speed(train.speed)} / ${speed(model.speed)} dlaždic/den`, 'num'),
+    row('Jízdní řád', latenessText(train), (train.lateness ?? 0) > 0 ? 'num warning' : 'num'),
     row(
       'Stáří',
       `${formatYears(trainAge(train, today))} z ${TRAIN_LIFETIME_YEARS}${old ? ' – po životnosti' : ''}`,
@@ -341,7 +345,7 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
       {
         icon: '☰',
         title: 'Jízdní řád',
-        onClick: () => openOrders(windows, trainOrders(game, train, links)),
+        onClick: () => openOrders(windows, trainOrders(windows, game, train, links)),
         active: windows.isOpen(ordersId),
       },
       {
@@ -368,6 +372,7 @@ export function openTrain(windows: WindowManager, game: Game, train: Train, link
 export function openTrainList(windows: WindowManager, game: Game, links: TrainLinks): void {
   let filter: Cargo | null = null;
   let line: number | null = null;
+  let group: GroupFilter = 'all';
   const render = (): HTMLElement => {
     const all = game.fleet.trains;
     if (all.length === 0) return h('div', { className: 'form__hint' }, 'Zatím nemáte žádné vlaky.');
@@ -377,7 +382,14 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
       (a, b) => a - b,
     );
     if (line !== null && !lines.includes(line)) line = null;
-    const trains = all.filter((t) => (!filter || t.cargo === filter) && (line === null || t.orderGroup === line));
+    group = validFilter(game, 'train', group);
+    const trains = all.filter(
+      (t) => (!filter || t.cargo === filter) && (line === null || t.orderGroup === line) && inGroup(t, group),
+    );
+    const panel = groupPanel(game, 'train', group, (value) => {
+      group = value;
+      refresh();
+    });
     const filterButton = (label: string, value: Cargo | null): HTMLButtonElement => {
       const b = h('button', { className: 'small-button', textContent: label });
       b.classList.toggle('small-button--active', filter === value);
@@ -431,6 +443,7 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
         h('th', { className: 'num' }, 'Stáří'),
         h('th', { className: 'num' }, 'Náklad'),
         h('th', { className: 'num' }, 'Zisk letos'),
+        h('th', { className: 'table__group' }, 'Skupina'),
       ),
       ...trains.map((t) => {
         const today = game.clock.day;
@@ -447,18 +460,23 @@ export function openTrainList(windows: WindowManager, game: Game, links: TrainLi
           h('td', { className: isOld(t, today) ? 'num warning' : 'num' }, formatYears(trainAge(t, today))),
           h('td', { className: 'num' }, formatLoad(t)),
           h('td', { className: 'num' }, formatMoney(t.income - t.costs)),
+          h('td', {}, groupSelect(game, 'train', t)),
         );
         tr.addEventListener('click', () => openTrain(windows, game, t, links));
         return tr;
       }),
     );
-    return filters ? h('div', { className: 'form' }, filters, table) : table;
+    return h('div', { className: 'form' }, panel, ...(filters ? [filters] : []), table);
   };
 
   const refresh = (): void => {
-    if (windows.isOpen('train-list')) windows.update('train-list', render());
+    if (windows.isOpen('train-list') && !editingGroups()) windows.update('train-list', render());
   };
-  const unsubscribe = [game.events.on('trainsChanged', refresh), game.clock.events.on('day', refresh)];
-  const options = { width: 460, onClose: () => unsubscribe.forEach((off) => off()) };
+  const unsubscribe = [
+    game.events.on('trainsChanged', refresh),
+    game.events.on('groupsChanged', refresh),
+    game.clock.events.on('day', refresh),
+  ];
+  const options = { width: 600, onClose: () => unsubscribe.forEach((off) => off()) };
   windows.open('train-list', 'Vlaky', render(), options);
 }

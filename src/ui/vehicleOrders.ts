@@ -45,6 +45,8 @@ export interface OrdersSource {
     // Průjezdné body (jen vlaky): příkaz „Jet přes“ bez zastavení
     waypoints: () => { id: number; name: string }[];
     focusWaypoint: (waypointId: number) => void;
+    // Okno časů jízdního řádu
+    openTimetable: () => void;
   };
   subscribe: (refresh: () => void) => (() => void)[];
   exists: () => boolean;
@@ -61,6 +63,8 @@ function flagsText(flags: OrderFlags): string {
   if (flags.unload === 'transfer') parts.push('Překládka');
   if (flags.unload === 'none') parts.push('Nevykládat');
   if (flags.refit) parts.push(`Přestavět na ${CARGOS[flags.refit].noun}`);
+  if (flags.travel !== undefined) parts.push(`jízda ${flags.travel.toLocaleString('cs-CZ')} d`);
+  if (flags.wait !== undefined) parts.push(`stání ${flags.wait.toLocaleString('cs-CZ')} d`);
   return parts.length > 0 ? `[${parts.join(', ')}]` : '';
 }
 
@@ -397,7 +401,13 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
           refresh();
         }
       });
-      return [load, unload, refit, via, depot, waypoint];
+      const times = button(
+        '⏱ Časy',
+        'Časy jízdního řádu: plán jízdy a stání, zpoždění',
+        () => api.openTimetable(),
+        false,
+      );
+      return [load, unload, refit, via, depot, waypoint, times];
     }
   }
 

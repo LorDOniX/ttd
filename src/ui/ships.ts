@@ -1,3 +1,4 @@
+import { editingGroups, groupPanel, groupSelect, inGroup, validFilter, type GroupFilter } from './groups';
 import { SHIP_LIFETIME_YEARS } from '../game/balance';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
@@ -380,6 +381,7 @@ export function openShipyard(windows: WindowManager, game: Game, port: Station, 
 }
 
 export function openShipList(windows: WindowManager, game: Game, links: ShipLinks): void {
+  let group: GroupFilter = 'all';
   const render = (): HTMLElement => {
     const all = game.shipFleet.ships;
     if (all.length === 0) {
@@ -390,7 +392,12 @@ export function openShipList(windows: WindowManager, game: Game, links: ShipLink
       );
     }
     const today = game.clock.day;
-    return h(
+    group = validFilter(game, 'water', group);
+    const panel = groupPanel(game, 'water', group, (value) => {
+      group = value;
+      refresh();
+    });
+    const table = h(
       'table',
       { className: 'table table--clickable' },
       h(
@@ -401,25 +408,34 @@ export function openShipList(windows: WindowManager, game: Game, links: ShipLink
         h('th', { className: 'num' }, 'Stáří'),
         h('th', { className: 'num' }, 'Náklad'),
         h('th', { className: 'num' }, 'Zisk letos'),
+        h('th', { className: 'table__group' }, 'Skupina'),
       ),
-      ...all.map((s) => {
-        const tr = h(
-          'tr',
-          { title: 'Otevřít okno lodi' },
-          h('td', { className: 'table__name' }, modelThumb('watercraft kit', shipModel(s).model), s.name),
-          h('td', {}, shipStateText(game, s)),
-          h('td', { className: isOldShip(s, today) ? 'num warning' : 'num' }, formatYears(shipAge(s, today))),
-          h('td', { className: 'num' }, formatShipLoad(s)),
-          h('td', { className: 'num' }, formatMoney(s.income - s.costs)),
-        );
-        tr.addEventListener('click', () => openShip(windows, game, s, links));
-        return tr;
-      }),
+      ...all
+        .filter((s) => inGroup(s, group))
+        .map((s) => {
+          const tr = h(
+            'tr',
+            { title: 'Otevřít okno lodi' },
+            h('td', { className: 'table__name' }, modelThumb('watercraft kit', shipModel(s).model), s.name),
+            h('td', {}, shipStateText(game, s)),
+            h('td', { className: isOldShip(s, today) ? 'num warning' : 'num' }, formatYears(shipAge(s, today))),
+            h('td', { className: 'num' }, formatShipLoad(s)),
+            h('td', { className: 'num' }, formatMoney(s.income - s.costs)),
+            h('td', {}, groupSelect(game, 'water', s)),
+          );
+          tr.addEventListener('click', () => openShip(windows, game, s, links));
+          return tr;
+        }),
     );
+    return h('div', { className: 'form' }, panel, table);
   };
   const refresh = (): void => {
-    if (windows.isOpen('ship-list')) windows.update('ship-list', render());
+    if (windows.isOpen('ship-list') && !editingGroups()) windows.update('ship-list', render());
   };
-  const unsubscribe = [game.events.on('shipsChanged', refresh), game.clock.events.on('day', refresh)];
-  windows.open('ship-list', 'Lodě', render(), { width: 500, onClose: () => unsubscribe.forEach((off) => off()) });
+  const unsubscribe = [
+    game.events.on('shipsChanged', refresh),
+    game.events.on('groupsChanged', refresh),
+    game.clock.events.on('day', refresh),
+  ];
+  windows.open('ship-list', 'Lodě', render(), { width: 580, onClose: () => unsubscribe.forEach((off) => off()) });
 }

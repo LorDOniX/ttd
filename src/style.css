@@ -2116,3 +2116,42 @@ body.pegman-dragging * {
 .station-join__option small {
   color: var(--text-muted);
 }
+
+.vehicle-groups__list {
+  flex-wrap: wrap;
+}
+
+.vehicle-groups__detail input {
+  width: 9em;
+}
+
+.vehicle-groups__detail span {
+  flex: 1;
+  font-size: 12px;
+}
+
+.vehicle-groups__select {
+  max-width: 8em;
+  font-size: 11px;
+}
+
+.timetable__input {
+  width: 5em;
+}
+
+.timetable__current td {
+  font-weight: bold;
+}
+
+.table .table__group {
+  padding-left: 10px;
+}
+
+.table td:has(> .vehicle-groups__select) {
+  padding-left: 10px;
+}
+
+.timetable .table th,
+.timetable .table td {
+  padding: 1px 6px;
+}

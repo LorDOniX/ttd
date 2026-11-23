@@ -1,3 +1,4 @@
+import { editingGroups, groupPanel, groupSelect, inGroup, validFilter, type GroupFilter } from './groups';
 import { ROAD_VEHICLE_LIFETIME_YEARS } from '../game/balance';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
@@ -368,13 +369,19 @@ export function openRoadDepot(windows: WindowManager, game: Game, depot: Depot, 
 
 // Seznam všech aut; kliknutím na řádek se otevře okno auta
 export function openVehicleList(windows: WindowManager, game: Game, links: VehicleLinks): void {
+  let group: GroupFilter = 'all';
   const render = (): HTMLElement => {
     const all = game.roadFleet.vehicles;
     if (all.length === 0) {
       return h('div', { className: 'form__hint' }, 'Zatím nemáte žádná auta. Kupují se v garáži (okno Stavba silnic).');
     }
     const today = game.clock.day;
-    return h(
+    group = validFilter(game, 'road', group);
+    const panel = groupPanel(game, 'road', group, (value) => {
+      group = value;
+      refresh();
+    });
+    const table = h(
       'table',
       { className: 'table table--clickable' },
       h(
@@ -385,25 +392,34 @@ export function openVehicleList(windows: WindowManager, game: Game, links: Vehic
         h('th', { className: 'num' }, 'Stáří'),
         h('th', { className: 'num' }, 'Náklad'),
         h('th', { className: 'num' }, 'Zisk letos'),
+        h('th', { className: 'table__group' }, 'Skupina'),
       ),
-      ...all.map((v) => {
-        const tr = h(
-          'tr',
-          { title: `Otevřít okno auta (${CARGOS[vehicleCargo(v)].name})` },
-          h('td', { className: 'table__name' }, modelThumb('car kit', roadVehicleModel(v).model), v.name),
-          h('td', {}, vehicleStateText(game, v)),
-          h('td', { className: isOldVehicle(v, today) ? 'num warning' : 'num' }, formatYears(vehicleAge(v, today))),
-          h('td', { className: 'num' }, formatVehicleLoad(v)),
-          h('td', { className: 'num' }, formatMoney(v.income - v.costs)),
-        );
-        tr.addEventListener('click', () => openRoadVehicle(windows, game, v, links));
-        return tr;
-      }),
+      ...all
+        .filter((v) => inGroup(v, group))
+        .map((v) => {
+          const tr = h(
+            'tr',
+            { title: `Otevřít okno auta (${CARGOS[vehicleCargo(v)].name})` },
+            h('td', { className: 'table__name' }, modelThumb('car kit', roadVehicleModel(v).model), v.name),
+            h('td', {}, vehicleStateText(game, v)),
+            h('td', { className: isOldVehicle(v, today) ? 'num warning' : 'num' }, formatYears(vehicleAge(v, today))),
+            h('td', { className: 'num' }, formatVehicleLoad(v)),
+            h('td', { className: 'num' }, formatMoney(v.income - v.costs)),
+            h('td', {}, groupSelect(game, 'road', v)),
+          );
+          tr.addEventListener('click', () => openRoadVehicle(windows, game, v, links));
+          return tr;
+        }),
     );
+    return h('div', { className: 'form' }, panel, table);
   };
   const refresh = (): void => {
-    if (windows.isOpen('vehicle-list')) windows.update('vehicle-list', render());
+    if (windows.isOpen('vehicle-list') && !editingGroups()) windows.update('vehicle-list', render());
   };
-  const unsubscribe = [game.events.on('vehiclesChanged', refresh), game.clock.events.on('day', refresh)];
-  windows.open('vehicle-list', 'Auta', render(), { width: 460, onClose: () => unsubscribe.forEach((off) => off()) });
+  const unsubscribe = [
+    game.events.on('vehiclesChanged', refresh),
+    game.events.on('groupsChanged', refresh),
+    game.clock.events.on('day', refresh),
+  ];
+  windows.open('vehicle-list', 'Auta', render(), { width: 580, onClose: () => unsubscribe.forEach((off) => off()) });
 }

@@ -92,6 +92,8 @@ export interface SaveData {
   };
   // Dotace; starší uložení je nemají
   subsidies?: unknown;
+  // Skupiny vozidel; starší uložení je nemají
+  groups?: unknown;
   clock: { date: GameDate; day: number; dayProgress: number };
   // Starší uložení pohled kamery ani rozpracovanou výstavbu nemají
   view?: ViewState;
@@ -179,6 +181,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       breakdowns: game.breakdowns,
     },
     subsidies: game.subsidies.serialize(),
+    groups: game.groups.serialize(),
     ...(game.view ? { view: game.view } : {}),
     ...(game.construction.busy ? { construction: [...game.construction.pending] } : {}),
     clock: { date: clock.date, day: clock.day, dayProgress: clock.dayProgress },
@@ -456,6 +459,13 @@ export function restoreGame(data: SaveData): Game {
             ? { depotId: t.servicing.depotId, resume: t.servicing.resume }
             : undefined,
         orderGroup: Number.isInteger(t.orderGroup) ? t.orderGroup : null,
+        // Časy v jízdním řádu (starší uložení je nemají)
+        departedAt: Number.isFinite(t.departedAt) ? t.departedAt : undefined,
+        lateness: Number.isFinite(t.lateness) ? t.lateness : undefined,
+        lastTravel: Array.isArray(t.lastTravel)
+          ? t.lastTravel.map((d) => (Number.isFinite(d) ? (d as number) : null))
+          : undefined,
+        autofill: t.autofill === true || undefined,
       };
     }),
   );
@@ -497,6 +507,8 @@ export function restoreGame(data: SaveData): Game {
     ),
   );
   game.shipFleet.nextId = Number.isInteger(shipFleet.nextId) ? shipFleet.nextId : 1;
+  // Skupiny až po vozidlech: vozidla z neexistující skupiny se z ní vyjmou
+  game.groups.restore(data.groups);
   game.view = validView(data.view);
   // Cizí soubor může obsahovat nesmysly; místo se před stavbou kontroluje znovu
   game.construction.restore((data.construction ?? []).filter((job) => validJob(job, width, height)));
