@@ -901,7 +901,8 @@ export class Fleet {
   private loadingStation(train: Train): Station | null {
     if (train.state !== 'loading' || train.target === -1 || !train.orders) return null;
     if (isSpecialOrder(this.targetFlags(train))) return null;
-    return this.station(train.orders[train.target]) ?? null;
+    const station = this.station(train.orders[train.target]);
+    return station ? this.platformAt(train, station) : null;
   }
 
   // Volby příkazu, ke kterému vlak právě jede nebo u kterého stojí
@@ -964,9 +965,13 @@ export class Fleet {
   // Nástupiště z jízdního řádu, která jsou kratší než souprava
   shortStations(train: Train): Station[] {
     const length = trainLength(train);
+    // Ve spojené stanici stačí jedno dost dlouhé nástupiště (vlak si ho vybere)
     return stationOrders(train)
       .map((id) => this.station(id))
-      .filter((s, i, all): s is Station => s !== undefined && s.length < length && all.indexOf(s) === i);
+      .filter(
+        (s, i, all): s is Station =>
+          s !== undefined && all.indexOf(s) === i && this.platformsOf(s).every((part) => part.length < length),
+      );
   }
 
   stationName(id: number): string {
@@ -1189,7 +1194,7 @@ export class Fleet {
       const station = this.goal(train);
       // Pobyt se prodlouží podle množství vyloženého a naloženého nákladu
       if (station && isStation(station) && !passing) {
-        train.waitDays += this.exchange(train, station) / LOADING_PER_DAY;
+        train.waitDays += this.exchange(train, this.platformAt(train, station)) / LOADING_PER_DAY;
         // Jízdní řád s časy: stání aspoň podle plánu; kdo přijel dřív, počká, aby odjel včas
         const early = this.recordArrival(train);
         if (flags.wait !== undefined) train.waitDays = Math.max(train.waitDays, flags.wait);
@@ -1408,14 +1413,23 @@ export class Fleet {
     const blocked = (x: number, y: number): boolean => this.reservations.blocks(train, x, y);
     if (!isStation(goal)) return blocked;
     const width = this.game.world.map.width;
-    const rows = new Map<number, { x: number; y: number }[]>();
-    for (const t of stationTiles(goal)) {
-      const row = goal.axis === 'x' ? t.y : t.x;
-      rows.set(row, [...(rows.get(row) ?? []), t]);
+    // Koleje všech nástupišť spojené stanice; obsazená kolej se vynechá celá, stejně jako nástupiště
+    // kratší než souprava, je-li ve stanici dost dlouhé
+    const parts = this.platformsOf(goal);
+    const length = trainLength(train);
+    const long = parts.filter((part) => part.length >= length);
+    const short = new Set(long.length > 0 ? parts.filter((part) => part.length < length).map((part) => part.id) : []);
+    const rows = new Map<string, { x: number; y: number }[]>();
+    for (const part of parts) {
+      for (const t of stationTiles(part)) {
+        const row = `${part.id}:${part.axis === 'x' ? t.y : t.x}`;
+        rows.set(row, [...(rows.get(row) ?? []), t]);
+      }
     }
     const occupied = new Set<number>();
-    for (const row of rows.values()) {
-      if (row.some((t) => blocked(t.x, t.y))) for (const t of row) occupied.add(t.y * width + t.x);
+    for (const [key, row] of rows) {
+      const part = Number(key.split(':')[0]);
+      if (short.has(part) || row.some((t) => blocked(t.x, t.y))) for (const t of row) occupied.add(t.y * width + t.x);
     }
     return (x, y) => blocked(x, y) || occupied.has(y * width + x);
   }
@@ -1433,8 +1447,26 @@ export class Fleet {
     if (!isStation(goal)) {
       return findRoute(rail, start, (x, y) => x === goal.x && y === goal.y, goal, avoid);
     }
-    const route = findRoute(rail, start, (x, y) => rail.stationAt(x, y)?.id === goal.id, goal, avoid);
-    return route ? extendThroughStation(rail, route, goal) : null;
+    // Jako v OpenTTD jede vlak ke stanici: zastaví u kterékoli koleje kteréhokoli nástupiště spojené stanice
+    const ids = new Set(this.platformsOf(goal).map((s) => s.id));
+    const route = findRoute(rail, start, (x, y) => ids.has(rail.stationAt(x, y)?.id ?? -1), goal, avoid);
+    if (!route) return null;
+    const last = route[route.length - 1];
+    return extendThroughStation(rail, route, rail.stationAt(last.x, last.y) ?? goal);
+  }
+
+  // Nástupiště spojené stanice, ke které patří část goal (u samostatné stanice jen ona)
+  private platformsOf(goal: Station): Station[] {
+    if (goal.kind !== undefined) return [goal];
+    const members = this.game.world.rail.membersOf(goal).filter((s) => s.kind === undefined);
+    return members.some((s) => s.id === goal.id) ? members : [goal];
+  }
+
+  // Nástupiště, u kterého vlak stojí (hlava soupravy), pokud patří ke stanici goal; jinak goal
+  private platformAt(train: Train, goal: Station): Station {
+    const head = train.path[segmentIndexAt(train.path, Math.max(0, train.pos - 1e-6))];
+    const here = head && this.game.world.rail.stationAt(head.x, head.y);
+    return here && this.platformsOf(goal).includes(here) ? here : goal;
   }
 
   // Kusy koleje, na kterých souprava právě stojí
