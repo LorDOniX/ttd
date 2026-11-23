@@ -15,6 +15,7 @@ import {
   STATION_LENGTH,
   STATION_SPREAD,
   TRACK_PIECE_COST,
+  WAYPOINT_COST,
   type AirportType,
 } from '../game/balance';
 import { CARGOS } from '../game/cargo';
@@ -68,6 +69,7 @@ export type BuildTool =
   | 'station'
   | 'depot'
   | 'signal'
+  | 'waypoint'
   | 'road'
   | 'road-stop'
   | 'road-depot'
@@ -286,13 +288,16 @@ export class BuildTools {
         ['depot', '🏭', 'Depo', 'D', formatMoneyShort(DEPOT_COST)],
         ['bridge', '🌉', 'Most', 'J', `${formatMoneyShort(BRIDGE_PIECE_COST)} / pole`],
         ['signal', '🚦', 'Návěstidla', 'B', `${formatMoneyShort(SIGNAL_COST)} / kus`],
+        ['waypoint', '🚩', 'Průjezdný bod', 'C', formatMoneyShort(WAYPOINT_COST)],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Koleje (autorail jako v OpenTTD): kliknutím položíte dílek pod kurzorem (u rohu dlaždice zatáčku), ' +
         'tažením rovný úsek nebo úhlopříčku podle směru tažení. Ctrl/Cmd odebírá koleje, Shift ukáže jen cenu. ' +
         'Depo se samo napojí na kolej před vjezdem. Nástupiště: rozměr a orientace v okně, nebo Drag & Drop. ' +
         'Most: táhněte od nájezdu k nájezdu přes koleje, silnice, vodu i trávu, provoz pod ním zůstane. ' +
-        'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. R – otočit, Esc – zrušit nástroj.',
+        'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. Průjezdný bod na rovné koleji ' +
+        'lze dát do jízdního řádu: vlak jím projede bez zastavení (vybere tak trasu); kliknutím na bod ho odstraníte. ' +
+        'R – otočit, Esc – zrušit nástroj.',
     );
   }
 
@@ -714,6 +719,8 @@ export class BuildTools {
     ) {
       this.dragStart = tile;
       this.updatePath();
+    } else if (this.tool === 'waypoint') {
+      this.report(this.game.construction.toggleWaypoint(tile.x, tile.y));
     } else if (this.tool === 'road-stop') {
       this.placeStation([tile], (join) => this.game.construction.buildRoadStop(tile.x, tile.y, join));
     } else if (this.tool === 'port') {
@@ -1210,6 +1217,15 @@ export class BuildTools {
         text = 'Letiště potřebuje volnou zemi bez staveb, silnic a vody';
       } else
         text = `${spec.name} · ${formatMoneyShort(spec.cost)} · ${this.reachText(shape)}${this.joinText(stationTiles(shape))}`;
+    } else if (this.tool === 'waypoint' && tile) {
+      const existing = rail.waypointAt(tile.x, tile.y);
+      const ok = existing !== undefined || rail.waypointAxis(tile.x, tile.y) !== null;
+      this.preview.showArea([tile], ok ? (existing ? 'demolish' : 'valid') : 'invalid');
+      text = existing
+        ? `${existing.name} – kliknutím odstranit (vrátí ${formatMoneyShort(WAYPOINT_COST * 0.5)})`
+        : ok
+          ? `Průjezdný bod · ${formatMoneyShort(WAYPOINT_COST)}`
+          : 'Průjezdný bod jde jen na rovnou kolej bez výhybky, návěstidla a mostu';
     } else if (this.tool === 'road-stop' && tile) {
       const axis = rail.roadStopAxis(tile.x, tile.y);
       if (axis) {

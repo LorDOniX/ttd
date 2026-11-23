@@ -42,6 +42,9 @@ export interface OrdersSource {
     depots: () => { id: number; name: string }[];
     depotName: (depotId: number) => string;
     focusDepot: (depotId: number) => void;
+    // Průjezdné body (jen vlaky): příkaz „Jet přes“ bez zastavení
+    waypoints: () => { id: number; name: string }[];
+    focusWaypoint: (waypointId: number) => void;
   };
   subscribe: (refresh: () => void) => (() => void)[];
   exists: () => boolean;
@@ -161,7 +164,11 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
       }
       el.draggable = true;
       el.addEventListener('dblclick', () =>
-        flags[index].depot ? source.flags?.focusDepot(orders[index]) : source.focusStation(orders[index]),
+        flags[index].depot
+          ? source.flags?.focusDepot(orders[index])
+          : flags[index].waypoint
+            ? source.flags?.focusWaypoint(orders[index])
+            : source.focusStation(orders[index]),
       );
       el.addEventListener('dragstart', (e) => {
         dragFrom = index;
@@ -204,6 +211,10 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
         }
         const f = flags[i];
         if (f.depot) return row(i, `${i + 1}: Jet do ${source.flags.depotName(stationId)} na servis`, '');
+        if (f.waypoint) {
+          const name = source.flags.waypoints().find((w) => w.id === stationId)?.name ?? '?';
+          return row(i, `${i + 1}: Jet přes ${name}`, '[průjezdný bod]');
+        }
         const verb = f.via ? 'Projet' : 'Jet do';
         return row(i, `${i + 1}: ${verb} ${source.stationName(stationId)}`, f.via ? '' : flagsText(f));
       }),
@@ -305,7 +316,7 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
     function flagControls(api: NonNullable<OrdersSource['flags']>): HTMLElement[] {
       const index = selected;
       const f = index !== END ? flags[index] : undefined;
-      const editable = f !== undefined && !f.depot;
+      const editable = f !== undefined && !f.depot && !f.waypoint;
       const choice = <T extends string>(
         label: string,
         title: string,
@@ -369,7 +380,24 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
           refresh();
         }
       });
-      return [load, unload, refit, via, depot];
+      const waypoints = api.waypoints();
+      const waypoint = h('select', {
+        title: 'Přidat průjezdný bod: vlak jím projede bez zastavení, a tak si vybere trasu',
+        disabled: waypoints.length === 0,
+      });
+      waypoint.append(h('option', { value: '', selected: true }, 'Průjezdný bod ▾'));
+      for (const w of waypoints) waypoint.append(h('option', { value: String(w.id) }, w.name));
+      waypoint.addEventListener('change', () => {
+        const waypointId = Number(waypoint.value);
+        waypoint.value = '';
+        if (Number.isNaN(waypointId)) return;
+        const error = insert(waypointId, { waypoint: true });
+        if (error) {
+          message = error;
+          refresh();
+        }
+      });
+      return [load, unload, refit, via, depot, waypoint];
     }
   }
 

@@ -148,6 +148,16 @@ export interface Depot {
   entrance: Edge;
 }
 
+// Průjezdný bod jako v OpenTTD: značka na rovné koleji, přes kterou lze vlak v řádu poslat (nezastaví)
+export interface Waypoint {
+  id: number;
+  x: number;
+  y: number;
+  axis: Axis;
+  name: string;
+  waypoint: true;
+}
+
 // Železniční most nad čímkoli (kolejí, silnicí, vodou, trávou): nájezd A na (x, y), pole mostu ve směru dir
 // a za ním nájezd B. Nájezdy jsou rovné koleje na souši, pole je ve výšce a pod ním zůstává, co tam je.
 export interface RailBridge {
@@ -230,6 +240,9 @@ export class RailNetwork {
   nextStationId = 0;
   nextDepotId = 0;
   nextBridgeId = 0;
+  // Průjezdné body na rovné koleji
+  readonly waypoints: Waypoint[] = [];
+  nextWaypointId = 0;
 
   constructor(readonly map: GameMap) {
     this.pieces = new Uint8Array(map.width * map.height);
@@ -252,6 +265,9 @@ export class RailNetwork {
     // Na nájezdu mostu jen kolej ve směru mostu (bez výhybky)
     const head = this.bridgeAtHead(x, y);
     if (head) return piece === axisPiece(bridgeAxis(head));
+    // Na průjezdném bodu jen jeho rovná kolej (bez výhybky)
+    const waypoint = this.waypointAt(x, y);
+    if (waypoint) return piece === axisPiece(waypoint.axis);
     switch (this.map.get(x, y)) {
       case TileType.Grass:
       case TileType.Trees:
@@ -295,6 +311,8 @@ export class RailNetwork {
     this.revision++;
     this.signals.delete(y * this.map.width + x);
     this.signalDirs.delete(y * this.map.width + x);
+    const waypoint = this.waypointAt(x, y);
+    if (waypoint) this.waypoints.splice(this.waypoints.indexOf(waypoint), 1);
     const type = this.map.get(x, y);
     if (type === TileType.Rail) this.map.set(x, y, TileType.Grass);
     if (type === TileType.Crossing) this.map.set(x, y, TileType.Road);
@@ -540,8 +558,39 @@ export class RailNetwork {
       this.map.isType(x, y, TileType.Rail) &&
       this.pieceCount(x, y) === 1 &&
       !this.hasSignal(x, y) &&
-      !this.bridgeAtHead(x, y)
+      !this.bridgeAtHead(x, y) &&
+      !this.waypointAt(x, y)
     );
+  }
+
+  waypointAt(x: number, y: number): Waypoint | undefined {
+    return this.waypoints.find((w) => w.x === x && w.y === y);
+  }
+
+  // Průjezdný bod jde jen na rovnou kolej bez výhybky, návěstidla a mostu; vrací její osu
+  waypointAxis(x: number, y: number): Axis | null {
+    if (!this.map.isType(x, y, TileType.Rail) || this.pieceCount(x, y) !== 1) return null;
+    if (this.hasSignal(x, y) || this.bridgeAtHead(x, y) || this.waypointAt(x, y)) return null;
+    const mask = this.mask(x, y);
+    if (mask === 1 << axisPiece('x')) return 'x';
+    if (mask === 1 << axisPiece('y')) return 'y';
+    return null;
+  }
+
+  addWaypoint(x: number, y: number, name: string): Waypoint | null {
+    const axis = this.waypointAxis(x, y);
+    if (!axis) return null;
+    const waypoint: Waypoint = { id: this.nextWaypointId++, x, y, axis, name, waypoint: true };
+    this.waypoints.push(waypoint);
+    this.revision++;
+    return waypoint;
+  }
+
+  removeWaypoint(waypoint: Waypoint): void {
+    const i = this.waypoints.indexOf(waypoint);
+    if (i < 0) return;
+    this.waypoints.splice(i, 1);
+    this.revision++;
   }
 
   // Most s nájezdem na (x, y), nebo undefined

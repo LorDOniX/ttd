@@ -82,6 +82,16 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
       if (rail.hasSignal(x, y)) {
         rows.push(['Návěstidlo', rail.signalDir(x, y) === undefined ? 'cestové obousměrné' : 'cestové jednosměrné']);
       }
+      const waypoint = rail.waypointAt(x, y);
+      if (waypoint) {
+        const users = game.fleet.trains.filter((t) =>
+          (t.orders ?? []).some((id, i) => id === waypoint.id && t.orderFlags[i]?.waypoint),
+        );
+        rows.push(
+          ['Průjezdný bod', waypoint.name],
+          ['Projíždějí', users.map((t) => t.name).join(', ') || 'žádné vlaky'],
+        );
+      }
       const owner = game.fleet.reservations.ownerAt(x, y);
       const holder = game.fleet.trains.find((t) => t.id === owner);
       if (holder) rows.push(['Rezervuje', holder.name]);

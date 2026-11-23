@@ -764,6 +764,8 @@ export const STATION_CATCHMENT_RADIUS = 4;
 export const CATCHMENT_RADIUS = { rail: 4, road: 3, water: 5, small: 3, large: 4 } as const;
 // Jak daleko od sebe smějí být části jedné spojené stanice (rozměr obdélníku přes všechny části)
 export const STATION_SPREAD = 12;
+// Průjezdný bod na koleji
+export const WAYPOINT_COST = 15_000;
 
 // Nákladní doprava: na nástupišti se drží nejvýš těžba za tolik měsíců
 export const FREIGHT_MAX_WAITING_MONTHS = 3;

@@ -143,7 +143,7 @@ export class Hud {
         windowButton(
           'rail-build',
           '🚂',
-          'Stavba železnice (K, N, D, B, X)',
+          'Stavba železnice (K, N, D, B, C, X)',
           actions.openRailBuild,
           toolbarIcon('build-rail'),
         ),

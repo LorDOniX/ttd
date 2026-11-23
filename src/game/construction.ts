@@ -15,6 +15,7 @@ import {
   SIGNAL_COST,
   STATION_SPREAD,
   TRACK_PIECE_COST,
+  WAYPOINT_COST,
   type AirportType,
 } from './balance';
 import { formatMoney, type Game } from './game';
@@ -80,7 +81,11 @@ export function infrastructureValue(world: World): number {
   for (const station of rail.stations) value += stationCost(station);
   for (const bridge of rail.bridges) value += bridgeCost(bridge.span);
   return (
-    value + rail.depots.length * DEPOT_COST + rail.roadDepots.length * ROAD_DEPOT_COST + rail.signals.size * SIGNAL_COST
+    value +
+    rail.depots.length * DEPOT_COST +
+    rail.roadDepots.length * ROAD_DEPOT_COST +
+    rail.signals.size * SIGNAL_COST +
+    rail.waypoints.length * WAYPOINT_COST
   );
 }
 
@@ -270,6 +275,34 @@ export class Construction {
     let name = base;
     for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
     return { name, townId: town.id };
+  }
+
+  // Průjezdný bod postaví na rovnou kolej, nebo existující odstraní (vrátí polovinu ceny)
+  toggleWaypoint(x: number, y: number): string | null {
+    const { rail, towns } = this.game.world;
+    const existing = rail.waypointAt(x, y);
+    if (existing) {
+      const user = this.game.fleet.trains.find((t) =>
+        (t.orders ?? []).some((id, i) => id === existing.id && t.orderFlags[i]?.waypoint),
+      );
+      if (user) return `Průjezdný bod ${existing.name} je v jízdním řádu vlaku ${user.name}.`;
+      rail.removeWaypoint(existing);
+      this.game.refund(WAYPOINT_COST * DEMOLISH_REFUND, 'construction');
+      this.game.events.emit('railChanged');
+      return null;
+    }
+    if (!rail.waypointAxis(x, y)) return 'Průjezdný bod jde jen na rovnou kolej bez výhybky, návěstidla a mostu.';
+    if (this.game.money < WAYPOINT_COST) return `Nedostatek peněz (${formatMoney(WAYPOINT_COST)}).`;
+    const town = [...towns].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+    const base = town ? `${town.name} – bod` : 'Bod';
+    const taken = new Set(rail.waypoints.map((w) => w.name));
+    let n = 1;
+    while (taken.has(`${base} ${n}`)) n++;
+    this.game.spend(WAYPOINT_COST, 'construction');
+    const waypoint = rail.addWaypoint(x, y, `${base} ${n}`)!;
+    this.game.news(`Postaven průjezdný bod ${waypoint.name}.`, { x, y });
+    this.game.events.emit('railChanged');
+    return null;
   }
 
   // Návěstidlo postaví, nebo existující odstraní za polovinu ceny

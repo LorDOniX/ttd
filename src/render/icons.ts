@@ -6,6 +6,7 @@ import { normalizedAircraft } from './aircraft';
 import { createAirportObject } from './airports';
 import { createPortObject, loadPortModel } from './ports';
 import { normalizedShip } from './ships';
+import { createWaypointObject } from './waypoints';
 import { WATER_DEPTH } from './terrain';
 import { moorDirection, moorPoint, portShape } from '../world/port';
 import { buildIndustryPreview } from './industries';
@@ -44,6 +45,7 @@ export type SceneIcon =
   | 'station'
   | 'depot'
   | 'signal'
+  | 'waypoint'
   | 'road'
   | 'road-stop'
   | 'road-depot'
@@ -133,6 +135,7 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
     return [tile(), depot];
   },
   signal: () => [tile(), track('x'), signal()],
+  waypoint: () => [tile(), track('x'), createWaypointObject('x')],
   // Most přes kolej: tři dlaždice, pod prostředním polem kolej napříč
   bridge: () => {
     const ground = [0, 1, 2].map((x) => {

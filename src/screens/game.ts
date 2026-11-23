@@ -262,6 +262,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     { codes: ['KeyZ'], key: 'Z', label: 'Zastávka aut', run: () => buildTools.toggleTool('road-stop') },
     { codes: ['KeyU'], key: 'U', label: 'Garáž aut', run: () => buildTools.toggleTool('road-depot') },
     { codes: ['KeyB'], key: 'B', label: 'Návěstidlo', run: () => buildTools.toggleTool('signal') },
+    { codes: ['KeyC'], key: 'C', label: 'Průjezdný bod', run: () => buildTools.toggleTool('waypoint') },
     { codes: ['KeyJ'], key: 'J', label: 'Most', run: () => buildTools.toggleTool('bridge') },
     {
       codes: ['KeyL'],

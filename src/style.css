@@ -1151,6 +1151,15 @@ kbd {
   white-space: nowrap;
 }
 
+.waypoint-label {
+  padding: 0 4px;
+  color: #222;
+  background: rgba(242, 194, 48, 0.85);
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .industry-label {
   padding: 0 5px;
   color: #fff;
@@ -1668,7 +1677,7 @@ body.pegman-dragging * {
 
 .ottd-orders__bar.ottd-orders__bar--flags > select,
 .ottd-orders__bar.ottd-orders__bar--flags > button {
-  flex: 1 1 45%;
+  flex: 1 1 30%;
 }
 
 .ottd-orders {

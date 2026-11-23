@@ -31,7 +31,16 @@ import { cleanFlags, type OrderFlags, type Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
 import { GameMap, TileType } from '../world/map';
-import { RailNetwork, PIECES, stationTiles, type Depot, type Edge, type RailBridge, type Station } from '../world/rail';
+import {
+  RailNetwork,
+  PIECES,
+  stationTiles,
+  type Depot,
+  type Edge,
+  type RailBridge,
+  type Station,
+  type Waypoint,
+} from '../world/rail';
 import { isTownLayout, type Town } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
@@ -62,6 +71,9 @@ export interface SaveData {
     // Mosty nad kolejemi a silnicemi; starší uložení je nemají
     bridges?: RailBridge[];
     nextBridgeId?: number;
+    // Průjezdné body; starší uložení je nemají
+    waypoints?: Waypoint[];
+    nextWaypointId?: number;
     roadDepots?: Depot[];
   };
   fleet: { trains: Train[]; nextId: number };
@@ -148,6 +160,8 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       signalDirs: [...rail.signalDirs],
       bridges: rail.bridges,
       nextBridgeId: rail.nextBridgeId,
+      waypoints: rail.waypoints,
+      nextWaypointId: rail.nextWaypointId,
       roadDepots: rail.roadDepots,
     },
     fleet: { trains: fleet.trains, nextId: fleet.nextId },
@@ -370,6 +384,14 @@ export function restoreGame(data: SaveData): Game {
     if (rail.bridgeProblem(b.x, b.y, x1, y1) === null) rail.addBridge(b.x, b.y, x1, y1).id = b.id;
   }
   rail.nextBridgeId = Math.max(finiteOr(data.rail.nextBridgeId, 0), ...rail.bridges.map((b) => b.id + 1));
+  // Průjezdné body: jen na rovné koleji (neplatné se zahodí)
+  for (const w of Array.isArray(data.rail.waypoints) ? data.rail.waypoints : []) {
+    if (!isObject(w) || !Number.isInteger(w.x) || !Number.isInteger(w.y) || !Number.isInteger(w.id)) continue;
+    if (!map.inBounds(w.x, w.y)) continue;
+    const added = rail.addWaypoint(w.x, w.y, typeof w.name === 'string' ? w.name : 'Bod');
+    if (added) added.id = w.id;
+  }
+  rail.nextWaypointId = Math.max(finiteOr(data.rail.nextWaypointId, 0), ...rail.waypoints.map((w) => w.id + 1));
   for (const entry of Array.isArray(data.rail.signalDirs) ? data.rail.signalDirs : []) {
     const [tile, dir] = Array.isArray(entry) ? entry : [-1, -1];
     if (rail.signals.has(tile) && Number.isInteger(dir) && dir >= 0 && dir < 4) rail.signalDirs.set(tile, dir as Edge);

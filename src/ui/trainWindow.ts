@@ -143,6 +143,11 @@ function trainOrders(game: Game, train: Train, links: TrainLinks): OrdersSource 
         const depot = fleet.depotById(depotId);
         if (depot) links.focus(depot.x + 0.5, depot.y + 0.5);
       },
+      waypoints: () => game.world.rail.waypoints.map((w) => ({ id: w.id, name: w.name })),
+      focusWaypoint: (waypointId) => {
+        const waypoint = fleet.waypointById(waypointId);
+        if (waypoint) links.focus(waypoint.x + 0.5, waypoint.y + 0.5);
+      },
     },
     toggleFullLoad: (stationId) => fleet.toggleFullLoad(train, stationId),
     canSkip: () => train.state !== 'depot' && !train.renewing,
@@ -155,7 +160,7 @@ function trainOrders(game: Game, train: Train, links: TrainLinks): OrdersSource 
       'Vlak objíždí příkazy dokola. U vybraného příkazu nastavíte nakládání (do plna, nenakládat), ' +
       'vykládání (vyložit vše, překládka pro další vozidlo, nevykládat), přestavbu prázdných vagonů ' +
       'na jiný náklad (po vyložení, za poplatek) nebo „Projet“ bez zastavení. ' +
-      '„Servis v depu“ přidá zajížďku do depa.',
+      '„Servis v depu“ přidá zajížďku do depa, „Průjezdný bod“ cestu přes bod na trati (bez zastavení).',
     focusStation: (stationId) => {
       const station = game.world.rail.stations.find((s) => s.id === stationId);
       if (station) links.focus(station.x + 0.5, station.y + 0.5);

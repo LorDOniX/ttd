@@ -26,6 +26,7 @@ import { RailView } from './rail';
 import { RoadVehiclesView } from './roadVehicles';
 import { RoadView } from './roads';
 import { SignalsView } from './signals';
+import { WaypointsView } from './waypoints';
 import { TerrainView } from './terrain';
 import { updateWater } from './water';
 import { TrafficLightsView } from './trafficLights';
@@ -82,6 +83,7 @@ export class GameView {
   private readonly ambientProps: AmbientPropsView;
   private readonly crossings: CrossingsView;
   private readonly signals: SignalsView;
+  private readonly waypoints: WaypointsView;
   private readonly roads: RoadView;
   private readonly trafficLights: TrafficLights;
   private readonly hemisphere: THREE.HemisphereLight;
@@ -157,6 +159,8 @@ export class GameView {
     this.portLamps = portLamps(world.rail.ports() as PortShape[]);
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
+    this.waypoints = new WaypointsView(world.rail);
+    this.waypoints.rebuild();
     this.trains = new TrainsView(game.fleet, map, world.rail);
     this.vehicles = new RoadVehiclesView(game.roadFleet, map);
     this.aircraft = new AircraftView3D(game.airFleet);
@@ -183,6 +187,7 @@ export class GameView {
       this.animals.object,
       railView.object,
       this.signals.object,
+      this.waypoints.object,
       this.trains.object,
       this.vehicles.object,
       this.aircraft.object,
@@ -190,7 +195,13 @@ export class GameView {
       this.pedestrians.object,
       this.crossings.object,
     );
-    this.labelScene.add(this.labels.object, stationLabels.object, this.floatingTexts.object, this.industries.labels);
+    this.labelScene.add(
+      this.labels.object,
+      stationLabels.object,
+      this.waypoints.labels,
+      this.floatingTexts.object,
+      this.industries.labels,
+    );
 
     this.camera = new IsoCamera(
       this.renderer.domElement,
@@ -238,6 +249,7 @@ export class GameView {
         railView.rebuild();
         this.portLamps = portLamps(world.rail.ports() as PortShape[]);
         this.signals.rebuild();
+        this.waypoints.rebuild();
         rebuildStationLabels();
       }
     };
