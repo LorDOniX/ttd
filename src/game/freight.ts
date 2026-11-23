@@ -50,9 +50,10 @@ export class Freight {
     });
   }
 
-  industriesInReach(station: StationShape): Industry[] {
-    const area = catchmentArea(station);
-    return this.game.world.industries.filter((i) => overlaps(area, i));
+  // Závody v dosahu: u postavené stanice v dosahu kterékoli její části (každá má dosah podle druhu)
+  industriesInReach(station: StationShape & Pick<Partial<Station>, 'kind' | 'airport'>): Industry[] {
+    const areas = this.game.world.rail.catchmentParts(station).map((part) => catchmentArea(part));
+    return this.game.world.industries.filter((i) => areas.some((area) => overlaps(area, i)));
   }
 
   // Druhy nákladu, které závody v dosahu nástupiště vyrábějí
@@ -94,9 +95,10 @@ export class Freight {
     const type = INDUSTRY_TYPES[industry.kind].produces;
     if (!type) return [];
     const served = this.servedBy(type);
-    return this.game.world.rail.stations.filter(
-      (s) => served.has(s.id) && this.industriesInReach(s).includes(industry),
-    );
+    const { rail } = this.game.world;
+    return rail
+      .primaries()
+      .filter((s) => rail.membersOf(s).some((m) => served.has(m.id)) && this.industriesInReach(s).includes(industry));
   }
 
   // Vyloží náklad, pokud ho nástupiště vykupuje, a naloží čekající (nejdřív z překládky); loadOnly jen doplní.
@@ -191,8 +193,9 @@ export class Freight {
 
   private produceMail(): void {
     const served = this.servedBy('mail');
-    for (const station of this.game.world.rail.stations) {
-      if (!served.has(station.id)) continue;
+    const { rail } = this.game.world;
+    for (const station of rail.primaries()) {
+      if (!rail.membersOf(station).some((m) => served.has(m.id))) continue;
       const monthly = this.monthlyMail(station);
       const amount = (monthly / DAYS_PER_MONTH) * inflowFactor(station.ratings.mail.rating);
       const max = monthly * FREIGHT_MAX_WAITING_MONTHS;

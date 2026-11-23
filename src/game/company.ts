@@ -40,9 +40,11 @@ export function performance(game: Game): PerformancePart[] {
   const now = game.clock.now;
   const trains = [...game.fleet.trains, ...game.roadFleet.vehicles, ...game.airFleet.aircraft, ...game.shipFleet.ships];
   const profitable = trains.filter((t) => t.lastIncome > t.lastCosts).length;
-  const stations = game.world.rail.stations.filter((s) =>
-    CARGO_TYPES.some((c) => s.ratings[c].lastVisit >= 0 && now - s.ratings[c].lastVisit <= SERVED_WITHIN_DAYS),
-  ).length;
+  const stations = game.world.rail
+    .primaries()
+    .filter((s) =>
+      CARGO_TYPES.some((c) => s.ratings[c].lastVisit >= 0 && now - s.ratings[c].lastVisit <= SERVED_WITHIN_DAYS),
+    ).length;
   const amount = delivered(year);
   const types = (year.passengers > 0 ? 1 : 0) + Object.values(year.freight).filter((v) => v > 0).length;
   const balance = game.money - game.loan;

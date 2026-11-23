@@ -1,7 +1,7 @@
 import { stationCost } from '../game/construction';
 import { CARGOS, CARGO_TYPES, transferWaiting, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
-import { AIRPORT_TYPES, MAINTENANCE_RATE, TOWN_ACCEPTS_MIN_BUILDINGS } from '../game/balance';
+import { AIRPORT_TYPES, MAINTENANCE_RATE, STATION_SPREAD, TOWN_ACCEPTS_MIN_BUILDINGS } from '../game/balance';
 import { aircraftModel, type Aircraft } from '../game/aircraft';
 import { shipModel, type Ship } from '../game/ships';
 import { ratingParts, targetRating, waitingAmount } from '../game/rating';
@@ -31,44 +31,58 @@ function waitingText(station: Station, cargo: Cargo): string {
   return cargo === 'passengers' ? `čeká ${amount}${extra}` : `${amount} t${extra}`;
 }
 
-// Řádky s přehledem nástupiště pro okno stanice i informace o dlaždici
+// Popis části stanice: „nástupiště 2×5“, „zastávka aut“, „malé letiště 5×4“, „přístav se 2 kotvišti“
+export function partLabel(part: Station): string {
+  if (part.kind === 'road') return 'zastávka aut';
+  if (part.kind === 'air')
+    return `${AIRPORT_TYPES[part.airport ?? 'small'].name.toLowerCase()} ${part.length}×${part.tracks}`;
+  if (part.kind === 'water') return 'přístav se 2 kotvišti';
+  return `nástupiště ${part.tracks}×${part.length}`;
+}
+
+// Vozidla, která mají část stanice v řádu
+function servingVehicles(
+  game: Game,
+  part: Station,
+): { trains: Train[]; vehicles: RoadVehicle[]; aircraft: Aircraft[]; ships: Ship[] } {
+  return {
+    trains: part.kind ? [] : game.fleet.trains.filter((t) => servesStation(t, part.id)),
+    vehicles: part.kind === 'road' ? game.roadFleet.vehicles.filter((v) => v.orders?.includes(part.id)) : [],
+    aircraft: part.kind === 'air' ? game.airFleet.aircraft.filter((p) => p.orders?.includes(part.id)) : [],
+    ships: part.kind === 'water' ? game.shipFleet.ships.filter((s) => s.orders?.includes(part.id)) : [],
+  };
+}
+
+// Řádky s přehledem stanice (i spojené ze všech částí) pro okno stanice i informace o dlaždici
 export function stationRows(game: Game, station: Station): [string, string][] {
   const now = game.clock.now;
-  const road = station.kind === 'road';
-  const air = station.kind === 'air';
-  const water = station.kind === 'water';
-  const served = (
-    road
-      ? game.roadFleet.vehicles.filter((v) => v.orders?.includes(station.id))
-      : air
-        ? game.airFleet.aircraft.filter((p) => p.orders?.includes(station.id))
-        : water
-          ? game.shipFleet.ships.filter((s) => s.orders?.includes(station.id))
-          : game.fleet.trains.filter((t) => servesStation(t, station.id))
-  ).map((t) => t.name);
-  const type: [string, string] = road
-    ? ['Typ', 'Zastávka aut']
-    : air
-      ? ['Typ', `${AIRPORT_TYPES[station.airport ?? 'small'].name} ${station.length}×${station.tracks}`]
-      : water
-        ? ['Typ', 'Přístav se 2 kotvišti']
-        : ['Rozměr', `${station.tracks}×${station.length}`];
+  const parts = game.world.rail.membersOf(station);
+  const onlyRail = parts.every((part) => !part.kind);
+  const served = [
+    ...new Set(
+      parts.flatMap((part) => {
+        const v = servingVehicles(game, part);
+        return [...v.trains, ...v.vehicles, ...v.aircraft, ...v.ships].map((t) => t.name);
+      }),
+    ),
+  ];
   const reach = [...game.passengers.townShares(station)].map(([t, share]) => `${t.name} (${percent(share)})`);
   const industries = game.freight.industriesInReach(station).map((i) => i.name);
   const accepted = game.freight.accepted(station).map((t) => CARGOS[t].noun);
   const towns = reach.length > 0;
+  const maintenance = parts.reduce((sum, part) => sum + stationCost(part), 0) * MAINTENANCE_RATE;
   return [
     ['Název', station.name],
-    type,
+    [parts.length > 1 ? 'Části' : 'Typ', parts.map(partLabel).join(', ')],
     ...stationCargos(game, station).map((c): [string, string] => {
       const { rating, lastVisit } = station.ratings[c];
-      const parts = ratingParts(station, c, now);
+      const ratingInfo = ratingParts(station, c, now);
       const visit = lastVisit < 0 ? 'nikdy' : `před ${Math.floor(now - lastVisit)} dny`;
       return [
         CARGOS[c].name,
         `${waitingText(station, c)} · hodnocení ${percent(rating)} → ${percent(targetRating(station, c, now))} ` +
-          `(${road || air || water ? 'návštěva' : 'vlak'} ${visit} ${percent(parts.visit)}, rychlost ${percent(parts.speed)}, ` +
-          `čekající ${percent(parts.waiting)})`,
+          `(${onlyRail ? 'vlak' : 'návštěva'} ${visit} ${percent(ratingInfo.visit)}, rychlost ${percent(ratingInfo.speed)}, ` +
+          `čekající ${percent(ratingInfo.waiting)})`,
       ];
     }),
     ['Výkup', accepted.length > 0 ? accepted.join(', ') : 'nic'],
@@ -81,11 +95,8 @@ export function stationRows(game: Game, station: Station): [string, string][] {
       `${game.passengers.buildingsInReach(station)} (poštu a zboží vykupuje od ${TOWN_ACCEPTS_MIN_BUILDINGS})`,
     ],
     ['Průmysl v dosahu', industries.length > 0 ? industries.join(', ') : 'žádný'],
-    [
-      road ? 'Obsluhují auta' : air ? 'Obsluhují letadla' : water ? 'Obsluhují lodě' : 'Obsluhují vlaky',
-      served.length > 0 ? served.join(', ') : 'žádná',
-    ],
-    ['Údržba', `${formatMoney((stationCost(station) * MAINTENANCE_RATE) / 12)} měsíčně`],
+    ['Obsluhují', served.length > 0 ? served.join(', ') : 'nikdo'],
+    ['Údržba', `${formatMoney(maintenance / 12)} měsíčně`],
   ];
 }
 
@@ -104,15 +115,16 @@ export function openStation(
     openShipyard?: (port: Station) => void;
   },
 ): void {
-  const id = `station-${station.id}`;
-  const road = station.kind === 'road';
-  const air = station.kind === 'air';
-  const water = station.kind === 'water';
+  // Okno patří celé spojené stanici (hlavní části); zbouráním hlavní části ho převezme další část
+  let primary = game.world.rail.primaryOf(station);
+  const id = `station-${primary.id}`;
   const render = (): HTMLElement => {
-    const trains = game.fleet.trains.filter((t) => servesStation(t, station.id));
-    const vehicles = game.roadFleet.vehicles.filter((v) => v.orders?.includes(station.id));
-    const aircraft = game.airFleet.aircraft.filter((p) => p.orders?.includes(station.id));
-    const ships = game.shipFleet.ships.filter((s) => s.orders?.includes(station.id));
+    const parts = game.world.rail.membersOf(primary);
+    const serving = parts.map((part) => servingVehicles(game, part));
+    const trains = serving.flatMap((v) => v.trains);
+    const vehicles = serving.flatMap((v) => v.vehicles);
+    const aircraft = serving.flatMap((v) => v.aircraft);
+    const ships = serving.flatMap((v) => v.ships);
     const buttons = [
       ...trains.map((t) => {
         const b = h(
@@ -155,15 +167,17 @@ export function openStation(
         return b;
       }),
     ];
-    if (water && links.openShipyard) {
-      const b = h('button', { className: 'small-button' }, '⚓ Loděnice');
-      b.addEventListener('click', () => links.openShipyard!(station));
-      buttons.push(b);
-    }
-    if (air && links.openHangar) {
-      const b = h('button', { className: 'small-button' }, '🛩️ Hangár');
-      b.addEventListener('click', () => links.openHangar!(station));
-      buttons.push(b);
+    for (const part of parts) {
+      if (part.kind === 'water' && links.openShipyard) {
+        const b = h('button', { className: 'small-button' }, '⚓ Loděnice');
+        b.addEventListener('click', () => links.openShipyard!(part));
+        buttons.push(b);
+      }
+      if (part.kind === 'air' && links.openHangar) {
+        const b = h('button', { className: 'small-button' }, '🛩️ Hangár');
+        b.addEventListener('click', () => links.openHangar!(part));
+        buttons.push(b);
+      }
     }
     return h(
       'div',
@@ -171,33 +185,36 @@ export function openStation(
       h(
         'table',
         { className: 'table' },
-        ...stationRows(game, station)
+        ...stationRows(game, primary)
           .filter(([label]) => !label.startsWith('Obsluhují'))
           .map(([label, value]) => h('tr', {}, h('td', {}, label), h('td', {}, value))),
       ),
-      h('h4', {}, road ? 'Auta' : air ? 'Letadla' : water ? 'Lodě' : 'Vlaky'),
+      h('h4', {}, 'Vozidla'),
       buttons.length > 0
         ? h('div', { className: 'train__actions' }, ...buttons)
-        : h(
-            'div',
-            { className: 'form__hint' },
-            road
-              ? 'Zastávku zatím žádné auto neobsluhuje.'
-              : air
-                ? 'Letiště zatím žádné letadlo neobsluhuje.'
-                : 'Stanici zatím žádný vlak neobsluhuje.',
-          ),
+        : h('div', { className: 'form__hint' }, 'Stanici zatím žádné vozidlo neobsluhuje.'),
       h(
         'div',
         { className: 'form__hint' },
         'Hodnocení každého druhu nákladu roste s častými a rychlými vlaky a klesá, když náklad čeká dlouho. ' +
-          'Čím vyšší hodnocení, tím víc cestujících a nákladu na stanici přijde.',
+          'Čím vyšší hodnocení, tím víc cestujících a nákladu na stanici přijde. ' +
+          'Nástupiště, zastávku, letiště nebo přístav postavené vedle stanice (s Ctrl kamkoli do ' +
+          `${STATION_SPREAD} polí) k ní připojíte: části sdílejí jméno, náklad i hodnocení a dosah se sčítá.`,
       ),
     );
   };
   const refresh = (): void => {
-    if (!game.world.rail.stations.includes(station)) windows.close(id);
-    else if (windows.isOpen(id)) windows.update(id, render());
+    const { rail } = game.world;
+    if (!rail.stations.includes(primary)) {
+      // Hlavní část zbořena: okno převezme část, která stanici převzala
+      const heir = rail.stations.find((s) => s.name === primary.name && s.joinedTo === undefined);
+      if (!heir) {
+        windows.close(id);
+        return;
+      }
+      primary = heir;
+    }
+    if (windows.isOpen(id)) windows.update(id, render());
   };
   const unsubscribe = [
     game.events.on('stationsChanged', refresh),
@@ -206,9 +223,9 @@ export function openStation(
     game.events.on('aircraftChanged', refresh),
     game.events.on('shipsChanged', refresh),
   ];
-  windows.open(id, station.name, render(), {
+  windows.open(id, primary.name, render(), {
     width: 420,
     onClose: () => unsubscribe.forEach((off) => off()),
-    locate: () => links.focus(station.x + 0.5, station.y + 0.5),
+    locate: () => links.focus(primary.x + 0.5, primary.y + 0.5),
   });
 }

@@ -13,6 +13,7 @@ import {
   ROAD_STOP_COST,
   ROAD_TILE_COST,
   SIGNAL_COST,
+  STATION_SPREAD,
   TRACK_PIECE_COST,
   type AirportType,
 } from './balance';
@@ -122,62 +123,127 @@ export class Construction {
     this.queue.push(...steps.map((step) => ({ kind: 'road' as const, step })));
   }
 
+  // Stanice, ke kterým jde nová část na těchto dlaždicích připojit: celá spojená stanice se musí vejít
+  // do obdélníku STATION_SPREAD × STATION_SPREAD (jako „station spread“ v OpenTTD); nejbližší první
+  joinCandidates(tiles: readonly TilePos[]): Station[] {
+    const { rail } = this.game.world;
+    const distance = (station: Station): number =>
+      Math.min(
+        ...rail
+          .membersOf(station)
+          .flatMap((m) => stationTiles(m))
+          .flatMap((a) => tiles.map((b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)))),
+      );
+    return rail
+      .primaries()
+      .filter((station) => {
+        const all = [...rail.membersOf(station).flatMap((m) => stationTiles(m)), ...tiles];
+        const xs = all.map((t) => t.x);
+        const ys = all.map((t) => t.y);
+        return Math.max(...xs) - Math.min(...xs) < STATION_SPREAD && Math.max(...ys) - Math.min(...ys) < STATION_SPREAD;
+      })
+      .sort((a, b) => distance(a) - distance(b));
+  }
+
+  // Stanice, jejíž část sousedí s dlaždicemi (i úhlopříčně); k ní se nová část připojí sama
+  adjacentStation(tiles: readonly TilePos[]): Station | null {
+    const near = (station: Station): boolean =>
+      this.game.world.rail
+        .membersOf(station)
+        .flatMap((m) => stationTiles(m))
+        .some((a) => tiles.some((b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= 1));
+    return this.joinCandidates(tiles).find(near) ?? null;
+  }
+
+  // Ke které stanici se nová část připojí: undefined = k sousední (jinak samostatně), null = samostatně,
+  // číslo = ke zvolené stanici (musí být v dosahu spojení); vrací stanici, null, nebo chybu
+  private joinTarget(tiles: readonly TilePos[], join: number | null | undefined): Station | null | string {
+    if (join === null) return null;
+    if (join === undefined) return this.adjacentStation(tiles);
+    const target = this.joinCandidates(tiles).find((s) => s.id === join);
+    return (
+      target ??
+      `Ke stanici je to moc daleko (spojená stanice se musí vejít do ${STATION_SPREAD}×${STATION_SPREAD} polí).`
+    );
+  }
+
+  // Jméno a město nové části: u připojené části podle stanice, jinak nové
+  private partName(shape: StationShape, target: Station | null): { name: string; townId: number } {
+    return target ? { name: target.name, townId: target.townId } : this.stationName(shape);
+  }
+
+  // Po postavení části: připojí ji ke stanici a ohlásí (built: „Postaveno nástupiště“, joined: „Nástupiště připojeno“)
+  private finishPart(part: Station, target: Station | null, built: string, joined: string, at: TilePos): void {
+    if (target) {
+      this.game.world.rail.join(part, target);
+      this.game.news(`${joined} ke stanici ${target.name}.`, at);
+    } else {
+      this.game.news(`${built} ${part.name}.`, at);
+    }
+    this.game.events.emit('railChanged');
+    this.game.events.emit('stationsChanged');
+  }
+
   // Vrací chybovou hlášku, nebo null při úspěchu
-  buildStation(shape: StationShape): string | null {
+  buildStation(shape: StationShape, join?: number | null): string | null {
     const { rail } = this.game.world;
     const cost = stationCost(shape);
     if (!rail.canPlaceStation(shape)) return 'Sem nástupiště postavit nelze.';
     if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
-    const { name, townId } = this.stationName(shape);
+    const target = this.joinTarget(stationTiles(shape), join);
+    if (typeof target === 'string') return target;
+    const { name, townId } = this.partName(shape, target);
     this.game.spend(cost, 'construction');
-    rail.addStation({ ...shape, name, townId });
-    this.game.news(`Postaveno nástupiště ${name}.`, shape);
-    this.game.events.emit('railChanged');
+    const part = rail.addStation({ ...shape, name, townId });
+    this.finishPart(part, target, 'Postaveno nástupiště', 'Nástupiště připojeno', shape);
     return null;
   }
 
   // Průjezdná zastávka aut na rovné silnici; silnice zůstane městu, které ji vlastní
-  buildRoadStop(x: number, y: number): string | null {
+  buildRoadStop(x: number, y: number, join?: number | null): string | null {
     const { rail } = this.game.world;
     const axis = rail.roadStopAxis(x, y);
     if (!axis) return 'Zastávka aut jde jen na rovnou silnici bez křižovatky.';
     if (this.game.money < ROAD_STOP_COST) return `Nedostatek peněz (${formatMoney(ROAD_STOP_COST)}).`;
-    const { name, townId } = this.stationName({ x, y, axis, length: 1, tracks: 1 });
+    const target = this.joinTarget([{ x, y }], join);
+    if (typeof target === 'string') return target;
+    const { name, townId } = this.partName({ x, y, axis, length: 1, tracks: 1 }, target);
     this.game.spend(ROAD_STOP_COST, 'construction');
-    rail.addRoadStop(x, y, axis, name, townId);
-    this.game.news(`Postavena zastávka aut ${name}.`, { x, y });
-    this.game.events.emit('railChanged');
+    const part = rail.addRoadStop(x, y, axis, name, townId);
+    this.finishPart(part, target, 'Postavena zastávka aut', 'Zastávka aut připojena', { x, y });
     return null;
   }
 
   // Letiště se středem (x, y), ranvej podél osy
-  buildAirport(type: AirportType, x: number, y: number, axis: Axis): string | null {
+  buildAirport(type: AirportType, x: number, y: number, axis: Axis, join?: number | null): string | null {
     const { rail } = this.game.world;
     const spec = AIRPORT_TYPES[type];
     const shape = airportShape(type, x, y, axis);
     if (this.game.clock.date.year < spec.year) return `${spec.name} lze stavět až od roku ${spec.year}.`;
     if (!rail.canPlaceAirport(shape)) return 'Letiště potřebuje volnou zemi bez staveb, silnic a vody.';
     if (this.game.money < spec.cost) return `Nedostatek peněz (${formatMoney(spec.cost)}).`;
-    const { name, townId } = this.stationName(shape);
+    const target = this.joinTarget(stationTiles(shape), join);
+    if (typeof target === 'string') return target;
+    const { name, townId } = this.partName(shape, target);
     this.game.spend(spec.cost, 'construction');
-    rail.addAirport(shape, type, name, townId);
-    this.game.news(`Postaveno letiště ${name}.`, shape);
-    this.game.events.emit('railChanged');
+    const part = rail.addAirport(shape, type, name, townId);
+    this.finishPart(part, target, 'Postaveno letiště', 'Letiště připojeno', shape);
     return null;
   }
 
   // Přístav na břehu: nábřeží na souši, kotviště na volné vodě před ním
-  buildPort(shape: PortShape): string | null {
+  buildPort(shape: PortShape, join?: number | null): string | null {
     const { map, rail } = this.game.world;
     if (!canPlacePort(map, shape, (x, y) => rail.isBerth(x, y))) {
       return 'Přístav potřebuje dvě dlaždice volného břehu a před nimi volnou vodu.';
     }
     if (this.game.money < PORT_COST) return `Nedostatek peněz (${formatMoney(PORT_COST)}).`;
-    const { name, townId } = this.stationName(shape);
+    const target = this.joinTarget(stationTiles(shape), join);
+    if (typeof target === 'string') return target;
+    const { name, townId } = this.partName(shape, target);
     this.game.spend(PORT_COST, 'construction');
-    rail.addPort(shape, name, townId);
-    this.game.news(`Postaven přístav ${name}.`, shape);
-    this.game.events.emit('railChanged');
+    const part = rail.addPort(shape, name, townId);
+    this.finishPart(part, target, 'Postaven přístav', 'Přístav připojen', shape);
     return null;
   }
 
@@ -200,7 +266,7 @@ export class Construction {
     const industry = this.game.freight.industriesInReach(shape)[0];
     const town = covered ?? nearest;
     const base = covered ? covered.name : (industry?.name ?? nearest.name);
-    const taken = new Set(rail.stations.map((s) => s.name));
+    const taken = new Set(rail.primaries().map((s) => s.name));
     let name = base;
     for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
     return { name, townId: town.id };

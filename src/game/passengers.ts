@@ -4,7 +4,7 @@ import {
   PASSENGERS_BOOSTED_RESIDENTS,
   PASSENGERS_MAX_WAITING_MONTHS,
   PASSENGERS_MONTHLY_SHARE,
-  STATION_CATCHMENT_RADIUS,
+  CATCHMENT_RADIUS,
 } from './balance';
 import {
   CARGO_TYPES,
@@ -19,7 +19,7 @@ import { formatMoney, type Game } from './game';
 import { bonusText } from './subsidies';
 import { inflowFactor, leaveShare, recordVisit, updateRating } from './rating';
 import { TileType } from '../world/map';
-import { stationTiles, type Station, type StationShape } from '../world/rail';
+import { poolId, stationTiles, type Station, type StationShape } from '../world/rail';
 import { buildingCapacity, townCapacity, type Town } from '../world/town';
 
 const DAYS_PER_MONTH = 30;
@@ -32,8 +32,8 @@ export interface Area {
 }
 
 // Obdélník dosahu nástupiště včetně okrajů (může přesahovat mapu)
-export function catchmentArea(station: StationShape): Area {
-  const r = STATION_CATCHMENT_RADIUS;
+export function catchmentArea(station: StationShape & Pick<Partial<Station>, 'kind' | 'airport'>): Area {
+  const r = catchmentRadius(station);
   const tiles = stationTiles(station);
   return {
     x0: Math.min(...tiles.map((t) => t.x)) - r,
@@ -41,6 +41,12 @@ export function catchmentArea(station: StationShape): Area {
     y0: Math.min(...tiles.map((t) => t.y)) - r,
     y1: Math.max(...tiles.map((t) => t.y)) + r,
   };
+}
+
+// Dosah podle druhu stanice jako v OpenTTD (bez druhu železniční nástupiště)
+export function catchmentRadius(station: Pick<Partial<Station>, 'kind' | 'airport'>): number {
+  if (station.kind === 'air') return CATCHMENT_RADIUS[station.airport ?? 'small'];
+  return CATCHMENT_RADIUS[station.kind ?? 'rail'];
 }
 
 export function inArea(area: Area, x: number, y: number): boolean {
@@ -72,17 +78,20 @@ export class Passengers {
   // Kolik dílů města (0–1) připadá na nástupiště
   townShares(station: Station): Map<Town, number> {
     this.refreshReach();
-    return this.shares.get(station.id) ?? new Map();
+    return this.shares.get(poolId(station)) ?? new Map();
   }
 
   // Počet budov měst v dosahu nástupiště
   buildingsInReach(station: Station): number {
     this.refreshReach();
-    return this.buildings.get(station.id) ?? 0;
+    return this.buildings.get(poolId(station)) ?? 0;
   }
 
   // Města v dosahu místa pro nové nástupiště: podíl zastávky (bez dělení s ostatními nástupišti) a počet budov
-  coverage(shape: StationShape): { shares: Map<Town, number>; buildings: number } {
+  coverage(shape: StationShape & Pick<Partial<Station>, 'kind' | 'airport'>): {
+    shares: Map<Town, number>;
+    buildings: number;
+  } {
     const { map, towns } = this.game.world;
     const area = catchmentArea(shape);
     const shares = new Map<Town, number>();
@@ -115,22 +124,26 @@ export class Passengers {
         weights.set(b.y * map.width + b.x, { town, weight: buildingCapacity(b.model) / capacity });
       }
     }
-    const covered = rail.stations.map((station) => {
-      const tiles: number[] = [];
-      const { x0, x1, y0, y1 } = catchmentArea(station);
-      for (let y = Math.max(0, y0); y <= Math.min(map.height - 1, y1); y++) {
-        for (let x = Math.max(0, x0); x <= Math.min(map.width - 1, x1); x++) {
-          if (weights.has(y * map.width + x)) tiles.push(y * map.width + x);
+    // Spojená stanice má dosah jako sjednocení dosahů všech svých částí
+    const pools = rail.primaries();
+    const covered = pools.map((primary) => {
+      const tiles = new Set<number>();
+      for (const part of rail.membersOf(primary)) {
+        const { x0, x1, y0, y1 } = catchmentArea(part);
+        for (let y = Math.max(0, y0); y <= Math.min(map.height - 1, y1); y++) {
+          for (let x = Math.max(0, x0); x <= Math.min(map.width - 1, x1); x++) {
+            if (weights.has(y * map.width + x)) tiles.add(y * map.width + x);
+          }
         }
       }
-      return tiles;
+      return [...tiles];
     });
     const stationsAt = new Map<number, number>();
     for (const tiles of covered) for (const t of tiles) stationsAt.set(t, (stationsAt.get(t) ?? 0) + 1);
 
     this.shares.clear();
     this.buildings.clear();
-    rail.stations.forEach((station, i) => {
+    pools.forEach((station, i) => {
       const shares = new Map<Town, number>();
       for (const t of covered[i]) {
         const { town, weight } = weights.get(t)!;
@@ -217,7 +230,7 @@ export class Passengers {
 
   private generate(): void {
     const now = this.game.clock.now;
-    for (const station of this.game.world.rail.stations) {
+    for (const station of this.game.world.rail.primaries()) {
       for (const cargo of CARGO_TYPES) updateRating(station, cargo, now);
       const monthly = this.inflow(station);
       const max = monthly * PASSENGERS_MAX_WAITING_MONTHS;

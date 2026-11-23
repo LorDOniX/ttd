@@ -44,7 +44,8 @@ export function openIndustry(
       }
     }
     if (type.accepts.length > 0) {
-      const stations = game.world.rail.stations
+      const stations = game.world.rail
+        .primaries()
         .filter((s) => freight.industriesInReach(s).includes(industry))
         .map((s) => s.name);
       rows.push(

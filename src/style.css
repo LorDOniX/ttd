@@ -2093,3 +2093,17 @@ body.pegman-dragging * {
   align-items: center;
   gap: 4px;
 }
+
+.station-join__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.station-join__option small {
+  color: var(--text-muted);
+}

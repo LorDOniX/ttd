@@ -105,7 +105,10 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
       action('Otevřít garáž', () => links.openRoadDepot(roadDepot));
     }
 
-    const covering = rail.stations.filter((s) => inArea(catchmentArea(s), x, y)).map((s) => s.name);
+    const covering = rail
+      .primaries()
+      .filter((s) => rail.membersOf(s).some((part) => inArea(catchmentArea(part), x, y)))
+      .map((s) => s.name);
     rows.push(['V dosahu nástupišť', covering.length > 0 ? covering.join(', ') : 'žádného']);
 
     return h(

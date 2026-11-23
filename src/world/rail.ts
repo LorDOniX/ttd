@@ -106,6 +106,39 @@ export interface Station extends StationShape {
   airport?: AirportType;
   // Strana nábřeží k vodě (jen u kind 'water')
   dock?: Edge;
+  // Část spojené stanice jako v OpenTTD: id hlavní části, se kterou sdílí jméno, náklad a hodnocení
+  joinedTo?: number;
+}
+
+// Id spojené stanice (hlavní části); samostatná stanice je sama sobě hlavní částí
+export function poolId(station: Station): number {
+  return station.joinedTo ?? station.id;
+}
+
+// Části sdílí s hlavní částí stejné objekty nákladu a hodnocení; čekající cestující a jméno čtou přes ni
+function linkPart(part: Station, owner: Station): void {
+  owner.transfers ??= {};
+  part.joinedTo = owner.id;
+  part.freight = owner.freight;
+  part.ratings = owner.ratings;
+  part.transfers = owner.transfers;
+  for (const key of ['waiting', 'name', 'townId'] as const) {
+    Object.defineProperty(part, key, {
+      get: () => owner[key],
+      set: (value) => ((owner as unknown as Record<string, unknown>)[key] = value),
+      enumerable: true,
+      configurable: true,
+    });
+  }
+}
+
+// Zruší propojení části: vlastní kopie sdíleného stavu
+function unlinkPart(part: Station): void {
+  for (const key of ['waiting', 'name', 'townId'] as const) {
+    const value = part[key];
+    Object.defineProperty(part, key, { value, writable: true, enumerable: true, configurable: true });
+  }
+  delete part.joinedTo;
 }
 
 export interface Depot {
@@ -310,7 +343,60 @@ export class RailNetwork {
     return this.stations.find((s) => stationTiles(s).some((t) => t.x === x && t.y === y));
   }
 
+  // Hlavní část spojené stanice (nebo stanice sama)
+  primaryOf(station: Station): Station {
+    if (station.joinedTo === undefined) return station;
+    return this.stations.find((s) => s.id === station.joinedTo) ?? station;
+  }
+
+  // Všechny části spojené stanice, hlavní první
+  membersOf(station: Station): Station[] {
+    const id = poolId(station);
+    const primary = this.stations.find((s) => s.id === id);
+    return [...(primary ? [primary] : []), ...this.stations.filter((s) => s.joinedTo === id && s !== primary)];
+  }
+
+  // Stanice tak, jak je vidí hráč: jen hlavní části
+  primaries(): Station[] {
+    return this.stations.filter((s) => s.joinedTo === undefined);
+  }
+
+  // Části, které tvar sdílí s dosahem: u postavené stanice celá spojená stanice, jinak tvar sám
+  catchmentParts<T extends StationShape>(shape: T): (T | Station)[] {
+    return 'id' in shape && this.stations.includes(shape as unknown as Station)
+      ? this.membersOf(shape as unknown as Station)
+      : [shape];
+  }
+
+  // Připojí novou část k existující stanici
+  join(part: Station, station: Station): void {
+    const owner = this.primaryOf(station);
+    if (owner === part) return;
+    linkPart(part, owner);
+  }
+
+  // Po načtení uložené hry: obnoví sdílení stavu částí; část bez hlavní části se osamostatní
+  relinkStations(): void {
+    for (const s of this.stations) {
+      if (s.joinedTo === undefined) continue;
+      const owner = this.stations.find((o) => o.id === s.joinedTo && o.joinedTo === undefined);
+      if (owner) linkPart(s, owner);
+      else delete s.joinedTo;
+    }
+  }
+
   removeStation(station: Station): void {
+    // Zbouráním hlavní části převezme stanici (jméno, náklad, hodnocení) další její část
+    if (station.joinedTo === undefined) {
+      const [, heir, ...rest] = this.membersOf(station);
+      if (heir) {
+        unlinkPart(heir);
+        heir.freight = station.freight;
+        heir.ratings = station.ratings;
+        heir.transfers = station.transfers;
+        for (const s of rest) linkPart(s, heir);
+      }
+    }
     for (const t of stationTiles(station)) {
       // Ze zastávky aut zůstane silnice i s vlastníkem
       this.map.set(t.x, t.y, station.kind === 'road' ? TileType.Road : TileType.Grass);

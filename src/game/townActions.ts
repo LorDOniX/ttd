@@ -15,7 +15,7 @@ export function fundBuildingsCost(town: Town): number {
 
 export function advertise(game: Game, town: Town): string | null {
   if (game.money < AD_CAMPAIGN_COST) return `Nedostatek peněz (${formatMoney(AD_CAMPAIGN_COST)}).`;
-  const stations = game.world.rail.stations.filter((s) => game.passengers.townsInReach(s).includes(town));
+  const stations = game.world.rail.primaries().filter((s) => game.passengers.townsInReach(s).includes(town));
   if (stations.length === 0) return `Ve městě ${town.name} nemáte žádné nástupiště.`;
   game.spend(AD_CAMPAIGN_COST, 'construction');
   for (const station of stations) {

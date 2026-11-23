@@ -1,6 +1,6 @@
 import { CARGOS, type Cargo } from '../game/cargo';
 import type { OrderFlags } from '../game/trains';
-import type { Station } from '../world/rail';
+import { poolId, type Station } from '../world/rail';
 import { h } from './dom';
 import { onStationPickChange, startStationPick, stationPick, stopStationPick } from './stationPicker';
 import type { WindowManager } from './windows';
@@ -112,7 +112,13 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
     startStationPick({
       owner: id,
       prompt: `${source.vehicleName()}: klikněte na ${source.stopNoun} v mapě, kam má jet`,
-      pick: (station) => source.accepts(station) ?? insert(station.id),
+      // U spojené stanice vybere část, kam vozidlo smí (nástupiště pro vlak, zastávku pro auto…)
+      pick: (station) => {
+        const pool = poolId(station);
+        const options = [station, ...source.stations().filter((s) => s !== station && poolId(s) === pool)];
+        const part = options.find((s) => source.accepts(s) === null);
+        return part ? insert(part.id) : source.accepts(station);
+      },
       reject: (reason) => {
         message = reason;
         refresh();
@@ -249,7 +255,13 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
     const stations = source.stations().sort((a, b) => a.name.localeCompare(b.name, 'cs'));
     const select = h('select', { title: 'Přidat zastávku ze seznamu', disabled: stations.length === 0 });
     select.append(h('option', { value: '', selected: true }, '▾'));
-    for (const s of stations) select.append(h('option', { value: String(s.id) }, s.name));
+    // Víc částí stejného druhu ve spojené stanici (např. dvě nástupiště) se rozliší pořadím
+    const sameName = (s: Station): Station[] => stations.filter((o) => o.name === s.name);
+    for (const s of stations) {
+      const twins = sameName(s);
+      const label = twins.length > 1 ? `${s.name} (${twins.indexOf(s) + 1})` : s.name;
+      select.append(h('option', { value: String(s.id) }, label));
+    }
     select.addEventListener('change', () => {
       const stationId = Number(select.value);
       select.value = '';

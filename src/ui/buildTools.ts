@@ -13,6 +13,7 @@ import {
   ROAD_TILE_COST,
   SIGNAL_COST,
   STATION_LENGTH,
+  STATION_SPREAD,
   TRACK_PIECE_COST,
   type AirportType,
 } from '../game/balance';
@@ -43,6 +44,7 @@ import {
   stationTiles,
   opposite,
   type Axis,
+  type Station,
   type StationShape,
 } from '../world/rail';
 import {
@@ -58,6 +60,7 @@ import {
 import { findRoadPath, roadEdgeAtCursor, singleRoadSteps, type RoadStep } from '../world/roadPath';
 import { h } from './dom';
 import type { WindowManager } from './windows';
+import { partLabel } from './station';
 
 export type BuildTool =
   | 'track'
@@ -97,6 +100,7 @@ export interface Modifiers {
 // Nástroje s oknem voleb (orientace depa, rozměry nástupiště)
 type OptionTool = 'depot' | 'road-depot' | 'station' | 'signal';
 const OPTIONS_WINDOW = 'build-options';
+const JOIN_WINDOW = 'station-join';
 
 function optionTool(tool: BuildTool | null): tool is OptionTool {
   return tool === 'depot' || tool === 'road-depot' || tool === 'station' || tool === 'signal';
@@ -205,6 +209,65 @@ export class BuildTools {
       if (this.dragStart) this.updatePath();
       this.refresh();
     }
+    // U stanic Ctrl/Cmd vybírá, ke které stanici se nová část připojí; obnoví se nápověda
+    if (this.stationTool()) this.refresh();
+  }
+
+  private stationTool(): boolean {
+    return (
+      this.tool === 'station' || this.tool === 'road-stop' || this.tool === 'port' || airportTool(this.tool) !== null
+    );
+  }
+
+  // Postaví část stanice: bez Ctrl/Cmd se připojí k sousední stanici, s ním okno s výběrem stanice
+  // v dosahu spojení (jako „Join station“ v OpenTTD) nebo nové samostatné stanice
+  private placeStation(tiles: TilePos[], build: (join?: number | null) => string | null): void {
+    if (!this.removeMode) {
+      this.report(build());
+      return;
+    }
+    const candidates = this.game.construction.joinCandidates(tiles);
+    if (candidates.length === 0) {
+      this.report(build(null));
+      return;
+    }
+    const choose = (join: number | null): void => {
+      this.windows.close(JOIN_WINDOW);
+      this.report(build(join));
+      this.refresh();
+    };
+    const option = (label: string, hint: string, join: number | null): HTMLElement => {
+      const b = h('button', { className: 'station-join__option' }, h('strong', {}, label), h('small', {}, hint));
+      b.addEventListener('click', () => choose(join));
+      return b;
+    };
+    const { rail } = this.game.world;
+    this.windows.open(
+      JOIN_WINDOW,
+      'Připojit ke stanici',
+      h(
+        'div',
+        { className: 'form station-join' },
+        option('Nová samostatná stanice', 'vlastní jméno, náklad i hodnocení', null),
+        ...candidates.map((station) =>
+          option(station.name, rail.membersOf(station).map(partLabel).join(', '), station.id),
+        ),
+        h(
+          'div',
+          { className: 'form__hint' },
+          `Části spojené stanice sdílejí jméno, čekající náklad i hodnocení a dosah se sčítá. ` +
+            `Celá stanice se musí vejít do ${STATION_SPREAD}×${STATION_SPREAD} polí.`,
+        ),
+      ),
+      { width: 300 },
+    );
+  }
+
+  // Nápověda do náhledu: k jaké stanici se nová část připojí
+  private joinText(tiles: TilePos[]): string {
+    if (this.removeMode) return ' · Ctrl: výběr stanice k připojení';
+    const station = this.game.construction.adjacentStation(tiles);
+    return station ? ` · připojí se ke stanici ${station.name}` : '';
   }
 
   openRailWindow(): void {
@@ -640,7 +703,7 @@ export class BuildTools {
     }
     if (this.tool === 'station' && !this.stationDrag) {
       const shape = this.stationShape();
-      if (shape) this.report(this.game.construction.buildStation(shape));
+      if (shape) this.placeStation(stationTiles(shape), (join) => this.game.construction.buildStation(shape, join));
     } else if (
       this.tool === 'track' ||
       this.tool === 'road' ||
@@ -652,13 +715,18 @@ export class BuildTools {
       this.dragStart = tile;
       this.updatePath();
     } else if (this.tool === 'road-stop') {
-      this.report(this.game.construction.buildRoadStop(tile.x, tile.y));
+      this.placeStation([tile], (join) => this.game.construction.buildRoadStop(tile.x, tile.y, join));
     } else if (this.tool === 'port') {
       const { map, rail } = this.game.world;
       const shape = portAt(map, tile, this.dock, (x, y) => rail.isBerth(x, y));
-      this.report(shape ? this.game.construction.buildPort(shape) : 'Přístav jde jen na volný břeh u volné vody.');
+      if (shape) this.placeStation(stationTiles(shape), (join) => this.game.construction.buildPort(shape, join));
+      else this.report('Přístav jde jen na volný břeh u volné vody.');
     } else if (airportTool(this.tool)) {
-      this.report(this.game.construction.buildAirport(airportTool(this.tool)!, tile.x, tile.y, this.axis));
+      const type = airportTool(this.tool)!;
+      const shape = airportShape(type, tile.x, tile.y, this.axis);
+      this.placeStation(stationTiles(shape), (join) =>
+        this.game.construction.buildAirport(type, tile.x, tile.y, this.axis, join),
+      );
     } else if (this.tool === 'road-depot') {
       this.report(this.game.construction.buildRoadDepot(tile.x, tile.y, this.roadDepotEntrance(tile)));
     } else if (this.tool === 'industry') {
@@ -716,7 +784,7 @@ export class BuildTools {
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
     if (this.tool === 'station') {
       const shape = this.stationShape();
-      if (shape) this.report(construction.buildStation(shape));
+      if (shape) this.placeStation(stationTiles(shape), (join) => construction.buildStation(shape, join));
     }
     this.dragStart = null;
     this.path = null;
@@ -948,7 +1016,7 @@ export class BuildTools {
   }
 
   // Co bude nové nástupiště obsluhovat: díl měst, náklad k odvozu a výkup
-  private reachText(shape: StationShape): string {
+  private reachText(shape: StationShape & Pick<Partial<Station>, 'kind' | 'airport'>): string {
     const { passengers, freight } = this.game;
     const { shares, buildings } = passengers.coverage(shape);
     const parts = [...shares].map(([town, share]) => `${town.name} ${Math.round(share * 100)} %`);
@@ -979,13 +1047,21 @@ export class BuildTools {
     );
   }
 
-  private showCatchment(shape: StationShape): void {
+  // Dosah podle druhu stanice; u postavené stanice dosah všech jejích částí
+  private showCatchment(shape: StationShape & Pick<Partial<Station>, 'kind' | 'airport'>): void {
     if (!this.showCoverage) return;
-    const { map } = this.game.world;
-    const { x0, y0, x1, y1 } = catchmentArea(shape);
+    const { map, rail } = this.game.world;
+    const seen = new Set<number>();
     const tiles: TilePos[] = [];
-    for (let y = Math.max(0, y0); y <= Math.min(map.height - 1, y1); y++) {
-      for (let x = Math.max(0, x0); x <= Math.min(map.width - 1, x1); x++) tiles.push({ x, y });
+    for (const part of rail.catchmentParts(shape)) {
+      const { x0, y0, x1, y1 } = catchmentArea(part);
+      for (let y = Math.max(0, y0); y <= Math.min(map.height - 1, y1); y++) {
+        for (let x = Math.max(0, x0); x <= Math.min(map.width - 1, x1); x++) {
+          if (seen.has(y * map.width + x)) continue;
+          seen.add(y * map.width + x);
+          tiles.push({ x, y });
+        }
+      }
     }
     this.preview.showCatchment(tiles);
   }
@@ -1098,7 +1174,7 @@ export class BuildTools {
           `${shape.tracks} ${plural(shape.tracks, 'kolej', 'koleje', 'kolejí')} × ` +
           `${shape.length} ${plural(shape.length, 'dílek', 'dílky', 'dílků')}`;
         text = ok
-          ? `Nástupiště ${size} · ${formatMoneyShort(cost)} · ${this.reachText(shape)}`
+          ? `Nástupiště ${size} · ${formatMoneyShort(cost)} · ${this.reachText(shape)}${this.joinText(stationTiles(shape))}`
           : `Nástupiště ${size} – sem postavit nelze`;
       }
     } else if (this.tool === 'depot' && tile) {
@@ -1110,11 +1186,12 @@ export class BuildTools {
         ? `Depo · ${formatMoneyShort(cost)}${links.length > 0 ? ' · napojí se na kolej' : ''}`
         : 'Sem depo postavit nelze';
     } else if (this.tool === 'port' && tile) {
-      const shape = portAt(this.game.world.map, tile, this.dock, (x, y) => rail.isBerth(x, y));
-      if (shape) {
-        this.preview.showPort(shape, this.game.money >= PORT_COST);
+      const port = portAt(this.game.world.map, tile, this.dock, (x, y) => rail.isBerth(x, y));
+      if (port) {
+        const shape = { ...port, kind: 'water' as const };
+        this.preview.showPort(port, this.game.money >= PORT_COST);
         this.showCatchment(shape);
-        text = `Přístav · ${formatMoneyShort(PORT_COST)} · ${this.reachText(shape)}`;
+        text = `Přístav · ${formatMoneyShort(PORT_COST)} · ${this.reachText(shape)}${this.joinText(stationTiles(shape))}`;
       } else {
         this.preview.showArea([tile], 'invalid');
         text = 'Přístav jde jen na volný břeh u volné vody (dvě dlaždice)';
@@ -1122,7 +1199,7 @@ export class BuildTools {
     } else if (airportTool(this.tool) && tile) {
       const type = airportTool(this.tool)!;
       const spec = AIRPORT_TYPES[type];
-      const shape = airportShape(type, tile.x, tile.y, this.axis);
+      const shape = { ...airportShape(type, tile.x, tile.y, this.axis), kind: 'air' as const, airport: type };
       const ok = rail.canPlaceAirport(shape);
       const allowed = this.game.clock.date.year >= spec.year;
       this.preview.showAirport(shape, type, ok && allowed && this.game.money >= spec.cost);
@@ -1131,14 +1208,15 @@ export class BuildTools {
       else if (!ok) {
         this.preview.showArea(stationTiles(shape), 'invalid');
         text = 'Letiště potřebuje volnou zemi bez staveb, silnic a vody';
-      } else text = `${spec.name} · ${formatMoneyShort(spec.cost)} · ${this.reachText(shape)}`;
+      } else
+        text = `${spec.name} · ${formatMoneyShort(spec.cost)} · ${this.reachText(shape)}${this.joinText(stationTiles(shape))}`;
     } else if (this.tool === 'road-stop' && tile) {
       const axis = rail.roadStopAxis(tile.x, tile.y);
       if (axis) {
-        const shape = { x: tile.x, y: tile.y, axis, length: 1, tracks: 1 };
+        const shape = { x: tile.x, y: tile.y, axis, length: 1, tracks: 1, kind: 'road' as const };
         this.preview.showRoadStop(tile.x, tile.y, axis, this.game.money >= ROAD_STOP_COST);
         this.showCatchment(shape);
-        text = `Zastávka aut · ${formatMoneyShort(ROAD_STOP_COST)} · ${this.reachText(shape)}`;
+        text = `Zastávka aut · ${formatMoneyShort(ROAD_STOP_COST)} · ${this.reachText(shape)}${this.joinText([tile])}`;
       } else {
         this.preview.showArea([tile], 'invalid');
         text = 'Zastávka aut jde jen na rovnou silnici bez křižovatky';
@@ -1166,7 +1244,7 @@ export class BuildTools {
       const station = rail.stationAt(tile.x, tile.y);
       if (station) {
         this.showCatchment(station);
-        text = `${station.name} – dosah nástupiště`;
+        text = `${station.name} – dosah stanice`;
       }
     } else if (this.tool === 'signal' && tile) {
       text = this.showSignals();

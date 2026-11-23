@@ -344,6 +344,9 @@ export function restoreGame(data: SaveData): Game {
     }
     rail.stations.splice(i, 1);
   }
+  // Části spojených stanic znovu sdílí stav s hlavní částí
+  for (const s of rail.stations) if (s.joinedTo !== undefined && !Number.isInteger(s.joinedTo)) delete s.joinedTo;
+  rail.relinkStations();
   rail.depots.push(...data.rail.depots);
   rail.roadDepots.push(...(Array.isArray(data.rail.roadDepots) ? data.rail.roadDepots : []));
   rail.nextStationId = data.rail.nextStationId;

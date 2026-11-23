@@ -760,6 +760,10 @@ export const PASSENGERS_MONTHLY_SHARE = 0.03;
 export const PASSENGERS_BOOSTED_RESIDENTS = 3_000;
 export const PASSENGERS_MAX_WAITING_MONTHS = 3;
 export const STATION_CATCHMENT_RADIUS = 4;
+// Dosah podle druhu stanice jako v OpenTTD: zastávka aut 3, nádraží 4, přístav 5, malé letiště 3, velké 4
+export const CATCHMENT_RADIUS = { rail: 4, road: 3, water: 5, small: 3, large: 4 } as const;
+// Jak daleko od sebe smějí být části jedné spojené stanice (rozměr obdélníku přes všechny části)
+export const STATION_SPREAD = 12;
 
 // Nákladní doprava: na nástupišti se drží nejvýš těžba za tolik měsíců
 export const FREIGHT_MAX_WAITING_MONTHS = 3;

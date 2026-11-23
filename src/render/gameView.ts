@@ -207,7 +207,7 @@ export class GameView {
     });
 
     const rebuildStationLabels = (): void =>
-      stationLabels.rebuild(world.rail.stations, (s) => {
+      stationLabels.rebuild(world.rail.primaries(), (s) => {
         const towns = game.passengers.townsInReach(s).length > 0;
         const produced = game.freight.produced(s);
         const accepted = game.freight.accepted(s);
