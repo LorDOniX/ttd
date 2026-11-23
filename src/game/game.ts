@@ -16,6 +16,7 @@ import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
 import type { BreakdownSetting } from './reliability';
+import type { EconomySetting } from './industryLife';
 import { growTown } from '../world/town';
 
 export const DEFAULT_COMPANY_NAME = 'Moje dopravní společnost';
@@ -126,6 +127,8 @@ export class Game {
   autoRenew = false;
   // Poruchy vozidel jako v nastavení OpenTTD; bez poruch se nejezdí ani na servis
   breakdowns: BreakdownSetting = 'normal';
+  // Změny výroby průmyslu jako v nastavení OpenTTD
+  economy: EconomySetting = 'smooth';
   money = START_MONEY;
   loan = 0;
   thisYear: YearStats = emptyYear();

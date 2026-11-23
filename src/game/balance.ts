@@ -839,6 +839,12 @@ export const MAIL_FARE_TIERS: readonly { maxDays: number; rate: number }[] = [
 
 // Živý průmysl: měsíční šance na změnu výroby těžebního závodu; dobře obsloužený spíš roste
 export const INDUSTRY_CHANGE_CHANCE = 0.04;
+// Plynulá ekonomika jako v OpenTTD: každý měsíc šance 1/22 na malou změnu výroby o 4–23 %
+export const SMOOTH_CHANGE_CHANCE = 1 / 22;
+export const SMOOTH_CHANGE_MIN = 0.04;
+export const SMOOTH_CHANGE_MAX = 0.23;
+// Kolik měsíců výroby a odvozu si závod pamatuje (graf v okně závodu)
+export const INDUSTRY_HISTORY_MONTHS = 12;
 export const INDUSTRY_WELL_SERVED = 0.6;
 export const INDUSTRY_GROWTH_CHANCE = { served: 0.67, unserved: 0.33 } as const;
 export const INDUSTRY_CHANGE_FACTOR = 1.5;

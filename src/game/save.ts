@@ -1,3 +1,4 @@
+import { isEconomySetting } from './industryLife';
 import {
   AIRCRAFT_MODELS,
   AIRPORT_TYPES,
@@ -7,6 +8,7 @@ import {
   SHIP_MODELS,
   STATION_LENGTH,
   TRAIN_MODELS,
+  INDUSTRY_HISTORY_MONTHS,
 } from './balance';
 import type { Aircraft } from './aircraft';
 import type { Ship } from './ships';
@@ -91,6 +93,7 @@ export interface SaveData {
     rngState: number;
     autoRenew?: boolean;
     breakdowns?: string;
+    economy?: string;
   };
   // Dotace; starší uložení je nemají
   subsidies?: unknown;
@@ -182,6 +185,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       rngState: game.rng.state,
       autoRenew: game.autoRenew,
       breakdowns: game.breakdowns,
+      economy: game.economy,
     },
     subsidies: game.subsidies.serialize(),
     groups: game.groups.serialize(),
@@ -247,6 +251,13 @@ function restoreIndustry(industry: Industry, day: number): Industry {
     lastReceived: finiteOr(industry.lastReceived, 0),
     // Starší uložení: lhůta bez dodávek běží až od načtení
     lastDelivery: finiteOr(industry.lastDelivery, day),
+    history: Array.isArray(industry.history)
+      ? industry.history
+          .filter((m) => isObject(m) && Number.isFinite(m.production) && Number.isFinite(m.transported))
+          .map((m) => ({ production: m.production, transported: m.transported }))
+          .slice(-INDUSTRY_HISTORY_MONTHS)
+      : undefined,
+    closing: industry.closing === true || undefined,
   };
 }
 
@@ -419,6 +430,8 @@ export function restoreGame(data: SaveData): Game {
   game.companyName = data.game.companyName;
   game.autoRenew = data.game.autoRenew === true;
   game.breakdowns = isBreakdownSetting(data.game.breakdowns) ? data.game.breakdowns : 'normal';
+  // Starší uložení měla skokové změny výroby (původní ekonomika)
+  game.economy = isEconomySetting(data.game.economy) ? data.game.economy : 'original';
   game.money = data.game.money;
   game.loan = data.game.loan;
   // Přepravený náklad starší uložení nezná nebo zná jen uhlí

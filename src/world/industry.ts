@@ -41,6 +41,10 @@ export interface Industry {
   lastReceived: number;
   // Den poslední dodávky nebo založení; zpracovatel bez dodávek časem zanikne
   lastDelivery: number;
+  // Výroba a odvoz po uzavřených měsících (nejstarší první, nejvýš rok) pro graf v okně závodu
+  history?: { production: number; transported: number }[];
+  // Závod ohlásil uzavření; na konci měsíce zanikne (jako v OpenTTD)
+  closing?: boolean;
 }
 
 export const INDUSTRY_SIZE = 3;

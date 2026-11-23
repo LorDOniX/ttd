@@ -1,12 +1,23 @@
 import { INDUSTRY_IDLE_YEARS, INDUSTRY_WELL_SERVED } from '../game/balance';
 import { CARGOS } from '../game/cargo';
+import type { GameDate } from '../game/clock';
 import { Game } from '../game/game';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
+import { barChart } from './chart';
 import { h } from './dom';
 import type { WindowManager } from './windows';
 
 const tonnes = (value: number): string => `${Math.round(value).toLocaleString('cs-CZ')} t`;
 const list = (names: string[]): string => (names.length > 0 ? names.join(', ') : 'žádné');
+
+// Popisky posledních count uzavřených měsíců (nejstarší první): „3/51“
+function monthLabels(date: GameDate, count: number): string[] {
+  const current = date.year * 12 + date.month;
+  return Array.from({ length: count }, (_, i) => {
+    const m = current - count + i;
+    return `${(m % 12) + 1}/${String(Math.floor(m / 12)).slice(-2)}`;
+  });
+}
 
 // Okno závodu: výroba a odvoz u producenta, nástupiště s výkupem u odběratele
 export function openIndustry(
@@ -37,9 +48,13 @@ export function openIndustry(
           'Čím lepší hodnocení nástupiště, tím víc nákladu.',
       );
       if (type.production) {
+        const served = `při odvozu aspoň ${Math.round(INDUSTRY_WELL_SERVED * 100)} % spíš stoupá`;
         hints.push(
-          `Výroba občas stoupne nebo klesne; při odvozu aspoň ${Math.round(INDUSTRY_WELL_SERVED * 100)} % ` +
-            'spíš stoupá. Vyčerpaný závod zanikne.',
+          game.economy === 'frozen'
+            ? 'Výroba se nemění (zmrazená ekonomika).'
+            : game.economy === 'smooth'
+              ? `Výroba se mění po malých krocích (o 4–23 %), ${served}. Vyčerpaný závod ohlásí uzavření.`
+              : `Výroba občas skokem stoupne nebo klesne, ${served}. Vyčerpaný závod ohlásí uzavření.`,
         );
       }
     }
@@ -62,14 +77,33 @@ export function openIndustry(
         );
       }
     }
+    const history = industry.history ?? [];
+    const chart =
+      type.produces && history.length > 0
+        ? [
+            h('h4', {}, 'Výroba a odvoz po měsících'),
+            barChart(
+              monthLabels(game.clock.date, history.length),
+              [
+                { label: 'Výroba', color: '#8a8f98', values: history.map((m) => m.production) },
+                { label: 'Odvezeno', color: CARGOS[type.produces].color, values: history.map((m) => m.transported) },
+              ],
+              (v) => `${Math.round(v)} t`,
+            ),
+          ]
+        : [];
     return h(
       'div',
       { className: 'form' },
+      ...(industry.closing
+        ? [h('div', { className: 'form__hint warning' }, 'Závod ohlásil uzavření – na konci měsíce zanikne.')]
+        : []),
       h(
         'table',
         { className: 'table' },
         ...rows.map(([label, value]) => h('tr', {}, h('td', {}, label), h('td', {}, value))),
       ),
+      ...chart,
       h('div', { className: 'form__hint' }, hints.join(' ')),
     );
   };
@@ -83,11 +117,12 @@ export function openIndustry(
     game.events.on('stationsChanged', refresh),
     game.events.on('industriesChanged', () => {
       if (!game.world.industries.includes(industry)) windows.close(id);
+      else refresh();
     }),
   ];
   const half = INDUSTRY_SIZE / 2;
   windows.open(id, industry.name, render(), {
-    width: 320,
+    width: 440,
     onClose: () => unsubscribe.forEach((off) => off()),
     locate: () => focus(industry.x + half, industry.y + half),
   });

@@ -3,6 +3,7 @@ import { AD_CAMPAIGN_COST, AD_RATING_BOOST } from '../game/balance';
 import { formatDate } from '../game/clock';
 import { SEASON_MODES, type SeasonMode } from '../game/seasons';
 import { BREAKDOWN_LABELS, BREAKDOWN_SETTINGS, isBreakdownSetting } from '../game/reliability';
+import { ECONOMY_LABELS, ECONOMY_SETTINGS, isEconomySetting } from '../game/industryLife';
 import { SUBSIDY_MULTIPLIERS } from '../game/balance';
 import { isSubsidyMultiplier, multiplierText } from '../game/subsidies';
 import { Game, formatMoney } from '../game/game';
@@ -60,6 +61,14 @@ export function openSettings(
   breakdownSelect.addEventListener('change', () => {
     if (isBreakdownSetting(breakdownSelect.value)) game.breakdowns = breakdownSelect.value;
   });
+  const economySelect = h(
+    'select',
+    { title: 'Plynulá: výroba se mění po malých krocích každý měsíc; původní: skoky; zmrazená: beze změn' },
+    ...ECONOMY_SETTINGS.map((e) => h('option', { value: e, selected: e === game.economy }, ECONOMY_LABELS[e])),
+  );
+  economySelect.addEventListener('change', () => {
+    if (isEconomySetting(economySelect.value)) game.economy = economySelect.value;
+  });
   const subsidySelect = h(
     'select',
     {},
@@ -110,6 +119,7 @@ export function openSettings(
     h('label', { className: 'form__row' }, renewInput, ' Automaticky obnovovat staré vlaky'),
     h('label', { className: 'form__field' }, 'Poruchy vozidel', breakdownSelect),
     h('label', { className: 'form__field' }, 'Dotace (násobek jízdného)', subsidySelect),
+    h('label', { className: 'form__field' }, 'Ekonomika (změny výroby)', economySelect),
     h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),
     h('div', { className: 'form__hint' }, `Seed mapy: ${seed}`),

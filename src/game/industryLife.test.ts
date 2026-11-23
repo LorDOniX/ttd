@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  INDUSTRY_GROWTH_CHANCE,
+  INDUSTRY_HISTORY_MONTHS,
+  SMOOTH_CHANGE_CHANCE,
   INDUSTRY_CHANGE_CHANCE,
   INDUSTRY_FUND_COST,
   INDUSTRY_IDLE_CLOSE_CHANCE,
@@ -10,6 +13,7 @@ import { addIndustry, emptyGame, runDays } from '../test/fixtures';
 import { INDUSTRY_TYPES, industryTiles } from '../world/industry';
 import { TileType } from '../world/map';
 import type { Game } from './game';
+import { parseSave, restoreGame, serializeGame } from './save';
 
 // Náhoda vyjde jen u vybraných pravděpodobností
 function only(game: Game, ...hits: number[]): void {
@@ -54,8 +58,9 @@ describe('založení závodu hráčem', () => {
 });
 
 describe('živý průmysl', () => {
-  it('dobře obsloužený důl zvýší těžbu', () => {
+  it('dobře obsloužený důl zvýší těžbu (původní ekonomika: skokem)', () => {
     const game = emptyGame();
+    game.economy = 'original';
     const mine = addIndustry(game, 'coal-mine', 20, 20);
     mine.transported = 100;
     game.rng.chance = (p) => p !== 64 * 64 * NEW_INDUSTRY_CHANCE_PER_TILE && p !== INDUSTRY_IDLE_CLOSE_CHANCE;
@@ -63,8 +68,9 @@ describe('živý průmysl', () => {
     expect(mine.production).toBe(180);
   });
 
-  it('vyčerpaný důl zanikne a uvolní dlaždice', () => {
+  it('vyčerpaný důl ohlásí uzavření, o měsíc později zanikne a uvolní dlaždice', () => {
     const game = emptyGame();
+    game.economy = 'original';
     const mine = addIndustry(game, 'coal-mine', 20, 20);
     mine.production = 35;
     only(game, INDUSTRY_CHANGE_CHANCE);
@@ -72,10 +78,14 @@ describe('živý průmysl', () => {
     let changed = 0;
     game.events.on('industriesChanged', () => changed++);
     runDays(game, 31);
+    expect(mine.closing).toBe(true);
+    expect(game.world.industries).toEqual([mine]);
+    expect(news.some((text) => text.includes('oznamuje brzké uzavření (zásoby jsou vyčerpané)'))).toBe(true);
+    runDays(game, 31);
     expect(game.world.industries).toEqual([]);
     expect(industryTiles(mine).every((t) => game.world.map.get(t.x, t.y) === TileType.Grass)).toBe(true);
-    expect(news.some((text) => text.includes('vyčerpané'))).toBe(true);
-    expect(changed).toBe(1);
+    expect(news.some((text) => text.includes('ukončil provoz'))).toBe(true);
+    expect(changed).toBe(2);
   });
 
   it('zpracovatel bez dodávek po letech zanikne, zásobovaný ne', () => {
@@ -85,7 +95,7 @@ describe('živý průmysl', () => {
     idle.lastDelivery = -INDUSTRY_IDLE_YEARS * 365 - 1;
     supplied.lastDelivery = -INDUSTRY_IDLE_YEARS * 365 + 60;
     only(game, INDUSTRY_IDLE_CLOSE_CHANCE);
-    runDays(game, 31);
+    runDays(game, 62);
     expect(game.world.industries).toEqual([supplied]);
   });
 
@@ -107,5 +117,48 @@ describe('živý průmysl', () => {
     const [industry] = game.world.industries;
     expect(industryTiles(industry).every((t) => game.world.map.get(t.x, t.y) === TileType.Industry)).toBe(true);
     expect(news).toContain(`Zahájen provoz: ${industry.name}.`);
+  });
+});
+
+describe('ekonomika jako v OpenTTD', () => {
+  it('plynulá: výroba se mění po malých krocích o 4–23 %', () => {
+    const game = emptyGame();
+    const mine = addIndustry(game, 'coal-mine', 20, 20);
+    mine.production = 100;
+    // Změna každý měsíc, vždy růst, dobře obsloužený
+    only(game, SMOOTH_CHANGE_CHANCE, INDUSTRY_GROWTH_CHANCE.served, INDUSTRY_GROWTH_CHANCE.unserved);
+    const seen: number[] = [];
+    for (let month = 0; month < 6; month++) {
+      const before = mine.production;
+      runDays(game, 31);
+      seen.push(mine.production / before - 1);
+    }
+    expect(seen.every((g) => g >= 0.035 && g <= 0.24)).toBe(true);
+    expect(mine.history).toHaveLength(6);
+  });
+
+  it('zmrazená: výroba se nemění a závody nevznikají ani nezanikají', () => {
+    const game = emptyGame();
+    game.economy = 'frozen';
+    const mine = addIndustry(game, 'coal-mine', 20, 20);
+    const idle = addIndustry(game, 'sawmill', 40, 40);
+    idle.lastDelivery = -100 * 365;
+    mine.production = 35;
+    game.rng.chance = () => true;
+    runDays(game, 93);
+    expect(game.world.industries).toEqual([mine, idle]);
+    expect(mine.production).toBe(35);
+  });
+
+  it('historie výroby a odvozu drží posledních 12 měsíců a přežije uložení', () => {
+    const game = emptyGame();
+    game.economy = 'frozen';
+    const mine = addIndustry(game, 'coal-mine', 20, 20);
+    runDays(game, 400);
+    expect(mine.history).toHaveLength(INDUSTRY_HISTORY_MONTHS);
+    expect(mine.history!.every((m) => m.production === mine.production)).toBe(true);
+    const copy = restoreGame(parseSave(JSON.stringify(serializeGame(game, 'test'))));
+    expect(copy.world.industries[0].history).toEqual(mine.history);
+    expect(copy.economy).toBe('frozen');
   });
 });
