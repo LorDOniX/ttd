@@ -79,6 +79,7 @@ export class GameView {
   private readonly forestMist: ForestMistView;
   private readonly animals: AnimalsView;
   private readonly buildings: BuildingsView;
+  private pickables: THREE.Object3D[] = [];
   private readonly industries: IndustriesView;
   private readonly ambientProps: AmbientPropsView;
   private readonly crossings: CrossingsView;
@@ -156,6 +157,8 @@ export class GameView {
     this.applySeason();
     void this.industries.sync(world.industries);
     const railView = new RailView(world.rail);
+    // Stavby, na které jde kliknout podle jejich 3D podoby
+    this.pickables = [this.buildings.object, this.industries.object, railView.object, this.roads.object];
     this.portLamps = portLamps(world.rail.ports() as PortShape[]);
     this.signals = new SignalsView(world.rail);
     this.signals.rebuild();
@@ -422,6 +425,25 @@ export class GameView {
     const { camera } = this.firstPerson;
     this.firstPersonProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     return this.firstPersonFrustum.setFromProjectionMatrix(this.firstPersonProjection);
+  }
+
+  // Dlaždice stavby pod kurzorem podle jejího skutečného 3D tvaru: vysoké budovy a části závodů přesahují
+  // na obrazovce nad dlaždice za sebou, klik na ně má otevřít je, ne zem pod kurzorem. Null = žádná stavba.
+  structureTileAt(clientX: number, clientY: number): { x: number; y: number } | null {
+    const raycaster = this.camera.ray(clientX, clientY);
+    const isShown = (o: THREE.Object3D | null): boolean => !o || (o.visible && isShown(o.parent));
+    const normal = new THREE.Vector3();
+    for (const hit of raycaster.intersectObjects(this.pickables, true)) {
+      if (!isShown(hit.object)) continue;
+      // Bod kousek pod povrchem (proti normále plochy), aby i okraj stavby padl na její vlastní dlaždici
+      const point = hit.point.clone();
+      if (hit.face)
+        point.addScaledVector(normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld), -0.05);
+      const x = Math.floor(point.x);
+      const y = Math.floor(point.z);
+      if (this.game.world.map.inBounds(x, y)) return { x, y };
+    }
+    return null;
   }
 
   // Id vlaku pod kurzorem

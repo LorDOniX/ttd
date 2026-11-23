@@ -372,8 +372,13 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     clickStart = null;
     if (moved > 4) return;
     if (stationPick()) {
+      // Nádraží podle 3D tvaru (střecha přesahuje), jinak dlaždice země pod kurzorem
+      const structure = view.structureTileAt(e.clientX, e.clientY);
       const picked = tileAt(e.clientX, e.clientY);
-      pickStationAt(picked ? world.rail.stationAt(picked.x, picked.y) : undefined);
+      pickStationAt(
+        (structure && world.rail.stationAt(structure.x, structure.y)) ||
+          (picked ? world.rail.stationAt(picked.x, picked.y) : undefined),
+      );
       return;
     }
     const trainId = view.trainAt(e.clientX, e.clientY);
@@ -410,31 +415,42 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
       });
       return;
     }
+    // Nejdřív stavba podle jejího 3D tvaru (vysoká budova nebo komín přesahuje nad dlaždice za sebou),
+    // pak dlaždice země pod kurzorem
+    const structure = view.structureTileAt(e.clientX, e.clientY);
+    if (structure && openTile(structure)) return;
     const tile = tileAt(e.clientX, e.clientY);
-    if (!tile) return;
+    if (tile) openTile(tile);
+  });
+
+  // Otevře okno toho, co na dlaždici stojí; vrací, zda tam něco bylo
+  function openTile(tile: { x: number; y: number }): boolean {
     const depot = world.rail.depotAt(tile.x, tile.y);
     if (depot) {
       links.openDepot(depot);
-      return;
+      return true;
     }
     const roadDepot = world.rail.roadDepotAt(tile.x, tile.y);
     if (roadDepot) {
       links.openRoadDepot(roadDepot);
-      return;
+      return true;
     }
     const industry = industryAt(world.industries, tile.x, tile.y);
     if (industry) {
       links.openIndustry(industry);
-      return;
+      return true;
     }
     const station = world.rail.stationAt(tile.x, tile.y);
     if (station) {
       links.openStation(station);
-      return;
+      return true;
     }
+    // Budova, silnice nebo zahrada města
     const owner = map.getOwner(tile.x, tile.y);
-    if (owner !== NO_OWNER) links.openTown(towns[owner]);
-  });
+    if (owner === NO_OWNER) return false;
+    links.openTown(towns[owner]);
+    return true;
+  }
 
   let lastFrame = performance.now();
   renderer.setAnimationLoop((now: number) => {
