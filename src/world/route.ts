@@ -1,5 +1,5 @@
 import { MinHeap } from './heap';
-import { TileType } from './map';
+import { TileType, type TilePos } from './map';
 import {
   EDGE_DELTA,
   EDGE_MID,
@@ -287,4 +287,48 @@ export function railNetworks(rail: RailNetwork): Int32Array {
     next++;
   }
   return label;
+}
+
+// Dlaždice s kolejí po nejkratší cestě mezi dvěma dlaždicemi s kolejí (po kusech kolejí, přes mosty, jen jeden
+// druh koleje), včetně obou konců; null, když spolu nesouvisí. Pro nástroje tažené podél trati (elektrizace).
+export function trackTilesBetween(rail: RailNetwork, from: TilePos, to: TilePos): TilePos[] | null {
+  const { map } = rail;
+  const { width } = map;
+  if (!rail.hasTrack(from.x, from.y) || !rail.hasTrack(to.x, to.y)) return null;
+  const edges = (x: number, y: number): number => {
+    let mask = 0;
+    PIECES.forEach(([a, b], piece) => {
+      if (rail.has(x, y, piece)) mask |= (1 << a) | (1 << b);
+    });
+    return mask;
+  };
+  const start = from.y * width + from.x;
+  const goal = to.y * width + to.x;
+  const parent = new Map<number, number>([[start, -1]]);
+  const queue = [start];
+  for (let head = 0; head < queue.length; head++) {
+    const i = queue[head];
+    if (i === goal) {
+      const tiles: TilePos[] = [];
+      for (let k = i; k !== -1; k = parent.get(k)!) tiles.push({ x: k % width, y: Math.floor(k / width) });
+      return tiles.reverse();
+    }
+    const x = i % width;
+    const y = Math.floor(i / width);
+    const mine = edges(x, y);
+    for (let edge = 0; edge < 4; edge++) {
+      if (!(mine & (1 << edge))) continue;
+      const [dx, dy] = EDGE_DELTA[edge];
+      const jump = (rail.bridgeFrom(x, y, edge as Edge)?.span ?? 0) + 1;
+      const nx = x + jump * dx;
+      const ny = y + jump * dy;
+      if (!map.inBounds(nx, ny)) continue;
+      const j = ny * width + nx;
+      if (parent.has(j) || !(edges(nx, ny) & (1 << opposite(edge)))) continue;
+      if (rail.railType[j] !== rail.railType[i]) continue;
+      parent.set(j, i);
+      queue.push(j);
+    }
+  }
+  return null;
 }
