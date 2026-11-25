@@ -15,7 +15,8 @@ import { GameView } from '../render/gameView';
 import { createLoadButton } from '../ui/dialogs';
 import { h, isDevHost } from '../ui/dom';
 import { generateWorld } from '../world/generator';
-import { Edge, defaultStationShape, stationTiles, type Station } from '../world/rail';
+import { Edge, RailType, defaultStationShape, stationTiles, type Station } from '../world/rail';
+import { modelRailType } from '../game/trains';
 import { findTrackPath } from '../world/railPath';
 import { hashSeed } from '../world/rng';
 import { TOWN_LAYOUTS, TOWN_LAYOUT_LABELS, growTown, type Town, type TownLayout } from '../world/town';
@@ -51,6 +52,17 @@ function placeStationNear(game: Game, town: Town): Station | null {
 // Trať mezi dvěma městy s depem a vypraveným vlakem
 function buildDemoLine(game: Game, from: Town, to: Town, model: TrainModel): boolean {
   const { rail } = game.world;
+  // Trať v druhu koleje lokomotivy (jednokolejka a maglev jsou samostatné sítě)
+  rail.buildType = modelRailType(model);
+  try {
+    return buildDemoTrack(game, from, to, model);
+  } finally {
+    rail.buildType = RailType.Rail;
+  }
+}
+
+function buildDemoTrack(game: Game, from: Town, to: Town, model: TrainModel): boolean {
+  const { rail } = game.world;
   const a = placeStationNear(game, from);
   const b = a && placeStationNear(game, to);
   const path = a && b && findTrackPath(rail, { x: a.x + 1, y: a.y }, { x: b.x, y: b.y });
@@ -61,7 +73,7 @@ function buildDemoLine(game: Game, from: Town, to: Town, model: TrainModel): boo
   if (model.electric) {
     for (const t of [...path, ...stationTiles(a), ...stationTiles(b), depot]) rail.setElectrified(t.x, t.y, true);
   }
-  game.fleet.buy(depot, model);
+  if (game.fleet.buy(depot, model)) return false;
   const train = game.fleet.trains[game.fleet.trains.length - 1];
   for (let i = 0; i < 3; i++) game.fleet.addWagon(train);
   return game.fleet.start(train, [a.id, b.id]) === null;
