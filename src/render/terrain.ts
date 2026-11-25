@@ -56,6 +56,8 @@ const TERRAIN_PALETTES: Record<Season, TerrainPalette> = {
 
 // Hladina leží pod terénem, na rozhraní s pevninou je svislý hliněný břeh a nad ním písčitý lem
 export const WATER_DEPTH = 0.06;
+// Hlína na bočních stěnách okraje mapy
+const EDGE_COLOR = 0x7a5a3a;
 const BEACH_WIDTH = 0.12;
 const BEACH_LIFT = 0.002;
 const SHALLOWS_LIFT = 0.001;
@@ -131,6 +133,11 @@ export class TerrainView {
   private readonly greenDetailColors: Float32Array;
   private readonly shore: THREE.Mesh;
   private readonly grid: THREE.LineSegments;
+  // Boční stěna terénu na okraji mapy, kde je okraj nad úrovní 0
+  private readonly edges = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.MeshLambertMaterial({ color: EDGE_COLOR, side: THREE.DoubleSide }),
+  );
   private readonly changes: MapChanges;
   private palette = TERRAIN_PALETTES.summer;
   private seasonKey = '';
@@ -168,7 +175,8 @@ export class TerrainView {
       withWater(new THREE.MeshLambertMaterial({ vertexColors: true }), surface),
     );
     this.grid = this.buildGrid();
-    this.object.add(mesh, details, this.shore, this.grid);
+    this.rebuildEdges();
+    this.object.add(mesh, details, this.shore, this.grid, this.edges);
   }
 
   setGridVisible(visible: boolean): void {
@@ -237,6 +245,7 @@ export class TerrainView {
     if (this.map.heightRevision !== this.heightRevision) {
       this.heightRevision = this.map.heightRevision;
       this.rebuildGrid();
+      this.rebuildEdges();
     }
     for (const i of new Set(changes)) {
       const x = i % width;
@@ -295,7 +304,36 @@ export class TerrainView {
     detailPositions.needsUpdate = true;
     this.heightRevision = this.map.heightRevision;
     this.rebuildGrid();
+    this.rebuildEdges();
     this.rebuildShore();
+  }
+
+  // Stěny podél okrajů mapy od terénu dolů pod hladinu (jako hrana mapy v OpenTTD)
+  private rebuildEdges(): void {
+    const { width, height } = this.map;
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const bottom = -WATER_DEPTH - 0.02;
+    const wall = (ax: number, az: number, bx: number, bz: number, normal: [number, number, number]): void => {
+      const ha = this.map.cornerLevel(ax, az) * HEIGHT_STEP;
+      const hb = this.map.cornerLevel(bx, bz) * HEIGHT_STEP;
+      if (ha === 0 && hb === 0) return;
+      positions.push(ax, ha, az, bx, hb, bz, bx, bottom, bz, ax, ha, az, bx, bottom, bz, ax, bottom, az);
+      for (let k = 0; k < 6; k++) normals.push(...normal);
+    };
+    for (let x = 0; x < width; x++) {
+      wall(x, 0, x + 1, 0, [0, 0, -1]);
+      wall(x + 1, height, x, height, [0, 0, 1]);
+    }
+    for (let y = 0; y < height; y++) {
+      wall(0, y + 1, 0, y, [-1, 0, 0]);
+      wall(width, y, width, y + 1, [1, 0, 0]);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    this.edges.geometry.dispose();
+    this.edges.geometry = geometry;
   }
 
   private isGreenTile(x: number, y: number): boolean {

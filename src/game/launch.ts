@@ -1,3 +1,4 @@
+import type { TerrainKind } from '../world/heightmap';
 import type { TownLayout } from '../world/town';
 import { serializeGame, type SaveData } from './save';
 import type { Game } from './game';
@@ -19,6 +20,8 @@ export interface NewGameOptions {
   industries: IndustryAmount;
   // Silnice ve městech; záměr uložený před zavedením volby ji nemá
   townLayout?: TownLayout | 'random';
+  // Členitost terénu; záměr bez ní je rovina
+  terrain?: TerrainKind;
 }
 
 export type LaunchIntent = { mode: 'new'; options: NewGameOptions } | { mode: 'load'; save: string };

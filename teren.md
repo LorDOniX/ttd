@@ -32,11 +32,11 @@ proto jde po každém kroku hrát a commitovat. Body se odškrtávají průběž
 - [x] Testy, commit
 
 ## 4. Generátor s kopci
-- [ ] Výšková mapa ze šumu (vyšší vnitrozemí, roviny u vody), voda na úrovni 0, sousední rohy ±1
-- [ ] Města na rovině (srovnání okolí středu), průmysl jen na rovném místě
-- [ ] Nastavení „Terén“ v nové hře (rovina / mírně zvlněný / kopcovitý)
-- [ ] Okraj mapy: boční stěna terénu tam, kde je okraj nad úrovní 0
-- [ ] Úvodní obrazovka s kopci, kontrola v prohlížeči, commit
+- [x] Výšková mapa ze šumu (vyšší vnitrozemí, roviny u vody), voda na úrovni 0, sousední rohy ±1
+- [x] Města na rovině (okolí středu se odkope na rovinu), průmysl při tvorbě mapy srovná své místo
+- [x] Nastavení „Terén“ v nové hře (rovina / mírně zvlněný / kopcovitý)
+- [x] Okraj mapy: boční stěna terénu tam, kde je okraj nad úrovní 0
+- [x] Úvodní obrazovka s kopci, kontrola v prohlížeči, commit
 
 ## 5. Úpravy terénu
 - [ ] Nástroj Terén: zvednout / snížit roh nebo oblast tažením, srovnat oblast na jednu výšku

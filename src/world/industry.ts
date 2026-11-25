@@ -1,3 +1,4 @@
+import { flattenDown } from './heightmap';
 import {
   COAL_PRODUCTION,
   GRAIN_PRODUCTION,
@@ -185,6 +186,7 @@ export function industryAt(industries: readonly Industry[], x: number, y: number
 
 // Rozmístí závody na volnou zem mimo města; les na místě areálu a v pásu kolem něj se vykácí
 // density násobí počet závodů (hustota průmyslu z volby nové hry)
+// Při tvorbě mapy se místo pro závod ve svahu srovná (odkope); později závod stojí jen na rovině
 export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng, density = 1): Industry[] {
   const industries: Industry[] = [];
   const area = map.width * map.height;
@@ -192,7 +194,7 @@ export function placeIndustries(map: GameMap, towns: readonly Town[], rng: Rng, 
     const count = Math.max(1, Math.round((area / INDUSTRY_TYPES[kind].tilesPerIndustry) * density));
     let placed = 0;
     for (let attempt = 0; attempt < count * 80 && placed < count; attempt++) {
-      const industry = tryPlaceIndustry(map, towns, industries, kind, rng);
+      const industry = tryPlaceIndustry(map, towns, industries, kind, rng, 0, true);
       if (!industry) continue;
       industries.push(industry);
       placed++;
@@ -209,12 +211,14 @@ export function tryPlaceIndustry(
   kind: IndustryKind,
   rng: Rng,
   day = 0,
+  flatten = false,
 ): Industry | null {
   const type = INDUSTRY_TYPES[kind];
   const x = rng.int(EDGE_MARGIN, map.width - EDGE_MARGIN - INDUSTRY_SIZE);
   const y = rng.int(EDGE_MARGIN, map.height - EDGE_MARGIN - INDUSTRY_SIZE);
   const rotation = rng.int(0, 3);
-  if (industrySiteProblem(map, towns, industries, kind, x, y)) return null;
+  if (industrySiteProblem(map, towns, industries, kind, x, y, !flatten)) return null;
+  if (flatten) flattenDown(map, x, y, x + INDUSTRY_SIZE - 1, y + INDUSTRY_SIZE - 1);
   const production = type.production ? rng.int(type.production.min, type.production.max) : 0;
   return placeIndustryAt(map, towns, industries, kind, x, y, rotation, production, day);
 }
@@ -227,6 +231,7 @@ export function industrySiteProblem(
   kind: IndustryKind,
   x: number,
   y: number,
+  requireFlat = true,
 ): string | null {
   if (
     x < EDGE_MARGIN ||
@@ -238,7 +243,7 @@ export function industrySiteProblem(
   }
   const site = { x, y };
   if (!industryTiles(site).every((t) => map.isFree(t.x, t.y))) return 'Areál potřebuje volnou zem 3×3';
-  if (!map.allFlat(industryTiles(site))) return 'Areál potřebuje rovný terén';
+  if (requireFlat && !map.allFlat(industryTiles(site))) return 'Areál potřebuje rovný terén';
   // Okolí musí jít vykácet na trávu, takže v něm nesmí být voda ani stavby
   if (kind !== 'forest' && !clearingTiles(site).every((t) => map.inBounds(t.x, t.y) && map.isFree(t.x, t.y))) {
     return 'Kolem areálu musí být pás volné země bez vody a staveb';

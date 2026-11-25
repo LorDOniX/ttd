@@ -3,6 +3,7 @@ import { placeIndustries, type Industry } from './industry';
 import { GameMap, TileType, type TilePos } from './map';
 import { CITY_NAMES, VILLAGE_NAMES } from './names';
 import { fbm } from './noise';
+import { flattenDown, generateHeights, type TerrainKind } from './heightmap';
 import { RailNetwork } from './rail';
 import { Rng } from './rng';
 import { TOWN_LAYOUTS, createTownShape, expandTown, type Town, type TownKind, type TownLayout } from './town';
@@ -28,6 +29,8 @@ export interface GenerateOptions {
   firstTownAt?: TilePos;
   // Silniční síť měst jako v OpenTTD; náhodně = každé město jinak (výchozí lepší silnice)
   townLayout?: TownLayout | 'random';
+  // Členitost terénu; bez ní rovina (starší seedy a testy zůstanou stejné)
+  terrain?: TerrainKind;
 }
 
 const DEFAULT_OPTIONS: GenerateOptions = { waterLevel: 0.34, townDensity: 1 };
@@ -99,6 +102,14 @@ function townSiteNear(map: GameMap, at: TilePos): TilePos | null {
   return null;
 }
 
+// Okolí středu města, které se při tvorbě mapy srovná (odkope) na rovinu; město staví jen na rovině
+const TOWN_FLAT_RADIUS: Record<TownKind, number> = { city: 10, town: 8, village: 6 };
+
+function flattenTownSite(map: GameMap, x: number, y: number, kind: TownKind): void {
+  const r = TOWN_FLAT_RADIUS[kind];
+  flattenDown(map, x - r, y - r, x + r, y + r);
+}
+
 function minDistance(kind: TownKind, other: TownKind): number {
   return kind === 'city' && other === 'city' ? 40 : 26;
 }
@@ -138,6 +149,7 @@ function placeTowns(
       served: false,
       layout: townLayoutFor(layout, rng),
     };
+    flattenTownSite(map, town.x, town.y, kind);
     expandTown(map, town, year, rng);
     towns.push(town);
     placed++;
@@ -166,6 +178,7 @@ function placeTowns(
       served: false,
       layout: townLayoutFor(layout, rng),
     };
+    flattenTownSite(map, town.x, town.y, kind);
     expandTown(map, town, year, rng);
     towns.push(town);
     placed++;
@@ -197,6 +210,7 @@ function placeTowns(
       served: false,
       layout: townLayoutFor(layout, rng),
     };
+    flattenTownSite(map, town.x, town.y, kind);
     expandTown(map, town, year, rng);
     towns.push(town);
   }
@@ -211,6 +225,7 @@ export function generateWorld(
   const rng = new Rng(seed);
   const map = new GameMap(size, size);
   generateWater(map, seed, options.waterLevel);
+  generateHeights(map, seed, WATER_SCALE, options.waterLevel, options.terrain ?? 'flat');
 
   const towns: Town[] = [];
   const layout = options.townLayout ?? 'better';

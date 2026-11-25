@@ -1,3 +1,4 @@
+import { TERRAIN_KINDS, TERRAIN_NAMES, type TerrainKind } from '../world/heightmap';
 import { TRAIN_MODELS, type TrainModel } from '../game/balance';
 import { START_YEAR } from '../game/clock';
 import { Game } from '../game/game';
@@ -86,6 +87,7 @@ function createDemo(): Game {
     generateWorld(hashSeed('ttd-title'), DEMO_SIZE, START_YEAR, {
       waterLevel: 0.3,
       townDensity: 2.5,
+      terrain: 'gentle',
       firstTownAt: center,
     }),
   );
@@ -175,6 +177,10 @@ function newGamePanel(back: () => void): HTMLElement {
     [...TOWN_LAYOUTS.map((l): [TownLayout, string] => [l, TOWN_LAYOUT_LABELS[l]]), ['random', 'Náhodně (každé jinak)']],
     DEFAULT_OPTIONS.townLayout ?? 'better',
   );
+  const terrain = select<TerrainKind>(
+    TERRAIN_KINDS.map((k): [TerrainKind, string] => [k, TERRAIN_NAMES[k]]),
+    DEFAULT_OPTIONS.terrain ?? 'gentle',
+  );
   const start = menuButton('Začít', '', () => {
     const options: NewGameOptions = {
       seedText: seed.value.trim() || String(Date.now()),
@@ -183,6 +189,7 @@ function newGamePanel(back: () => void): HTMLElement {
       towns: towns.value as TownAmount,
       industries: industries.value as IndustryAmount,
       townLayout: layout.value as TownLayout | 'random',
+      terrain: terrain.value as TerrainKind,
     };
     launch({ mode: 'new', options });
   });
@@ -195,6 +202,7 @@ function newGamePanel(back: () => void): HTMLElement {
     h('h2', {}, 'Nová hra'),
     field('Seed mapy', seed),
     field('Velikost mapy', size),
+    field('Terén', terrain),
     field('Voda', water),
     field('Města a vesnice', towns),
     field('Silnice ve městech', layout),
