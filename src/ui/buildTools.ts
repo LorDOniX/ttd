@@ -1,3 +1,4 @@
+import { areaCorners, nearestCorner, planTiles, type TerraformMode } from '../world/terraform';
 import {
   AIRPORT_TYPES,
   BRIDGE_PIECE_COST,
@@ -12,6 +13,7 @@ import {
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
   ROAD_TILE_COST,
+  TERRAFORM_CORNER_COST,
   SIGNAL_COST,
   STATION_LENGTH,
   STATION_SPREAD,
@@ -90,8 +92,18 @@ export type BuildTool =
   | 'airport-large'
   | 'port'
   | 'demolish'
+  | 'terraform-raise'
+  | 'terraform-lower'
+  | 'terraform-level'
   | 'industry'
   | 'info';
+
+// Nástroj úpravy terénu → druh úpravy
+function terraformMode(tool: BuildTool | null): TerraformMode | null {
+  if (tool === 'terraform-raise') return 'raise';
+  if (tool === 'terraform-lower') return 'lower';
+  return tool === 'terraform-level' ? 'level' : null;
+}
 
 // Nástroj letiště → velikost letiště
 function airportTool(tool: BuildTool | null): AirportType | null {
@@ -415,6 +427,39 @@ export class BuildTools {
     );
   }
 
+  openTerrainWindow(): void {
+    const cost = formatMoneyShort(TERRAFORM_CORNER_COST);
+    this.openToolWindow(
+      'terrain-build',
+      'Úpravy terénu',
+      [
+        ['terraform-raise', '⛰️', 'Zvednout', '—', `${cost} / roh`],
+        ['terraform-lower', '🕳️', 'Snížit', '—', `${cost} / roh`],
+        ['terraform-level', '▭', 'Srovnat', '—', `${cost} / roh`],
+        ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
+      ],
+      'Kliknutím zvednete nebo snížíte roh dlaždice nejblíž kurzoru, tažením celou oblast o úroveň. ' +
+        'Srovnat: táhněte od místa, jehož výšku má oblast dostat. Sousední rohy se samy dorovnají, aby se ' +
+        'lišily nejvýš o úroveň, a platí se každý změněný roh. Pod stavbami, kolejemi a silnicemi a u vody ' +
+        'terén měnit nejde. Esc – zrušit nástroj.',
+    );
+  }
+
+  // Rohy, které úprava terénu změní, a cílová úroveň pro srovnání
+  private terraformTarget(): { corners: TilePos[]; mode: TerraformMode; target: number } | null {
+    const mode = terraformMode(this.tool);
+    const start = this.dragStart ?? this.hover;
+    const end = this.hover ?? start;
+    if (!mode || !start || !end) return null;
+    const anchor = nearestCorner(start.x, start.y, start.fx, start.fy);
+    const target = this.game.world.map.cornerLevel(anchor.x, anchor.y);
+    const single = start.x === end.x && start.y === end.y;
+    if (single && mode !== 'level') return { corners: [anchor], mode, target };
+    const x1 = Math.max(start.x - MAX_DEMOLISH_SIZE + 1, Math.min(start.x + MAX_DEMOLISH_SIZE - 1, end.x));
+    const y1 = Math.max(start.y - MAX_DEMOLISH_SIZE + 1, Math.min(start.y + MAX_DEMOLISH_SIZE - 1, end.y));
+    return { corners: areaCorners(start.x, start.y, x1, y1), mode, target };
+  }
+
   openWaterWindow(): void {
     this.openToolWindow(
       'water-build',
@@ -472,7 +517,7 @@ export class BuildTools {
 
   // Tlačítka vedle sebe (ikona, pod ní popisek), pod nimi ceny a nápověda na šířku tlačítek
   private openToolWindow(
-    id: 'rail-build' | 'road-build' | 'air-build' | 'water-build',
+    id: 'rail-build' | 'road-build' | 'air-build' | 'water-build' | 'terrain-build',
     title: string,
     tools: [SceneIcon, string, string, string, string][],
     hint: string,
@@ -796,6 +841,7 @@ export class BuildTools {
       this.tool === 'track' ||
       this.tool === 'road' ||
       this.tool === 'demolish' ||
+      terraformMode(this.tool) !== null ||
       this.tool === 'electrify' ||
       this.tool === 'station' ||
       this.tool === 'signal' ||
@@ -880,6 +926,10 @@ export class BuildTools {
       }
     }
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
+    const terraform = this.terraformTarget();
+    if (terraform && !this.estimateMode) {
+      this.report(construction.terraform(terraform.corners, terraform.mode, terraform.target));
+    }
     if (this.tool === 'electrify') this.report(construction.electrify(this.electrifyArea().tiles, this.removeMode));
     if (this.tool === 'station') {
       const shape = this.stationShape();
@@ -1421,6 +1471,23 @@ export class BuildTools {
             (this.removeMode
               ? `sundat vedení z ${count} polí · vrátí ${formatMoneyShort(-cost)}`
               : `trolejové vedení na ${count} polích · ${formatMoneyShort(cost)}`);
+    } else if (terraformMode(this.tool) && tile) {
+      const terraform = this.terraformTarget();
+      if (terraform) {
+        const { map } = this.game.world;
+        const plan = this.game.construction.terraformPlan(terraform.corners, terraform.mode, terraform.target);
+        const affordable = this.game.money >= plan.cost;
+        const tiles = plan.levels.size > 0 ? planTiles(map, plan) : [tile];
+        this.preview.showArea(tiles, plan.problem || !affordable || plan.levels.size === 0 ? 'invalid' : 'valid');
+        const corners = plan.levels.size;
+        text =
+          plan.problem ??
+          (corners === 0
+            ? 'Terén se nezmění'
+            : `${corners} ${plural(corners, 'roh', 'rohy', 'rohů')} · ${formatMoneyShort(plan.cost)}` +
+              (affordable ? '' : ' · nedostatek peněz'));
+        if (terraform.mode === 'level' && !plan.problem) text += ` · na úroveň ${terraform.target}`;
+      }
     } else if (this.tool === 'demolish' && tile) {
       const plan = this.game.construction.demolishPlan(this.demolishArea());
       this.preview.showArea(plan.tiles, 'demolish');

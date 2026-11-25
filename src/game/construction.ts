@@ -1,3 +1,4 @@
+import { applyTerraform, planTerraform, type TerraformMode, type TerraformPlan } from '../world/terraform';
 import {
   AIRPORT_TYPES,
   BRIDGE_PIECE_COST,
@@ -15,6 +16,7 @@ import {
   ROAD_TILE_COST,
   SIGNAL_COST,
   STATION_SPREAD,
+  TERRAFORM_CORNER_COST,
   TRACK_PIECE_COST,
   WAYPOINT_COST,
   type AirportType,
@@ -150,6 +152,22 @@ export class Construction {
         ...(type !== RailType.Rail ? { type } : {}),
       })),
     );
+  }
+
+  // Úprava terénu (zvednout, snížit, srovnat); cena podle počtu změněných rohů i s dorovnaným okolím
+  terraformPlan(corners: readonly TilePos[], mode: TerraformMode, target = 0): TerraformPlan & { cost: number } {
+    const plan = planTerraform(this.game.world.map, corners, mode, target);
+    return { ...plan, cost: plan.levels.size * TERRAFORM_CORNER_COST };
+  }
+
+  terraform(corners: readonly TilePos[], mode: TerraformMode, target = 0): string | null {
+    const plan = this.terraformPlan(corners, mode, target);
+    if (plan.problem) return plan.problem;
+    if (plan.levels.size === 0) return mode === 'level' ? 'Terén už je srovnaný.' : 'Terén se nezměnil.';
+    if (this.game.money < plan.cost) return `Nedostatek peněz (${formatMoney(plan.cost)}).`;
+    this.game.spend(plan.cost, 'construction');
+    applyTerraform(this.game.world.map, plan);
+    return null;
   }
 
   buildRoad(steps: RoadStep[]): void {

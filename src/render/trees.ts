@@ -195,9 +195,11 @@ export class TreesView {
   private meshesByModel: THREE.InstancedMesh[][] = [];
   private instancesByTile = new Map<number, [number, number][]>();
   private readonly changes: MapChanges;
+  private heightRevision: number;
 
   constructor(private readonly map: GameMap) {
     this.changes = new MapChanges(map);
+    this.heightRevision = map.heightRevision;
     this.simplified.visible = false;
     this.object.add(this.detailed, this.simplified);
   }
@@ -224,6 +226,14 @@ export class TreesView {
     if (changes === null) {
       void this.refresh();
       return;
+    }
+    // Úprava terénu pod stromy: stromy se postaví znovu ve nové výšce
+    if (this.map.heightRevision !== this.heightRevision) {
+      this.heightRevision = this.map.heightRevision;
+      if (changes.some((i) => this.instancesByTile.has(i) && this.map.tiles[i] === TileType.Trees)) {
+        void this.refresh();
+        return;
+      }
     }
     const touched = new Set<THREE.InstancedMesh>();
     for (const i of changes) {

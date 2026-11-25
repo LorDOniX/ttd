@@ -39,11 +39,11 @@ proto jde po každém kroku hrát a commitovat. Body se odškrtávají průběž
 - [x] Úvodní obrazovka s kopci, kontrola v prohlížeči, commit
 
 ## 5. Úpravy terénu
-- [ ] Nástroj Terén: zvednout / snížit roh nebo oblast tažením, srovnat oblast na jednu výšku
-- [ ] Sousední rohy se dorovnají (rozdíl nejvýš 1), cena podle změněných rohů
-- [ ] Po změně výšek se přestaví vše závislé (silnice, koleje, stavby, stromy, budovy)
-- [ ] Nejde měnit pod stavbami, kolejemi, silnicemi a u vody (pobřeží zůstane na 0)
-- [ ] Testy, kontrola v prohlížeči, commit
+- [x] Nástroj Terén: zvednout / snížit roh nebo oblast tažením, srovnat oblast na jednu výšku
+- [x] Sousední rohy se dorovnají (rozdíl nejvýš 1), cena podle změněných rohů
+- [x] Po změně výšek se přestaví vše závislé (stromy, terén, doplňky; stavby na měněných dlaždicích být nemohou)
+- [x] Nejde měnit pod stavbami, kolejemi, silnicemi a u vody (pobřeží zůstane na 0)
+- [x] Testy, kontrola v prohlížeči, commit
 
 ## 6. Tunely
 - [ ] Železniční tunel: vjezd na nakloněné dlaždici, rovně skrz kopec k protějšímu svahu ve stejné výšce

@@ -195,6 +195,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openRoadBuild: () => buildTools.openRoadWindow(),
     openAirBuild: () => buildTools.openAirWindow(),
     openWaterBuild: () => buildTools.openWaterWindow(),
+    openTerrainBuild: () => buildTools.openTerrainWindow(),
     openIndustryFund: () => buildTools.openIndustryWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),

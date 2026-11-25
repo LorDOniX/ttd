@@ -14,6 +14,8 @@ export const MAINTENANCE_RATE = 0.05;
 
 // Stavby
 export const TRACK_PIECE_COST = 5_000;
+// Úprava terénu: cena za každý zvednutý nebo snížený roh dlaždice
+export const TERRAFORM_CORNER_COST = 1_500;
 // Dílek koleje na mostě přes vodu
 export const BRIDGE_PIECE_COST = 20_000;
 export const PLATFORM_TILE_COST = 25_000;

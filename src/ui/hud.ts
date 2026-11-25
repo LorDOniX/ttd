@@ -18,6 +18,7 @@ export interface ToolbarActions {
   openRoadBuild: () => void;
   openAirBuild: () => void;
   openWaterBuild: () => void;
+  openTerrainBuild: () => void;
   openIndustryFund: () => void;
   rotateView: (direction: 1 | -1) => void;
   openMinimap: () => void;
@@ -150,6 +151,7 @@ export class Hud {
         windowButton('water-build', '⚓', 'Stavba přístavů (W)', actions.openWaterBuild, toolbarIcon('build-water')),
         windowButton('air-build', '🛫', 'Stavba letišť (L)', actions.openAirBuild, toolbarIcon('build-air')),
         windowButton('industry-fund', '🏭', 'Založit průmysl (P)', actions.openIndustryFund, toolbarIcon('industry')),
+        windowButton('terrain-build', '⛰️', 'Úpravy terénu', actions.openTerrainBuild),
       ],
       [windowButton('news', '📰', 'Historie zpráv (H)', actions.openNews), this.infoButton],
     ];

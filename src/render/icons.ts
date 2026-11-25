@@ -55,7 +55,21 @@ export type SceneIcon =
   | 'airport-small'
   | 'airport-large'
   | 'port'
-  | 'demolish';
+  | 'demolish'
+  | 'terraform-raise'
+  | 'terraform-lower'
+  | 'terraform-level';
+
+// Čtyřboký jehlan terénu (kopec nahoru, údolí dolů) na dlaždici
+function hillShape(height: number, color: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.ConeGeometry(Math.SQRT1_2, Math.abs(height), 4, 1, false, Math.PI / 4),
+    new THREE.MeshLambertMaterial({ color, flatShading: true }),
+  );
+  mesh.position.set(0.5, height / 2, 0.5);
+  if (height < 0) mesh.rotation.x = Math.PI;
+  return mesh;
+}
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 
@@ -173,6 +187,16 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
   'airport-large': () => airport('large'),
   port,
   demolish: async () => [await loadModel('car kit', 'tractor-shovel')],
+  'terraform-raise': () => [tile(), hillShape(0.55, GRASS)],
+  // Údolí: obrácený jehlan hlíny nad dlaždicí
+  'terraform-lower': () => [hillShape(-0.55, 0x8a6a45)],
+  'terraform-level': () => {
+    const slab = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 0.18, 1).translate(0.5, 0.09, 0.5),
+      new THREE.MeshLambertMaterial({ color: GRASS }),
+    );
+    return [tile(), slab];
+  },
 };
 
 let renderer: THREE.WebGLRenderer | null = null;
