@@ -1,3 +1,4 @@
+import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import { loadScene, type Kit } from '../assets';
 import type { Season } from '../game/seasons';
@@ -438,7 +439,8 @@ export class BuildingsView {
   private readonly detailed = new BuildingBatches();
   private readonly simplified = new BuildingBatches();
 
-  constructor() {
+  // map: výška terénu pod budovami (bez mapy rovina)
+  constructor(private readonly map?: GameMap) {
     this.simplified.object.visible = false;
     this.object.add(this.detailed.object, this.simplified.object);
   }
@@ -471,7 +473,7 @@ export class BuildingsView {
         }
         group.matrices.push(
           new THREE.Matrix4()
-            .makeTranslation(b.x + 0.5, 0, b.y + 0.5)
+            .makeTranslation(b.x + 0.5, this.map?.elevation(b.x, b.y) ?? 0, b.y + 0.5)
             .multiply(new THREE.Matrix4().makeRotationY(b.rotation)),
         );
       }

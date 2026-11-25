@@ -131,7 +131,7 @@ export class ForestMistView {
           const layerDrift = drift + layer * 1.7;
           this.position.set(
             x + 0.5 + Math.sin(layerDrift * 0.7) * puff.drift,
-            MIST_Y + tileHash(x, y, 702) * 0.035 + puff.y + Math.sin(layerDrift) * 0.018,
+            this.map.elevation(x, y) + MIST_Y + tileHash(x, y, 702) * 0.035 + puff.y + Math.sin(layerDrift) * 0.018,
             y + 0.5 + Math.cos(layerDrift * 0.6) * puff.drift,
           );
           VIEW_SPHERE.center.copy(this.position);

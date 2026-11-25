@@ -1,3 +1,4 @@
+import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TileType } from '../world/map';
@@ -294,12 +295,32 @@ export function axisRotation(axis: Axis): number {
   return axis === 'x' ? 0 : Math.PI / 2;
 }
 
-function pieceMatrix(x: number, y: number, piece: number, lift: number, target: THREE.Matrix4): THREE.Matrix4 {
+const PITCH = new THREE.Matrix4();
+const STRETCH = new THREE.Matrix4();
+
+// Dílek koleje na dlaždici; s mapou ve výšce terénu a ve svahu nakloněný a natažený přes celou šikmou délku
+function pieceMatrix(
+  x: number,
+  y: number,
+  piece: number,
+  lift: number,
+  target: THREE.Matrix4,
+  map?: GameMap,
+): THREE.Matrix4 {
   const [a, b] = PIECES[piece];
   const [ax, az] = EDGE_MID[a];
   const [bx, bz] = EDGE_MID[b];
   const angle = Math.atan2(-(bz - az), bx - ax);
-  return target.makeRotationY(angle).setPosition(x + (ax + bx) / 2, 0.002 + lift, y + (az + bz) / 2);
+  const cx = x + (ax + bx) / 2;
+  const cz = y + (az + bz) / 2;
+  if (!map) return target.makeRotationY(angle).setPosition(cx, 0.002 + lift, cz);
+  const ha = map.heightAt(x + ax, y + az);
+  const hb = map.heightAt(x + bx, y + bz);
+  target.makeRotationY(angle).setPosition(cx, (ha + hb) / 2 + 0.002 + lift, cz);
+  if (ha === hb) return target;
+  const length = Math.hypot(bx - ax, bz - az);
+  target.multiply(PITCH.makeRotationZ(Math.atan2(hb - ha, length)));
+  return target.multiply(STRETCH.makeScale(Math.hypot(length, hb - ha) / length, 1, 1));
 }
 
 export interface TrackItem {
@@ -321,7 +342,11 @@ export class TrackView {
   private crossing: THREE.InstancedMesh;
   private bridge: THREE.InstancedMesh;
 
-  constructor(private readonly material: THREE.Material) {
+  // map: dílky ve výšce terénu a ve svahu nakloněné (bez mapy rovina)
+  constructor(
+    private readonly material: THREE.Material,
+    private readonly map?: GameMap,
+  ) {
     this.pieces = RAIL_TYPES.map((type) => {
       const [straight, corner] = PIECE_GEOMETRY[type];
       return [new THREE.InstancedMesh(straight, material, 0), new THREE.InstancedMesh(corner, material, 0)];
@@ -372,7 +397,7 @@ export class TrackView {
     const m = new THREE.Matrix4();
     items.forEach((item, i) => {
       const lift = item.bridge && !deck ? BRIDGE_DECK : 0;
-      mesh.setMatrixAt(i, pieceMatrix(item.x, item.y, item.piece, deck ? -0.002 : lift, m));
+      mesh.setMatrixAt(i, pieceMatrix(item.x, item.y, item.piece, deck ? -0.002 : lift, m, this.map));
     });
     mesh.count = items.length;
     mesh.instanceMatrix.needsUpdate = true;
@@ -437,12 +462,19 @@ export function placeDepot(mesh: THREE.Object3D, x: number, y: number, entrance:
 export class RailView {
   readonly object = new THREE.Group();
   private readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
-  private readonly track = new TrackView(this.material);
+  private readonly track: TrackView;
   private readonly structures = new THREE.Group();
 
   constructor(private readonly rail: RailNetwork) {
+    this.track = new TrackView(this.material, rail.map);
     this.object.add(this.track.object, this.structures);
     this.rebuild();
+  }
+
+  // Stavby stojí na rovných dlaždicích; celý objekt se zvedne na výšku terénu pod (x, y)
+  private placed<T extends THREE.Object3D>(object: T, x: number, y: number): T {
+    object.position.y += this.rail.map.elevation(x, y);
+    return object;
   }
 
   rebuild(): void {
@@ -450,26 +482,33 @@ export class RailView {
     this.structures.clear();
     for (const s of this.rail.stations) {
       this.structures.add(
-        s.kind === 'road'
-          ? createRoadStopMesh(this.material, s.x, s.y, s.axis)
-          : s.kind === 'air'
-            ? createAirportObject(s, s.airport ?? 'small', this.material)
-            : s.kind === 'water'
-              ? createPortObject(s as PortShape, this.material)
-              : createStationObject(s, this.material),
+        this.placed(
+          s.kind === 'road'
+            ? createRoadStopMesh(this.material, s.x, s.y, s.axis)
+            : s.kind === 'air'
+              ? createAirportObject(s, s.airport ?? 'small', this.material)
+              : s.kind === 'water'
+                ? createPortObject(s as PortShape, this.material)
+                : createStationObject(s, this.material),
+          s.x,
+          s.y,
+        ),
       );
     }
     for (const d of this.rail.depots) {
       const mesh = createDepotMesh(this.material);
       placeDepot(mesh, d.x, d.y, d.entrance);
-      this.structures.add(mesh);
+      this.structures.add(this.placed(mesh, d.x, d.y));
     }
     for (const d of this.rail.roadDepots) {
       const mesh = createRoadDepotMesh(this.material);
       placeDepot(mesh, d.x, d.y, d.entrance);
-      this.structures.add(mesh);
+      this.structures.add(this.placed(mesh, d.x, d.y));
     }
-    for (const b of this.rail.bridges) this.structures.add(createRailBridgeObject(b, this.material));
-    for (const b of this.rail.roadBridges) this.structures.add(createRailBridgeObject(b, this.material, true));
+    for (const b of this.rail.bridges)
+      this.structures.add(this.placed(createRailBridgeObject(b, this.material), b.x, b.y));
+    for (const b of this.rail.roadBridges) {
+      this.structures.add(this.placed(createRailBridgeObject(b, this.material, true), b.x, b.y));
+    }
   }
 }

@@ -207,21 +207,32 @@ export class RoadVehiclesView {
     return view;
   }
 
+  // Výška vozovky (bez ROAD_TOP) v místě pos trasy: terén, nebo mostovka ve výšce nájezdu
+  private roadHeight(path: RoadVehicle['path'], pos: number): number {
+    const { x, y } = vehiclePoint(path, pos);
+    const height = roadElevation(path, pos);
+    const k = Math.max(0, Math.min(path.length - 1, Math.round(pos)));
+    let head = k;
+    while (head > 0 && path[head]?.level) head--;
+    if (path[head]?.level) while (head < path.length - 1 && path[head].level) head++;
+    const tx = Math.floor(x);
+    const ty = Math.floor(y);
+    const ground = height > 0 && path[head] ? this.map.elevation(path[head].x, path[head].y) : this.map.heightAt(x, y);
+    const lift = height > 0 ? height * BRIDGE_HEIGHT : this.map.roadBridgeAxis(tx, ty) ? BRIDGE_DECK : 0;
+    return ground + lift;
+  }
+
   private place(path: RoadVehicle['path'], pos: number, view: VehicleView): void {
     const { x, y, dx, dy } = vehiclePoint(path, pos);
     const length = Math.hypot(dx, dy) || 1;
     const [ux, uy] = [dx / length, dy / length];
-    // Pozice už zahrnuje jízdní pruh; na mostě auto jede po mostovce
-    const height = roadElevation(path, pos);
-    const lift =
-      height > 0 ? height * BRIDGE_HEIGHT : this.map.roadBridgeAxis(Math.floor(x), Math.floor(y)) ? BRIDGE_DECK : 0;
-    view.group.position.set(x, ROAD_TOP + lift, y);
+    // Pozice už zahrnuje jízdní pruh; na mostě auto jede po mostovce, jinak po terénu
+    view.group.position.set(x, ROAD_TOP + this.roadHeight(path, pos), y);
     view.group.rotation.y = Math.atan2(ux, uy);
-    // Na nájezdu silničního mostu se auto nakloní do stoupání
-    const climb =
-      height > 0 && height < 1 ? Math.atan(BRIDGE_HEIGHT) * Math.sign(roadElevation(path, pos + 0.05) - height) : 0;
+    // Na nájezdu mostu a ve svahu se auto nakloní do stoupání
+    const climb = Math.atan2(this.roadHeight(path, pos + 0.1) - this.roadHeight(path, pos - 0.1), 0.2);
     view.group.rotation.x = 0;
-    if (climb !== 0) view.group.rotateX(-climb);
+    if (Math.abs(climb) > 1e-4) view.group.rotateX(-climb);
     if (view.load && view.playerId !== null) {
       const vehicle = this.fleet.vehicles.find((candidate) => candidate.id === view.playerId);
       view.load.visible = (vehicle?.passengers ?? 0) > 0;

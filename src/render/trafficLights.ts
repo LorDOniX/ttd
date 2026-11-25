@@ -1,3 +1,4 @@
+import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import { freezeStatic } from './staticObjects';
 import type { TrafficLightJunction, TrafficLights } from '../game/trafficLights';
@@ -67,6 +68,9 @@ export class TrafficLightsView {
   readonly object = new THREE.Group();
   private readonly models = new Map<string, SignalModel[]>();
 
+  // map: semafory stojí na terénu (bez mapy na rovině)
+  constructor(private readonly map?: GameMap) {}
+
   sync(junctions: readonly TrafficLightJunction[]): void {
     const active = new Set(junctions.map(({ x, y }) => `${x},${y}`));
     for (const [key, models] of this.models) {
@@ -112,6 +116,7 @@ export class TrafficLightsView {
       makeSignal(x + 1 - inset, y + inset),
       makeSignal(x + inset, y + 1 - inset),
     ];
+    for (const { group } of signals) group.position.y += this.map?.heightAt(group.position.x, group.position.z) ?? 0;
     return signals.map((signal) => ({ ...signal, x, y }));
   }
 }

@@ -1,3 +1,4 @@
+import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Town } from '../world/town';
@@ -191,7 +192,12 @@ export class NightLightsView {
   private lastUpdate = -Infinity;
   private forceRefresh = true;
 
-  constructor(mapWidth: number, mapHeight: number) {
+  // map: výška terénu pod světlem měst (bez mapy rovina)
+  constructor(
+    mapWidth: number,
+    mapHeight: number,
+    private readonly map?: GameMap,
+  ) {
     this.townGlows = new THREE.InstancedMesh(TOWN_GLOW_GEOMETRY, TOWN_GLOW_MATERIAL, MAX_TOWN_GLOWS);
     this.townGlows.count = 0;
     this.townGlows.frustumCulled = false;
@@ -267,10 +273,11 @@ export class NightLightsView {
     for (const town of towns) {
       if (glows >= MAX_TOWN_GLOWS) break;
       const radius = Math.max(4, Math.min(16, town.radius * 0.75));
-      VIEW_SPHERE.center.set(town.x + 0.5, 0.04, town.y + 0.5);
+      const ground = this.map?.elevation(town.x, town.y) ?? 0;
+      VIEW_SPHERE.center.set(town.x + 0.5, ground + 0.04, town.y + 0.5);
       VIEW_SPHERE.radius = radius;
       if (!frustum.intersectsSphere(VIEW_SPHERE)) continue;
-      this.matrix.makeScale(radius, 1, radius).setPosition(town.x + 0.5, 0.035, town.y + 0.5);
+      this.matrix.makeScale(radius, 1, radius).setPosition(town.x + 0.5, ground + 0.035, town.y + 0.5);
       this.townGlows.setMatrixAt(glows++, this.matrix);
     }
     this.townGlows.count = glows;

@@ -13,14 +13,15 @@ proto jde po každém kroku hrát a commitovat. Body se odškrtávají průběž
 - [x] Testy (svahy, `heightAt`, uložení), kontrola v prohlížeči, commit
 
 ## 2. Všechno ve správné výšce
-- [ ] Budovy, stromy, zvířata, doplňky, chodci, noční světla
-- [ ] Průmysl a jeho areál
-- [ ] Nástupiště, depa, zastávky, garáže, letiště, přístavy, průjezdné body, návěstidla, troleje
-- [ ] Koleje na rovině i ve svahu (nakloněný dílek), přejezdy
-- [ ] Silnice ve svahu, chodníky, lampy, semafory, přechody
-- [ ] Vlaky (výška podle trati, náklon ve svahu), auta, městská auta, lodě, letadla na letišti
-- [ ] Popisky měst a stanic, náhledy stavby, kurzor, pohled z kabiny a chůze
-- [ ] Kontrola v prohlížeči na ručně vytvořeném kopci, commit
+- [x] Budovy, stromy, zvířata, doplňky, chodci, noční světla
+- [x] Průmysl a jeho areál
+- [x] Nástupiště, depa, zastávky, garáže, letiště, přístavy, průjezdné body, návěstidla, troleje
+- [x] Koleje na rovině i ve svahu (nakloněný dílek), přejezdy
+- [x] Silnice ve svahu, chodníky, lampy, semafory, přechody
+- [x] Vlaky (výška podle trati, náklon ve svahu), auta, městská auta, lodě, letadla na letišti
+- [x] Popisky měst a stanic, náhledy stavby, kurzor, pohled z kabiny a chůze
+- [x] Svahy ve stínování terénu zřetelně světlejší / tmavší (zesílená normála)
+- [x] Kontrola v prohlížeči na ručně vytvořeném kopci, commit
 
 ## 3. Pravidla stavby
 - [ ] Stavby (nástupiště, depa, zastávky, garáže, letiště, přístavy, průmysl, budovy měst) jen na rovině
@@ -34,11 +35,13 @@ proto jde po každém kroku hrát a commitovat. Body se odškrtávají průběž
 - [ ] Výšková mapa ze šumu (vyšší vnitrozemí, roviny u vody), voda na úrovni 0, sousední rohy ±1
 - [ ] Města na rovině (srovnání okolí středu), průmysl jen na rovném místě
 - [ ] Nastavení „Terén“ v nové hře (rovina / mírně zvlněný / kopcovitý)
+- [ ] Okraj mapy: boční stěna terénu tam, kde je okraj nad úrovní 0
 - [ ] Úvodní obrazovka s kopci, kontrola v prohlížeči, commit
 
 ## 5. Úpravy terénu
 - [ ] Nástroj Terén: zvednout / snížit roh nebo oblast tažením, srovnat oblast na jednu výšku
 - [ ] Sousední rohy se dorovnají (rozdíl nejvýš 1), cena podle změněných rohů
+- [ ] Po změně výšek se přestaví vše závislé (silnice, koleje, stavby, stromy, budovy)
 - [ ] Nejde měnit pod stavbami, kolejemi, silnicemi a u vody (pobřeží zůstane na 0)
 - [ ] Testy, kontrola v prohlížeči, commit
 

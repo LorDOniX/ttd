@@ -338,12 +338,12 @@ export class AnimalsView {
 
   // Včela ve vzduchu kmitá nahoru a dolů a kličkuje do stran
   private animalMatrix(animal: RoamingAnimal): THREE.Matrix4 {
-    const position = new THREE.Vector3(animal.x, 0, animal.z);
+    const position = new THREE.Vector3(animal.x, this.map.heightAt(animal.x, animal.z), animal.z);
     if (animal.altitude > 0) {
       const t = this.time + animal.phase;
       position.x += Math.sin(t * 1.5) * 0.06;
       position.z += Math.cos(t * 1.2 + animal.phase) * 0.06;
-      position.y = animal.altitude + Math.sin(t * 5) * 0.025 + Math.sin(t * 1.3) * 0.05;
+      position.y += animal.altitude + Math.sin(t * 5) * 0.025 + Math.sin(t * 1.3) * 0.05;
     }
     return new THREE.Matrix4().compose(
       position,

@@ -86,12 +86,13 @@ export class SignalsView {
         piece < 0
           ? { pole: [x + 0.5, y + 0.5], center: [x + 0.5, y + 0.5], angle: null }
           : signalPlacement(piece, x, y, this.rail.signalDir(x, y));
-      m.makeTranslation(place.pole[0], 0, place.pole[1]);
+      const ground = this.rail.map.elevation(x, y);
+      m.makeTranslation(place.pole[0], this.rail.map.heightAt(place.pole[0], place.pole[1]), place.pole[1]);
       this.poles.setMatrixAt(i, m);
       this.lamps.setMatrixAt(i, m);
       this.lamps.setColorAt(i, SIGNAL_GREEN);
       if (place.angle !== null) {
-        m.makeTranslation(place.center[0], 0, place.center[1]).multiply(rotation.makeRotationY(place.angle));
+        m.makeTranslation(place.center[0], ground, place.center[1]).multiply(rotation.makeRotationY(place.angle));
         this.arrows.setMatrixAt(arrows++, m);
       }
     });

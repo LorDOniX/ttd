@@ -99,6 +99,32 @@ export function heightAt(rail: RailNetwork, path: readonly Segment[], d: number)
   return last ? segmentHeight(rail, last, 1) : 0;
 }
 
+// Výška terénu pod kolejí ve vzdálenosti d; pole mostu vede rovně mezi nájezdy nad údolím
+export function groundAt(rail: RailNetwork, path: readonly Segment[], d: number): number {
+  let rest = Math.max(0, d);
+  let s = path[path.length - 1];
+  let t = 1;
+  for (const seg of path) {
+    const len = segmentLength(seg);
+    if (rest <= len) {
+      s = seg;
+      t = rest / len;
+      break;
+    }
+    rest -= len;
+  }
+  if (!s) return 0;
+  const { map } = rail;
+  if (s.span) {
+    const [sx, sy] = segmentPoint(s, 0);
+    const [ex, ey] = segmentPoint(s, 1);
+    const from = map.heightAt(sx, sy);
+    return from + (map.heightAt(ex, ey) - from) * t;
+  }
+  const [x, y] = segmentPoint(s, t);
+  return map.heightAt(x, y);
+}
+
 // Index kusu koleje, na kterém leží bod ve vzdálenosti d
 export function segmentIndexAt(path: readonly Segment[], d: number): number {
   let rest = d;

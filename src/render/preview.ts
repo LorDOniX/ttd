@@ -1,3 +1,4 @@
+import { HEIGHT_STEP, type GameMap } from '../world/map';
 import * as THREE from 'three';
 import type { AirportType } from '../game/balance';
 import { createAirportObject } from './airports';
@@ -25,7 +26,7 @@ import {
   placeDepot,
   type TrackItem,
 } from './rail';
-import { roadAtlas, roadGeometry, type RoadConnects } from './roads';
+import { roadAtlas, roadGeometry, roadGround, type RoadConnects } from './roads';
 
 const VALID = 0x9fff9f;
 const INVALID = 0xff7070;
@@ -42,7 +43,7 @@ export class BuildPreview {
     opacity: 0.6,
     depthWrite: false,
   });
-  private readonly track = new TrackView(this.material);
+  private readonly track: TrackView;
   private readonly station = new THREE.Group();
   private readonly depot = createDepotMesh(this.material);
   private readonly areaMaterial = new THREE.MeshBasicMaterial({
@@ -71,15 +72,28 @@ export class BuildPreview {
     depthWrite: false,
   });
 
-  constructor() {
+  // map: náhled ve výšce terénu (bez mapy na rovině)
+  constructor(private readonly map?: GameMap) {
+    this.track = new TrackView(this.material, map);
     this.object.add(this.track.object, this.station, this.depot, this.area, this.road, this.signals);
     this.object.renderOrder = 5;
     this.clear();
   }
 
+  private ground(x: number, y: number): number {
+    return this.map?.elevation(x, y) ?? 0;
+  }
+
+  // Objekt náhledu stavby na dlaždici (x, y) ve výšce terénu
+  private placed<T extends THREE.Object3D>(object: T, x: number, y: number): T {
+    object.position.y = this.ground(x, y);
+    return object;
+  }
+
   clear(): void {
     this.track.update([]);
     this.station.clear();
+    this.station.position.y = 0;
     this.depot.visible = false;
     this.area.count = 0;
     this.road.visible = false;
@@ -97,12 +111,12 @@ export class BuildPreview {
       const place = signalPlacement(piece, x, y, dir);
       for (const geometry of [SIGNAL_POLE, SIGNAL_LAMP]) {
         const mesh = new THREE.Mesh(geometry, this.signalMaterial);
-        mesh.position.set(place.pole[0], 0, place.pole[1]);
+        mesh.position.set(place.pole[0], this.ground(x, y), place.pole[1]);
         this.signals.add(mesh);
       }
       if (place.angle !== null) {
         const arrow = new THREE.Mesh(SIGNAL_ARROW, this.signalMaterial);
-        arrow.position.set(place.center[0], 0.01, place.center[1]);
+        arrow.position.set(place.center[0], this.ground(x, y) + 0.01, place.center[1]);
         arrow.rotation.y = place.angle;
         this.signals.add(arrow);
       }
@@ -121,6 +135,8 @@ export class BuildPreview {
       tiles,
       (x, y, edge) => planned.has(`${x + EDGE_DELTA[edge][0]},${y + EDGE_DELTA[edge][1]}`) || connects(x, y, edge),
       0.012,
+      undefined,
+      this.map ? roadGround(this.map) : undefined,
     );
     this.roadMaterial.color.set(valid ? VALID : INVALID);
     this.road.visible = true;
@@ -145,7 +161,16 @@ export class BuildPreview {
   private setArea(tiles: TilePos[]): void {
     const m = new THREE.Matrix4();
     const count = Math.min(tiles.length, MAX_AREA);
-    for (let i = 0; i < count; i++) this.area.setMatrixAt(i, m.makeTranslation(tiles[i].x, 0, tiles[i].y));
+    const scale = new THREE.Matrix4();
+    for (let i = 0; i < count; i++) {
+      const { x, y } = tiles[i];
+      // Ve svahu sahá zvýraznění od nejnižšího po nejvyšší roh dlaždice
+      const corners = this.map?.inBounds(x, y) ? this.map.tileCorners(x, y) : [0];
+      const low = Math.min(...corners) * HEIGHT_STEP;
+      const high = Math.max(...corners) * HEIGHT_STEP;
+      m.makeTranslation(x, low, y).multiply(scale.makeScale(1, (high - low + 0.1) / 0.1, 1));
+      this.area.setMatrixAt(i, m);
+    }
     this.area.count = count;
     this.area.instanceMatrix.needsUpdate = true;
     this.area.computeBoundingSphere();
@@ -174,25 +199,25 @@ export class BuildPreview {
   showBridge(bridge: Pick<RailBridge, 'x' | 'y' | 'dir' | 'span'>, valid: boolean, road = false): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    this.station.add(createRailBridgeObject(bridge, this.material, road));
+    this.station.add(this.placed(createRailBridgeObject(bridge, this.material, road), bridge.x, bridge.y));
   }
 
   showStation(shape: StationShape, valid: boolean): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    this.station.add(createStationObject(shape, this.material));
+    this.station.add(this.placed(createStationObject(shape, this.material), shape.x, shape.y));
   }
 
   showAirport(shape: StationShape, type: AirportType, valid: boolean): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    this.station.add(createAirportObject(shape, type, this.material));
+    this.station.add(this.placed(createAirportObject(shape, type, this.material), shape.x, shape.y));
   }
 
   showPort(shape: PortShape, valid: boolean): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    this.station.add(createPortObject(shape, this.material, false));
+    this.station.add(this.placed(createPortObject(shape, this.material, false), shape.x, shape.y));
   }
 
   // Depo i se spojkami, kterými se napojí na kolej před vjezdem
@@ -200,6 +225,7 @@ export class BuildPreview {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
     placeDepot(this.depot, x, y, entrance);
+    this.placed(this.depot, x, y);
     this.depot.visible = true;
     this.track.update(links);
   }
@@ -207,7 +233,7 @@ export class BuildPreview {
   showRoadStop(x: number, y: number, axis: Axis, valid: boolean): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    this.station.add(createRoadStopMesh(this.material, x, y, axis));
+    this.station.add(this.placed(createRoadStopMesh(this.material, x, y, axis), x, y));
   }
 
   showRoadDepot(x: number, y: number, entrance: Edge, valid: boolean): void {
@@ -215,6 +241,6 @@ export class BuildPreview {
     this.material.color.set(valid ? VALID : INVALID);
     const mesh = createRoadDepotMesh(this.material);
     placeDepot(mesh, x, y, entrance);
-    this.station.add(mesh);
+    this.station.add(this.placed(mesh, x, y));
   }
 }

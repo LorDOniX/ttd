@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TileType, type GameMap } from '../world/map';
+import { HEIGHT_STEP, TileType, type GameMap } from '../world/map';
 import { BRIDGE_DECK } from './rail';
 
 // Zoom, který se v pohledu z první osoby hlásí LOD a efektům: plné detaily stromů, budov, zvířat a světel
@@ -252,7 +252,8 @@ export class WalkCamera implements FirstPersonController {
     const tz = Math.floor(this.position.y);
     // Na silničním mostě jde chodec po mostovce
     const lift = this.map.inBounds(tx, tz) && this.map.roadBridgeAxis(tx, tz) ? BRIDGE_DECK : 0;
-    this.camera.position.set(this.position.x, EYE_HEIGHT + lift + Math.sin(this.bob) * 0.004, this.position.y);
+    const ground = this.map.heightAt(this.position.x, this.position.y);
+    this.camera.position.set(this.position.x, ground + EYE_HEIGHT + lift + Math.sin(this.bob) * 0.004, this.position.y);
     aim(this.camera, this.yaw, this.pitch);
   }
 
@@ -267,7 +268,7 @@ export class WalkCamera implements FirstPersonController {
 export class DropMarker {
   readonly object: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
 
-  constructor() {
+  constructor(private readonly map?: GameMap) {
     const geometry = new THREE.PlaneGeometry(0.92, 0.92).rotateX(-Math.PI / 2).translate(0.5, 0.03, 0.5);
     this.object = new THREE.Mesh(
       geometry,
@@ -280,7 +281,8 @@ export class DropMarker {
   show(tile: { x: number; y: number } | null, valid = true): void {
     this.object.visible = tile !== null;
     if (!tile) return;
-    this.object.position.set(tile.x, 0, tile.y);
+    const top = this.map?.inBounds(tile.x, tile.y) ? Math.max(...this.map.tileCorners(tile.x, tile.y)) : 0;
+    this.object.position.set(tile.x, top * HEIGHT_STEP, tile.y);
     this.object.material.color.set(valid ? 0xffc928 : 0xd84a3a);
   }
 }

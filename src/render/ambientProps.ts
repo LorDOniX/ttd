@@ -191,7 +191,11 @@ export class AmbientPropsView {
     const position = new THREE.Vector3(localX, localY, localZ).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw + localYaw);
     const matrix = new THREE.Matrix4().compose(
-      new THREE.Vector3(originX + position.x, SIDEWALK_HEIGHT + position.y, originZ + position.z),
+      new THREE.Vector3(
+        originX + position.x,
+        this.map.heightAt(originX, originZ) + SIDEWALK_HEIGHT + position.y,
+        originZ + position.z,
+      ),
       rotation,
       new THREE.Vector3(1, 1, 1),
     );
@@ -332,8 +336,16 @@ export class AmbientPropsView {
               parts,
               [0.007, 0.007, 1, 5],
               COLORS.darkMetal,
-              new THREE.Vector3(lastX + 0.5, POWER_LINE_HEIGHT, y + 0.5),
-              new THREE.Vector3(x + 0.5, POWER_LINE_HEIGHT, y + 0.5),
+              new THREE.Vector3(
+                lastX + 0.5,
+                this.map.heightAt(lastX + 0.5, y + 0.5) + SIDEWALK_HEIGHT + POWER_LINE_HEIGHT,
+                y + 0.5,
+              ),
+              new THREE.Vector3(
+                x + 0.5,
+                this.map.heightAt(x + 0.5, y + 0.5) + SIDEWALK_HEIGHT + POWER_LINE_HEIGHT,
+                y + 0.5,
+              ),
             );
           }
         }

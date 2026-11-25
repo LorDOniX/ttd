@@ -1,3 +1,4 @@
+import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import { loadModel } from '../assets';
 import { aircraftModel, type AirFleet, type Aircraft } from '../game/aircraft';
@@ -54,7 +55,11 @@ export class AircraftView3D {
   private readonly views = new Map<number, AircraftView>();
   private cabId: number | null = null;
 
-  constructor(private readonly fleet: AirFleet) {}
+  // map: letadla na zemi i ve vzduchu nad terénem (bez mapy nad rovinou)
+  constructor(
+    private readonly fleet: AirFleet,
+    private readonly map?: GameMap,
+  ) {}
 
   update(frustum: ViewFrustums): void {
     const alive = new Set(this.fleet.aircraft.map((p) => p.id));
@@ -129,15 +134,16 @@ export class AircraftView3D {
       return;
     }
     const { x, y, z, dx, dy, climb } = sample;
-    view.group.position.set(x, z + GROUND_LIFT, y);
+    const ground = this.map?.heightAt(x, y) ?? 0;
+    view.group.position.set(x, ground + z + GROUND_LIFT, y);
     view.group.rotation.y = Math.atan2(dx, dy);
     view.group.rotation.x = -Math.atan(climb);
     view.group.rotation.z = plane.state === 'holding' ? -HOLDING_BANK : 0;
-    const visible = inView(frustum, x, z, y, 1) || inView(frustum, x, 0, y, 1);
+    const visible = inView(frustum, x, ground + z, y, 1) || inView(frustum, x, ground, y, 1);
     view.group.visible = visible && plane.id !== this.cabId;
     // Stín jen ve vzduchu, s výškou se zmenšuje a slábne
     view.shadow.visible = visible && z > 0.05;
-    view.shadow.position.set(x, 0.015, y);
+    view.shadow.position.set(x, ground + 0.015, y);
     const fade = 1 / (1 + z * 0.25);
     view.shadow.scale.setScalar((MODEL_LENGTH[view.modelId] ?? 0.8) * fade);
   }

@@ -5,6 +5,9 @@ import { seasonWeight, type Season, type SeasonBlend } from '../game/seasons';
 import { setWaterIce, withWater } from './water';
 import { withLampLightUv } from './nightLights';
 
+// Zesílení sklonu normál terénu pro stínování svahů
+const SLOPE_SHADE = 3;
+
 const WATER = new THREE.Color(0x3a6fb0);
 // Mělčina u břehu, do hloubky přechází plynule přes dlaždici
 const SHALLOW = new THREE.Color(0x5aa3cc);
@@ -398,8 +401,9 @@ export class TerrainView {
     const [nw, ne, se, sw] = this.map.tileCorners(x, y).map((h) => h * HEIGHT_STEP - (water ? WATER_DEPTH : 0));
     const offset = (y * this.map.width + x) * 12;
     positions.set([x, nw, y, x + 1, ne, y, x + 1, se, y + 1, x, sw, y + 1], offset);
-    const dx = (ne + se - nw - sw) / 2;
-    const dz = (sw + se - nw - ne) / 2;
+    // Sklon normály je zesílený, aby svahy byly v izometrii jasně světlejší či tmavší jako v OpenTTD
+    const dx = ((ne + se - nw - sw) / 2) * SLOPE_SHADE;
+    const dz = ((sw + se - nw - ne) / 2) * SLOPE_SHADE;
     const length = Math.hypot(dx, 1, dz);
     for (let k = 0; k < 4; k++) this.normals.set([-dx / length, 1 / length, -dz / length], offset + k * 3);
   }

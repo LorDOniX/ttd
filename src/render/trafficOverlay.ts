@@ -1,3 +1,4 @@
+import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import type { TrafficHotspot } from '../game/traffic';
 
@@ -14,6 +15,9 @@ function colorForScore(score: number): number {
 export class TrafficOverlayView {
   readonly object = new THREE.Group();
   private readonly mesh: THREE.InstancedMesh;
+
+  // Mapa se doplní po vytvoření pohledu; značky pak leží na terénu
+  map?: GameMap;
 
   constructor() {
     const geometry = new THREE.PlaneGeometry(0.46, 0.46);
@@ -53,7 +57,8 @@ export class TrafficOverlayView {
     for (let index = 0; index < count; index++) {
       const hotspot = hotspots[index];
       const size = Math.min(1, 0.62 + Math.min(hotspot.score, 5) * 0.06);
-      position.set(hotspot.x + 0.5, 0.035, hotspot.y + 0.5);
+      const ground = this.map?.heightAt(hotspot.x + 0.5, hotspot.y + 0.5) ?? 0;
+      position.set(hotspot.x + 0.5, ground + 0.035, hotspot.y + 0.5);
       scale.set(size, 1, size);
       matrix.compose(position, new THREE.Quaternion(), scale);
       this.mesh.setMatrixAt(index, matrix);

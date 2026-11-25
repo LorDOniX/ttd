@@ -41,13 +41,14 @@ export class WaypointsView {
     this.labels.clear();
     for (const w of this.rail.waypoints) {
       const marker = createWaypointObject(w.axis);
-      marker.position.set(w.x, 0, w.y);
+      const ground = this.rail.map.elevation(w.x, w.y);
+      marker.position.set(w.x, ground, w.y);
       this.object.add(marker);
       const el = document.createElement('div');
       el.className = 'waypoint-label';
       el.textContent = w.name;
       const label = new CSS2DObject(el);
-      label.position.set(w.x + 0.5, 0.9, w.y + 0.5);
+      label.position.set(w.x + 0.5, ground + 0.9, w.y + 0.5);
       this.labels.add(label);
     }
   }

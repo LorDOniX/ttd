@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { TilePos } from '../world/map';
+import { HEIGHT_STEP, type GameMap, type TilePos } from '../world/map';
 
 const ENABLED_KEY = 'ttd-tile-cursor';
 
@@ -8,17 +8,15 @@ export class TileCursor {
   readonly object: THREE.LineLoop;
   private on = localStorage.getItem(ENABLED_KEY) === '1';
 
-  constructor() {
+  // map: obrys sleduje výšky rohů dlaždice
+  constructor(private readonly map?: GameMap) {
     const lift = 0.02;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
       'position',
       new THREE.Float32BufferAttribute([0, lift, 0, 1, lift, 0, 1, lift, 1, 0, lift, 1], 3),
     );
-    this.object = new THREE.LineLoop(
-      geometry,
-      new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false }),
-    );
+    this.object = new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false }));
     this.object.renderOrder = 10;
     this.object.visible = false;
   }
@@ -35,6 +33,13 @@ export class TileCursor {
 
   show(tile: TilePos | null): void {
     this.object.visible = this.on && tile !== null;
-    if (tile) this.object.position.set(tile.x, 0, tile.y);
+    if (!tile) return;
+    this.object.position.set(tile.x, 0, tile.y);
+    if (!this.map?.inBounds(tile.x, tile.y)) return;
+    // Rohy v pořadí geometrie: sz, sv, jv, jz (nw, ne, se, sw)
+    const corners = this.map.tileCorners(tile.x, tile.y);
+    const position = this.object.geometry.getAttribute('position') as THREE.BufferAttribute;
+    corners.forEach((level, i) => position.setY(i, level * HEIGHT_STEP + 0.02));
+    position.needsUpdate = true;
   }
 }

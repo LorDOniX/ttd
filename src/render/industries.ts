@@ -1,3 +1,4 @@
+import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { loadModel, type Kit } from '../assets';
@@ -493,6 +494,13 @@ export class IndustriesView {
   >();
   private lampPositions: THREE.Vector3[] = [];
 
+  // map: výška terénu pod areálem (bez mapy rovina)
+  constructor(private readonly map?: GameMap) {}
+
+  private ground(industry: Industry): number {
+    return this.map?.elevation(industry.x, industry.y) ?? 0;
+  }
+
   // Středy světel reflektorů všech areálů; nové pole při každé změně závodů
   get lamps(): readonly THREE.Vector3[] {
     return this.lampPositions;
@@ -512,7 +520,7 @@ export class IndustriesView {
         pool
           .clone()
           .applyAxisAngle(up, (industry.rotation * Math.PI) / 2)
-          .add(new THREE.Vector3(industry.x + half, 0, industry.y + half)),
+          .add(new THREE.Vector3(industry.x + half, this.ground(industry), industry.y + half)),
       ),
     );
     const ids = new Set(industries.map((i) => i.id));
@@ -551,7 +559,7 @@ export class IndustriesView {
     el.textContent = industry.name;
     const label = new CSS2DObject(el);
     const half = INDUSTRY_SIZE / 2;
-    label.position.set(industry.x + half, 2.2, industry.y + half);
+    label.position.set(industry.x + half, this.ground(industry) + 2.2, industry.y + half);
     return label;
   }
 
@@ -572,7 +580,7 @@ export class IndustriesView {
       if (part instanceof THREE.Mesh) for (const material of [part.material].flat()) withLampLight(material);
     });
     const half = INDUSTRY_SIZE / 2;
-    area.position.set(industry.x + half, 0, industry.y + half);
+    area.position.set(industry.x + half, this.ground(industry), industry.y + half);
     area.rotation.y = (industry.rotation * Math.PI) / 2;
     freezeStatic(area);
     freezeStatic(label);

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { GameMap, HEIGHT_STEP } from './map';
 import { emptyGame } from '../test/fixtures';
 import { parseSave, restoreGame, serializeGame } from '../game/save';
+import { Edge, axisPiece } from './rail';
+import { groundAt, type Segment } from './route';
 
 // Kopec: rohy (5..7, 5..7) na úrovni 1, prostřední roh (6, 6) na úrovni 2
 function hill(): GameMap {
@@ -58,5 +60,24 @@ describe('výška terénu', () => {
     const legacy = JSON.parse(JSON.stringify(data));
     delete legacy.map.heights;
     expect(restoreGame(parseSave(JSON.stringify(legacy))).world.map.cornerLevel(4, 4)).toBe(0);
+  });
+
+  it('kolej ve svahu stoupá s terénem, pole mostu vede rovně mezi nájezdy', () => {
+    const game = emptyGame(16, []);
+    const { map } = game.world;
+    // Rampa podél x: rohy x <= 4 na úrovni 0, x = 5 na 1, x >= 6 na 2
+    for (let y = 0; y <= 16; y++)
+      for (let x = 0; x <= 16; x++) map.setCornerLevel(x, y, Math.max(0, Math.min(2, x - 4)));
+    const piece = axisPiece('x');
+    const path: Segment[] = [3, 4, 5, 6].map((x) => ({ x, y: 2, piece, entry: Edge.W, exit: Edge.E }));
+    expect(groundAt(game.world.rail, path, 0.5)).toBe(0);
+    expect(groundAt(game.world.rail, path, 1.5)).toBeCloseTo(0.5 * HEIGHT_STEP);
+    expect(groundAt(game.world.rail, path, 2.5)).toBeCloseTo(1.5 * HEIGHT_STEP);
+    expect(groundAt(game.world.rail, path, 3.5)).toBeCloseTo(2 * HEIGHT_STEP);
+    // Pole mostu přes údolí: výška se mění jen lineárně mezi konci, ne podle terénu pod ním
+    map.setCornerLevel(9, 2, 0);
+    map.setCornerLevel(9, 3, 0);
+    const span: Segment[] = [{ x: 7, y: 2, piece, entry: Edge.W, exit: Edge.E, span: 4 }];
+    expect(groundAt(game.world.rail, span, 2)).toBeCloseTo(2 * HEIGHT_STEP);
   });
 });

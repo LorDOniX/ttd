@@ -144,11 +144,24 @@ export function roadConnects(map: GameMap, rail: RailNetwork): RoadConnects {
 }
 
 // Silnice na dlaždicích tiles s napojením podle connects; crosswalks určí křižovatky se zebrami
+// Výška terénu v bodě (px, pz) patřícím dlaždici (x, y); bez ní je vše na rovině
+export type GroundHeight = (x: number, y: number, px: number, pz: number) => number;
+const FLAT: GroundHeight = () => 0;
+
+// Terén mapy pod silnicí; silnice na mostě leží ve výšce nájezdu
+export function roadGround(map: GameMap, rail?: RailNetwork): GroundHeight {
+  return (x, y, px, pz) => {
+    const bridge = rail?.roadBridgeOver(x, y) ?? rail?.roadBridgeAtHead(x, y);
+    return bridge ? map.elevation(bridge.x, bridge.y) : map.heightAt(px, pz);
+  };
+}
+
 export function roadGeometry(
   tiles: Iterable<{ x: number; y: number }>,
   connects: RoadConnects,
   lift: number,
   crosswalks: (x: number, y: number) => boolean = () => false,
+  ground: GroundHeight = FLAT,
 ): THREE.BufferGeometry {
   const positions: number[] = [];
   const uvs: number[] = [];
@@ -168,7 +181,20 @@ export function roadGeometry(
     const v0 = 1 - (row + 1) / ROWS + insetV;
     const v1 = 1 - row / ROWS - insetV;
     const v = positions.length / 3;
-    positions.push(x, lift, y, x + 1, lift, y, x + 1, lift, y + 1, x, lift, y + 1);
+    positions.push(
+      x,
+      lift + ground(x, y, x, y),
+      y,
+      x + 1,
+      lift + ground(x, y, x + 1, y),
+      y,
+      x + 1,
+      lift + ground(x, y, x + 1, y + 1),
+      y + 1,
+      x,
+      lift + ground(x, y, x, y + 1),
+      y + 1,
+    );
     uvs.push(u0, v1, u1, v1, u1, v0, u0, v0);
     indices.push(v, v + 2, v + 1, v, v + 3, v + 2);
   }
@@ -187,14 +213,19 @@ export const SIDEWALK_HEIGHT = 0.02;
 export function sidewalkGeometry(
   tiles: Iterable<{ x: number; y: number }>,
   connects: RoadConnects,
+  ground: GroundHeight = FLAT,
 ): THREE.BufferGeometry {
   const positions: number[] = [];
   const normals: number[] = [];
   const indices: number[] = [];
   const h = SIDEWALK_HEIGHT;
+  let tx = 0;
+  let ty = 0;
   const quad = (corners: number[], normal: [number, number, number]): void => {
     const v = positions.length / 3;
-    positions.push(...corners);
+    for (let k = 0; k < 12; k += 3) {
+      positions.push(corners[k], corners[k + 1] + ground(tx, ty, corners[k], corners[k + 2]), corners[k + 2]);
+    }
     for (let k = 0; k < 4; k++) normals.push(...normal);
     indices.push(v, v + 1, v + 2, v, v + 2, v + 3);
   };
@@ -208,6 +239,8 @@ export function sidewalkGeometry(
   };
   const w = SIDEWALK_WIDTH;
   for (const { x, y } of tiles) {
+    tx = x;
+    ty = y;
     slab(x, y, x + w, y + w);
     slab(x + 1 - w, y, x + 1, y + w);
     slab(x + 1 - w, y + 1 - w, x + 1, y + 1);
@@ -317,11 +350,12 @@ export class RoadView {
     }
     const connects = roadConnects(map, this.rail);
     const crosswalks = (x: number, y: number): boolean => hasCrosswalks(map, connects, x, y);
-    const land = roadGeometry(tiles, connects, 0.005, crosswalks);
+    const ground = roadGround(map, this.rail);
+    const land = roadGeometry(tiles, connects, 0.005, crosswalks, ground);
     this.road.geometry.dispose();
     this.road.geometry = withLampLightUv(
       bridgeTiles.length > 0
-        ? mergeGeometries([land, roadGeometry(bridgeTiles, connects, BRIDGE_DECK + 0.005)])!
+        ? mergeGeometries([land, roadGeometry(bridgeTiles, connects, BRIDGE_DECK + 0.005, undefined, ground)])!
         : land,
     );
     this.bridges.geometry.dispose();
@@ -331,14 +365,14 @@ export class RoadView {
             bridgeTiles.map(({ x, y, axis }) =>
               ROAD_BRIDGE.clone().applyMatrix4(
                 new THREE.Matrix4()
-                  .makeTranslation(x + 0.5, 0, y + 0.5)
+                  .makeTranslation(x + 0.5, ground(x, y, x + 0.5, y + 0.5), y + 0.5)
                   .multiply(new THREE.Matrix4().makeRotationY(axisRotation(axis))),
               ),
             ),
           )!
         : new THREE.BufferGeometry();
     this.sidewalk.geometry.dispose();
-    this.sidewalk.geometry = withLampLightUv(sidewalkGeometry(sidewalkTiles, connects));
+    this.sidewalk.geometry = withLampLightUv(sidewalkGeometry(sidewalkTiles, connects, ground));
     this.rebuildStreetLights(sidewalkTiles, connects);
     this.version++;
   }
@@ -373,6 +407,7 @@ export class RoadView {
     const heads = new THREE.InstancedMesh(STREETLIGHT_HEAD, STREETLIGHT_HEAD_MATERIAL, positions.length);
     const matrix = new THREE.Matrix4();
     positions.forEach((position, i) => {
+      position.y += this.map.heightAt(position.x, position.z);
       matrix.makeTranslation(position.x, position.y, position.z);
       poles.setMatrixAt(i, matrix);
       heads.setMatrixAt(i, matrix);

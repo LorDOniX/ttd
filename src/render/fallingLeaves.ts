@@ -185,10 +185,12 @@ export class FallingLeavesView {
     const air = Math.min(1, (1 - fall) * 8);
     const swing = Math.sin(seconds * 2.4 + leaf.phase * Math.PI * 2) * air;
     const yaw = leaf.rotation + Math.sin(seconds * 0.5 + leaf.phase * 3) * 0.6;
+    const lx = leaf.x + leaf.driftX * fall + Math.sin(yaw) * swing * 0.1;
+    const lz = leaf.z + leaf.driftZ * fall + Math.cos(yaw) * swing * 0.1;
     this.position.set(
-      leaf.x + leaf.driftX * fall + Math.sin(yaw) * swing * 0.1,
-      Math.max(0.012, leaf.height * (1 - fall)) + swing * swing * 0.03,
-      leaf.z + leaf.driftZ * fall + Math.cos(yaw) * swing * 0.1,
+      lx,
+      this.map.heightAt(lx, lz) + Math.max(0.012, leaf.height * (1 - fall)) + swing * swing * 0.03,
+      lz,
     );
     if (!frustum.containsPoint(this.position)) return false;
     this.rotation.set(-swing * 0.65, yaw, Math.sin(seconds * 3.3 + leaf.phase * 11) * 0.25 * air, 'YXZ');

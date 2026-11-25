@@ -1,3 +1,4 @@
+import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import type { Town } from '../world/town';
@@ -9,7 +10,11 @@ export class TownLabels {
   readonly renderer = new CSS2DRenderer();
   private readonly labels = new Map<number, HTMLElement>();
 
-  constructor(container: HTMLElement) {
+  // map: popisek stojí nad terénem (bez mapy nad rovinou)
+  constructor(
+    container: HTMLElement,
+    private readonly map?: GameMap,
+  ) {
     this.renderer.domElement.classList.add('label-layer');
     container.appendChild(this.renderer.domElement);
   }
@@ -27,7 +32,7 @@ export class TownLabels {
       el.dataset.kind = 'town';
       el.dataset.id = String(town.id);
       const label = new CSS2DObject(el);
-      label.position.set(town.x + 0.5, 1.5, town.y + 0.5);
+      label.position.set(town.x + 0.5, (this.map?.elevation(town.x, town.y) ?? 0) + 1.5, town.y + 0.5);
       this.object.add(label);
       this.labels.set(town.id, el);
       this.update(town);
@@ -48,6 +53,8 @@ export class TownLabels {
 export class StationLabels {
   readonly object = new THREE.Group();
 
+  constructor(private readonly map?: GameMap) {}
+
   rebuild(stations: readonly Station[], describe: (station: Station) => string): void {
     this.object.clear();
     for (const station of stations) {
@@ -57,7 +64,7 @@ export class StationLabels {
       el.dataset.id = String(station.id);
       el.textContent = describe(station);
       const label = new CSS2DObject(el);
-      label.position.set(station.x + 0.5, 0.8, station.y + 0.5);
+      label.position.set(station.x + 0.5, (this.map?.elevation(station.x, station.y) ?? 0) + 0.8, station.y + 0.5);
       this.object.add(label);
     }
   }
@@ -71,14 +78,17 @@ export class FloatingTexts {
   readonly object = new THREE.Group();
   private readonly items: { label: CSS2DObject; start: number; y: number }[] = [];
 
+  constructor(private readonly map?: GameMap) {}
+
   show(text: string, x: number, z: number, className: string): void {
     const el = document.createElement('div');
     el.className = className;
     el.textContent = text;
     const label = new CSS2DObject(el);
-    label.position.set(x, 1.2, z);
+    const y = (this.map?.heightAt(x, z) ?? 0) + 1.2;
+    label.position.set(x, y, z);
     this.object.add(label);
-    this.items.push({ label, start: performance.now(), y: 1.2 });
+    this.items.push({ label, start: performance.now(), y });
   }
 
   update(now: number): void {

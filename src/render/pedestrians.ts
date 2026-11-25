@@ -305,7 +305,9 @@ export class PedestriansView {
     const curb = SIDEWALK_WIDTH - WALK_INSET;
     const onRoad = p.crossing && p.walked > curb && length - p.walked > curb;
     const bob = Math.abs(Math.sin(p.phase)) * HEIGHT * 0.03;
-    this.position.set(a.x + (b.x - a.x) * t, (onRoad ? ROAD_TOP : SIDEWALK_HEIGHT) + bob, a.y + (b.y - a.y) * t);
+    const px = a.x + (b.x - a.x) * t;
+    const pz = a.y + (b.y - a.y) * t;
+    this.position.set(px, this.map.heightAt(px, pz) + (onRoad ? ROAD_TOP : SIDEWALK_HEIGHT) + bob, pz);
     this.rotation.setFromAxisAngle(this.up, Math.atan2(b.x - a.x, b.y - a.y));
     this.body.compose(this.position, this.rotation, this.scale);
   }

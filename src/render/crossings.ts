@@ -124,7 +124,7 @@ export class CrossingsView {
       group.add(object);
       return arm;
     });
-    group.position.set(x + 0.5, 0, y + 0.5);
+    group.position.set(x + 0.5, this.map.elevation(x, y), y + 0.5);
     // Kolej podél X znamená silnici podél Z, jinak je přejezd otočený o 90°
     if (this.rail.mask(x, y) !== 1 << axisPiece('x')) group.rotation.y = Math.PI / 2;
     this.object.add(group);

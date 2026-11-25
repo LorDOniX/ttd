@@ -93,8 +93,8 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
   const view = new GameView(container, game);
   const { renderer, camera: isoCamera, terrain } = view;
 
-  const preview = new BuildPreview();
-  const cursor = new TileCursor();
+  const preview = new BuildPreview(map);
+  const cursor = new TileCursor(map);
   view.scene.add(preview.object, cursor.object);
 
   const windows = new WindowManager(container);
@@ -303,7 +303,7 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
   ]);
 
   // Panáček v rohu: přetažením na mapu se jde na průzkum pěšky
-  const dropMarker = new DropMarker();
+  const dropMarker = new DropMarker(map);
   view.scene.add(dropMarker.object);
   createPegmanDock(container, {
     game,

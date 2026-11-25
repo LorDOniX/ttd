@@ -91,12 +91,12 @@ export class GameView {
   private readonly trafficLights: TrafficLights;
   private readonly hemisphere: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
-  private readonly trafficLightView = new TrafficLightsView();
+  private readonly trafficLightView: TrafficLightsView;
   private readonly nightLights: NightLightsView;
   readonly trafficOverlay = new TrafficOverlayView();
   // Živé pohledy v oknech vozidel
   readonly miniViews = new MiniViews();
-  private readonly floatingTexts = new FloatingTexts();
+  private readonly floatingTexts: FloatingTexts;
   private readonly syncMap: () => void;
   private railDirty = false;
   // Skvrny světla reflektorů přístavů; nové pole jen po změně staveb
@@ -139,15 +139,17 @@ export class GameView {
 
     this.terrain = new TerrainView(map, towns);
     const roads = (this.roads = new RoadView(map, world.rail));
-    this.nightLights = new NightLightsView(map.width, map.height);
+    this.nightLights = new NightLightsView(map.width, map.height, map);
     this.nightLights.light(this.terrain.groundMaterial, ...roads.groundMaterials);
     this.ambientProps = new AmbientPropsView(map, world.rail, roads);
     this.trafficLights = new TrafficLights(map, world.rail, towns);
     this.cityTraffic = new CityTraffic(map, world.rail, towns, world.seed, roads.version, game.roadFleet.vehicles);
     this.cityTraffic.setTrafficLights(this.trafficLights);
     game.roadFleet.setTrafficLights(this.trafficLights);
+    this.trafficLightView = new TrafficLightsView(map);
+    this.trafficOverlay.map = map;
     this.trafficLightView.sync(this.trafficLights.all);
-    this.buildings = new BuildingsView();
+    this.buildings = new BuildingsView(map);
     void this.buildings.rebuild(towns);
     this.trees = new TreesView(map);
     void this.trees.refresh();
@@ -155,7 +157,7 @@ export class GameView {
     this.forestMist = new ForestMistView(map);
     this.animals = new AnimalsView(map);
     void this.animals.refresh();
-    this.industries = new IndustriesView();
+    this.industries = new IndustriesView(map);
     this.applySeason();
     void this.industries.sync(world.industries);
     const railView = new RailView(world.rail);
@@ -170,15 +172,16 @@ export class GameView {
     this.catenary.rebuild();
     this.trains = new TrainsView(game.fleet, map, world.rail);
     this.vehicles = new RoadVehiclesView(game.roadFleet, map);
-    this.aircraft = new AircraftView3D(game.airFleet);
+    this.aircraft = new AircraftView3D(game.airFleet, map);
     this.ships = new ShipsView(game.shipFleet);
     this.pedestrians = new PedestriansView(map, world.rail, towns, roads);
     this.crossings = new CrossingsView(map, world.rail);
-    this.labels = new TownLabels(container);
+    this.labels = new TownLabels(container, map);
+    this.floatingTexts = new FloatingTexts(map);
     this.labels.setSize(window.innerWidth, window.innerHeight);
     this.labels.rebuild(towns);
     this.bindLabelEvents();
-    const stationLabels = new StationLabels();
+    const stationLabels = new StationLabels(map);
     scene.add(
       this.terrain.object,
       roads.object,

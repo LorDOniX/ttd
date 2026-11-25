@@ -48,6 +48,7 @@ export class CatenaryView {
     const m = new THREE.Matrix4();
     const rotation = new THREE.Matrix4();
     const scale = new THREE.Matrix4();
+    const pitch = new THREE.Matrix4();
     let poles = 0;
     let wires = 0;
     for (let i = 0; i < electrified.length && wires < MAX_PIECES; i++) {
@@ -62,9 +63,13 @@ export class CatenaryView {
         const [bx, bz] = EDGE_MID[b];
         const length = Math.hypot(bx - ax, bz - az);
         const angle = Math.atan2(-(bz - az), bx - ax);
-        m.makeTranslation(x + ax, WIRE_HEIGHT, y + az)
+        // Drát sleduje terén: ve svahu stoupá spolu s kolejí
+        const ha = map.heightAt(x + ax, y + az);
+        const hb = map.heightAt(x + bx, y + bz);
+        m.makeTranslation(x + ax, ha + WIRE_HEIGHT, y + az)
           .multiply(rotation.makeRotationY(angle))
-          .multiply(scale.makeScale(length, 1, 1));
+          .multiply(pitch.makeRotationZ(Math.atan2(hb - ha, length)))
+          .multiply(scale.makeScale(Math.hypot(length, hb - ha), 1, 1));
         this.wires.setMatrixAt(wires++, m);
         if (poled) continue;
         poled = true;
@@ -76,9 +81,10 @@ export class CatenaryView {
         // U rovné koleje stojí stožár vždy na stejné straně
         if (p < 2) [nx, nz] = p === 0 ? [1, 0] : [0, 1];
         const [px, pz] = [x + mx + nx * POLE_OFFSET, y + mz + nz * POLE_OFFSET];
-        m.makeTranslation(px, 0, pz);
+        const ground = map.heightAt(px, pz);
+        m.makeTranslation(px, ground, pz);
         this.poles.setMatrixAt(poles, m);
-        m.makeTranslation(px, WIRE_HEIGHT + 0.04, pz)
+        m.makeTranslation(px, ground + WIRE_HEIGHT + 0.04, pz)
           .multiply(rotation.makeRotationY(Math.atan2(nz, -nx)))
           .multiply(scale.makeScale(POLE_OFFSET, 1, 1));
         this.arms.setMatrixAt(poles++, m);

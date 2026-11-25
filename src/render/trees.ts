@@ -262,7 +262,11 @@ export class TreesView {
         q.setFromAxisAngle(up, tileHash(x, y, 50 + k) * Math.PI * 2);
         instances.push([model, matrices[model].length]);
         matrices[model].push(
-          new THREE.Matrix4().compose(new THREE.Vector3(px, 0, pz), q, new THREE.Vector3(scale, scale, scale)),
+          new THREE.Matrix4().compose(
+            new THREE.Vector3(px, this.map.heightAt(px, pz), pz),
+            q,
+            new THREE.Vector3(scale, scale, scale),
+          ),
         );
       }
       instancesByTile.set(i, instances);
