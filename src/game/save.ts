@@ -68,6 +68,8 @@ export interface SaveData {
     pieces: string;
     // Trolejové vedení po dlaždicích; starší uložení ho nemají
     electrified?: string;
+    // Druh koleje na dlaždicích (jednokolejka, maglev); starší uložení mají jen železnici
+    railType?: string;
     stations: Station[];
     depots: Depot[];
     nextStationId: number;
@@ -165,6 +167,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
     rail: {
       pieces: encode(rail.pieces),
       electrified: encode(rail.electrified),
+      railType: encode(rail.railType),
       stations: rail.stations,
       depots: rail.depots,
       nextStationId: rail.nextStationId,
@@ -351,6 +354,10 @@ export function restoreGame(data: SaveData): Game {
 
   const rail = new RailNetwork(map);
   rail.pieces.set(decode(data.rail.pieces, width * height));
+  if (typeof data.rail.railType === 'string') {
+    const types = decode(data.rail.railType, width * height);
+    for (let i = 0; i < types.length; i++) if (rail.pieces[i] && types[i] <= 2) rail.railType[i] = types[i];
+  }
   rail.revision++;
   // Starší uložení nezná velikost nástupišť (všechna byla 1×3) ani jejich hodnocení
   rail.stations.push(
@@ -460,7 +467,7 @@ export function restoreGame(data: SaveData): Game {
   // vlaky (dřív jezdily kudykoli), dostane vedení celá železnice, aby nezůstaly stát
   if (typeof data.rail.electrified === 'string') {
     const wires = decode(data.rail.electrified, width * height);
-    for (let i = 0; i < wires.length; i++) if (wires[i] && rail.pieces[i]) rail.electrified[i] = 1;
+    for (let i = 0; i < wires.length; i++) if (wires[i] && rail.pieces[i] && !rail.railType[i]) rail.electrified[i] = 1;
   } else if (data.fleet.trains.some((t) => TRAIN_MODELS.find((m) => m.id === t.modelId)?.electric)) {
     for (let i = 0; i < rail.pieces.length; i++) if (rail.pieces[i]) rail.electrified[i] = 1;
   }

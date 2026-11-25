@@ -4,7 +4,7 @@ import { Game, formatMoney } from '../game/game';
 import { catchmentArea, inArea } from '../game/passengers';
 import { NO_OWNER, TileType, type TilePos } from '../world/map';
 import { industryAt, type Industry } from '../world/industry';
-import type { Depot, Station } from '../world/rail';
+import { RAIL_TYPE_NAMES, RailType, type Depot, type Station } from '../world/rail';
 import { buildingAt, buildingCapacity, type Town } from '../world/town';
 import { h } from './dom';
 import { stationRows } from './station';
@@ -84,7 +84,7 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
     }
 
     if (type === TileType.Rail || type === TileType.Crossing || type === TileType.Bridge) {
-      const value = rail.pieceCount(x, y) * trackPieceCost(map, x, y);
+      const value = rail.pieceCount(x, y) * trackPieceCost(map, x, y, rail.railTypeAt(x, y));
       rows.push(['Kusů kolejí', String(rail.pieceCount(x, y))], ['Údržba', monthly(value)]);
       if (rail.hasSignal(x, y)) {
         rows.push(['Návěstidlo', rail.signalDir(x, y) === undefined ? 'cestové obousměrné' : 'cestové jednosměrné']);
@@ -99,7 +99,9 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
           ['Projíždějí', users.map((t) => t.name).join(', ') || 'žádné vlaky'],
         );
       }
-      rows.push(['Trolejové vedení', rail.isElectrified(x, y) ? 'ano (elektrizovaná trať)' : 'ne']);
+      const type = rail.railTypeAt(x, y);
+      if (type !== RailType.Rail) rows.push(['Druh koleje', RAIL_TYPE_NAMES[type]]);
+      else rows.push(['Trolejové vedení', rail.isElectrified(x, y) ? 'ano (elektrizovaná trať)' : 'ne']);
       const owner = game.fleet.reservations.ownerAt(x, y);
       const holder = game.fleet.trains.find((t) => t.id === owner);
       if (holder) rows.push(['Rezervuje', holder.name]);
@@ -107,6 +109,9 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
 
     if ((type === TileType.Station || type === TileType.Depot) && rail.isElectrified(x, y)) {
       rows.push(['Trolejové vedení', 'ano (elektrizovaná trať)']);
+    }
+    if ((type === TileType.Station || type === TileType.Depot) && rail.railTypeAt(x, y) !== RailType.Rail) {
+      rows.push(['Druh koleje', RAIL_TYPE_NAMES[rail.railTypeAt(x, y)]]);
     }
     const station = rail.stationAt(x, y);
     if (station) {

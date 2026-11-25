@@ -14,6 +14,7 @@ import { Game, formatMoney, formatMoneyShort } from '../game/game';
 import {
   formatLoad,
   isOld,
+  modelRailType,
   ordersError,
   sellFactor,
   sellPrice,
@@ -314,10 +315,12 @@ export function openDepot(
 
   // Sestavení nového vlaku: lokomotiva, náklad, počet vagonů, náhled a souhrn
   const renderShop = (): HTMLElement => {
-    const models = fleet.available();
+    // Jen lokomotivy druhu koleje depa (železnice, jednokolejka, maglev)
+    const depotType = game.world.rail.railTypeAt(depot.x, depot.y);
+    const models = fleet.available().filter((m) => modelRailType(m) === depotType);
     const model = models.find((m) => m.id === config.modelId && fleet.fitsDepot(m, depot)) ?? newest();
     config.modelId = model.id;
-    const upcoming = TRAIN_MODELS.find((m) => m.year > game.clock.date.year);
+    const upcoming = TRAIN_MODELS.find((m) => m.year > game.clock.date.year && modelRailType(m) === depotType);
     const set = (change: () => void): void => {
       change();
       pressed = false;
@@ -414,7 +417,16 @@ export function openDepot(
       'dl',
       { className: 'depot-stats' },
       ...stat('Rychlost', `${speedKmh(model.speed)} km/h`),
-      ...stat('Trať', model.electric ? '⚡ jen elektrizovaná' : 'jakákoli'),
+      ...stat(
+        'Trať',
+        model.railType === 'monorail'
+          ? 'jen jednokolejka'
+          : model.railType === 'maglev'
+            ? 'jen maglev'
+            : model.electric
+              ? '⚡ jen elektrizovaná'
+              : 'jakákoli železnice',
+      ),
       ...stat('Kapacita', config.wagons > 0 ? capacityText(config.cargo, config.wagons) : 'jen lokomotiva'),
       ...stat('Délka', `${formatTiles(length)} (nástupiště aspoň ${Math.ceil(length)})`),
       ...stat('Provoz', `${formatMoney(running)} / rok`),

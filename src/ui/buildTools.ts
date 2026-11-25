@@ -16,6 +16,10 @@ import {
   STATION_LENGTH,
   STATION_SPREAD,
   ELECTRIFY_TILE_COST,
+  MAGLEV_COST_FACTOR,
+  MAGLEV_YEAR,
+  MONORAIL_COST_FACTOR,
+  MONORAIL_YEAR,
   TRACK_PIECE_COST,
   WAYPOINT_COST,
   type AirportType,
@@ -44,6 +48,7 @@ import {
   EDGE_MID,
   Edge,
   PIECES,
+  RailType,
   stationTiles,
   opposite,
   type Axis,
@@ -64,6 +69,9 @@ import { findRoadPath, roadEdgeAtCursor, singleRoadSteps, type RoadStep } from '
 import { h } from './dom';
 import type { WindowManager } from './windows';
 import { partLabel } from './station';
+
+// Druh koleje ke stavbě: železnice bez trolejí, elektrizovaná železnice, jednokolejka, maglev
+type RailKind = 'rail' | 'electric' | 'monorail' | 'maglev';
 
 export type BuildTool =
   | 'track'
@@ -164,8 +172,8 @@ export class BuildTools {
   private signalDensity = 4;
   private showCoverage = true;
   private removeMode = false;
-  // Druh koleje ke stavbě jako v OpenTTD: běžná, nebo elektrizovaná (koleje, nástupiště a depa s trolejemi)
-  private electricRail = false;
+  // Druh koleje ke stavbě jako v OpenTTD: železnice (bez trolejí nebo elektrizovaná), jednokolejka, maglev
+  private railKind: RailKind = 'rail';
   private estimateMode = false;
   // Tlačítka okna voleb a jejich stav (obnovuje se při každé změně)
   private optionButtons: { el: HTMLButtonElement; active: () => boolean; disabled?: () => boolean }[] = [];
@@ -310,23 +318,59 @@ export class BuildTools {
     );
   }
 
-  // Přepínač druhu koleje: s ním se koleje, nástupiště i depa staví rovnou s trolejovým vedením
+  // Stavba elektrizované železnice (koleje, nástupiště a depa s trolejovým vedením)
+  private get electricRail(): boolean {
+    return this.railKind === 'electric';
+  }
+
+  // Druh koleje pro stavbu a plánování tras (jednokolejka a maglev jsou samostatné sítě)
+  private applyRailKind(): void {
+    this.game.world.rail.buildType =
+      this.railKind === 'monorail' ? RailType.Monorail : this.railKind === 'maglev' ? RailType.Maglev : RailType.Rail;
+  }
+
+  // Přepínač druhu koleje jako v OpenTTD: železnice, elektrizovaná železnice, jednokolejka, maglev
   private railTypeToggle(): HTMLElement {
-    const button = h('button', { className: 'small-button' });
-    const sync = (): void => {
-      button.textContent = this.electricRail ? '⚡ Elektrizovaná trať' : '🛤️ Běžná trať';
-      button.title = this.electricRail
-        ? `Koleje, nástupiště a depa se staví s trolejovým vedením (+${formatMoneyShort(ELECTRIFY_TILE_COST)} za pole)`
-        : 'Koleje, nástupiště a depa se staví bez trolejí';
-      button.classList.toggle('small-button--active', this.electricRail);
-    };
-    button.addEventListener('click', () => {
-      this.electricRail = !this.electricRail;
-      sync();
-      this.refresh();
+    const year = this.game.clock.date.year;
+    const kinds: [RailKind, string, string, number][] = [
+      ['rail', '🛤️ Železnice', 'Koleje, nástupiště a depa bez trolejí (parní a motorové lokomotivy)', 0],
+      [
+        'electric',
+        '⚡ Elektrizovaná',
+        `Železnice s trolejovým vedením (+${formatMoneyShort(ELECTRIFY_TILE_COST)} za pole) pro elektrické lokomotivy`,
+        0,
+      ],
+      [
+        'monorail',
+        '🚝 Jednokolejka',
+        `Samostatná síť s vlastními vlaky a depy, dílek ${MONORAIL_COST_FACTOR}× dražší; od roku ${MONORAIL_YEAR}`,
+        MONORAIL_YEAR,
+      ],
+      [
+        'maglev',
+        '🚄 Maglev',
+        `Samostatná síť nejrychlejších vlaků s vlastními depy, dílek ${MAGLEV_COST_FACTOR}× dražší; od roku ${MAGLEV_YEAR}`,
+        MAGLEV_YEAR,
+      ],
+    ];
+    if (kinds.some(([kind, , , from]) => kind === this.railKind && from > year)) this.railKind = 'rail';
+    this.applyRailKind();
+    const buttons = kinds.map(([kind, label, title, from]) => {
+      const button = h('button', {
+        className: `small-button${kind === this.railKind ? ' small-button--active' : ''}`,
+        title: from > year ? `${title} (zatím nelze)` : title,
+        disabled: from > year,
+      });
+      button.textContent = label;
+      button.addEventListener('click', () => {
+        this.railKind = kind;
+        this.applyRailKind();
+        buttons.forEach((b, i) => b.classList.toggle('small-button--active', kinds[i][0] === kind));
+        this.refresh();
+      });
+      return button;
     });
-    sync();
-    return h('div', { className: 'train__actions' }, 'Druh koleje:', button);
+    return h('div', { className: 'train__actions' }, 'Druh koleje:', ...buttons);
   }
 
   openRoadWindow(): void {
@@ -1152,9 +1196,10 @@ export class BuildTools {
     }
     const fresh = plan.steps.filter((s) => s.isNew);
     const wires = this.unwired(plan.steps).length;
-    const cost = fresh.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y), 0) + wires * ELECTRIFY_TILE_COST;
+    const type = this.game.world.rail.buildType;
+    const cost = fresh.reduce((sum, s) => sum + trackPieceCost(map, s.x, s.y, type), 0) + wires * ELECTRIFY_TILE_COST;
     const bridges = fresh.filter((s) => map.get(s.x, s.y) === TileType.Water).length;
-    this.preview.showTrack(plan.steps, cost <= this.game.money, plan.blocked);
+    this.preview.showTrack(plan.steps, cost <= this.game.money, plan.blocked, type);
     const blocked = plan.blocked.length > 0 ? ' · dál překážka' : '';
     if (fresh.length === 0 && wires > 0)
       return `${prefix}Trolejové vedení na ${wires} polích · ${formatMoneyShort(cost)}`;

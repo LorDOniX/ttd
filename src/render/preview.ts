@@ -7,6 +7,7 @@ import type { TilePos } from '../world/map';
 import {
   EDGE_DELTA,
   PIECES,
+  RailType,
   type Axis,
   type Edge,
   type RailBridge,
@@ -151,10 +152,10 @@ export class BuildPreview {
   }
 
   // Kolej k položení; blocked = zbytek tažení za překážkou (červeně)
-  showTrack(items: TrackItem[], valid: boolean, blocked: TilePos[] = []): void {
+  showTrack(items: TrackItem[], valid: boolean, blocked: TilePos[] = [], type: RailType = RailType.Rail): void {
     this.clear();
     this.material.color.set(valid ? VALID : INVALID);
-    this.track.update(items);
+    this.track.update(items, type);
     if (blocked.length > 0) {
       this.areaMaterial.color.set(INVALID);
       this.areaMaterial.opacity = 0.45;

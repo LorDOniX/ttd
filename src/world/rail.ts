@@ -165,6 +165,13 @@ export enum RailType {
   Maglev = 2,
 }
 
+// „depo na železnici / jednokolejce / maglevu“
+export const RAIL_TYPE_GENITIVE: Record<RailType, string> = {
+  [RailType.Rail]: 'železnici',
+  [RailType.Monorail]: 'jednokolejce',
+  [RailType.Maglev]: 'maglevu',
+};
+
 export const RAIL_TYPE_NAMES: Record<RailType, string> = {
   [RailType.Rail]: 'železnice',
   [RailType.Monorail]: 'jednokolejka',
@@ -404,7 +411,7 @@ export class RailNetwork {
     for (const t of stationTiles(station)) {
       this.map.set(t.x, t.y, TileType.Station);
       const i = t.y * this.map.width + t.x;
-      if (this.pieces[i] === 0) this.railType[i] = this.buildType;
+      if (this.pieces[i] === 0) this.railType[i] = station.kind === undefined ? this.buildType : RailType.Rail;
       this.pieces[t.y * this.map.width + t.x] = 1 << axisPiece(station.axis);
       this.revision++;
     }

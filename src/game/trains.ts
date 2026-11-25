@@ -33,6 +33,7 @@ import {
 } from './consist';
 import { Reservations } from './reservations';
 import {
+  RAIL_TYPE_GENITIVE,
   RailType,
   axisPiece,
   opposite,
@@ -233,7 +234,11 @@ const DAYS_PER_YEAR = 365.25;
 
 // Druh koleje, po kterém lokomotiva jezdí
 export function modelRailType(model: TrainModel): RailType {
-  return model.railType === 'monorail' ? RailType.Monorail : model.railType === 'maglev' ? RailType.Maglev : RailType.Rail;
+  return model.railType === 'monorail'
+    ? RailType.Monorail
+    : model.railType === 'maglev'
+      ? RailType.Maglev
+      : RailType.Rail;
 }
 
 export function trainModel(train: Train): TrainModel {
@@ -409,7 +414,12 @@ export class Fleet {
   }
 
   buy(depot: Depot, model: TrainModel): string | null {
-    if (!this.fitsDepot(model, depot)) return `${model.name} potřebuje elektrizované depo (trolejové vedení).`;
+    if (!this.fitsDepot(model, depot)) {
+      const type = modelRailType(model);
+      return type !== this.game.world.rail.railTypeAt(depot.x, depot.y)
+        ? `${model.name} potřebuje depo na ${RAIL_TYPE_GENITIVE[type]}.`
+        : `${model.name} potřebuje elektrizované depo (trolejové vedení).`;
+    }
     if (this.game.money < model.price) return `Nedostatek peněz (${formatMoney(model.price)}).`;
     this.game.spend(model.price, 'vehicles');
     const id = this.nextId++;

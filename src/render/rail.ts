@@ -7,6 +7,7 @@ import {
   Edge,
   PIECES,
   RailNetwork,
+  RailType,
   isCorner,
   stationTiles,
   type Axis,
@@ -31,6 +32,12 @@ const DOOR = 0x2a2420;
 const BRIDGE = 0x7a7066;
 const BRIDGE_RAIL = 0xa8442c;
 const ROAD_DECK = 0x4d4d50;
+const MONORAIL_BEAM = 0xb4b0a6;
+const MONORAIL_TOP = 0x4a4a52;
+const MONORAIL_FOOT = 0x8a8680;
+const MAGLEV_SLAB = 0xc9c7c0;
+const MAGLEV_GUIDE = 0x6b7684;
+const MAGLEV_STRIP = 0x3a6fb0;
 const ROAD_MARKING = 0xe8e4d8;
 const GLASS = 0x9fc4d8;
 const SIGN = 0xe0c040;
@@ -161,6 +168,26 @@ function pieceGeometry(length: number): THREE.BufferGeometry {
   return mergeGeometries(parts)!;
 }
 
+// Jednokolejka: betonový nosník s tmavou pojezdovou plochou na nízkých patkách
+function monorailGeometry(length: number): THREE.BufferGeometry {
+  const parts = [box(length, 0.09, 0.14, MONORAIL_BEAM, 0, 0.03, 0), box(length, 0.012, 0.1, MONORAIL_TOP, 0, 0.12, 0)];
+  const feet = Math.max(1, Math.round(length / 0.5));
+  for (let i = 0; i < feet; i++) {
+    const x = -length / 2 + (i + 0.5) * (length / feet);
+    parts.push(box(0.08, 0.03, 0.22, MONORAIL_FOOT, x, 0, 0));
+  }
+  return mergeGeometries(parts)!;
+}
+
+// Maglev: široká betonová dráha s vodicí lištou uprostřed a modrými magnetickými pásy
+function maglevGeometry(length: number): THREE.BufferGeometry {
+  return mergeGeometries([
+    box(length, 0.05, 0.46, MAGLEV_SLAB, 0, 0, 0),
+    box(length, 0.045, 0.1, MAGLEV_GUIDE, 0, 0.05, 0),
+    ...[-0.15, 0.15].map((z) => box(length, 0.01, 0.06, MAGLEV_STRIP, 0, 0.05, z)),
+  ])!;
+}
+
 // Jeden dílek nástupiště podél osy X: nástupní hrany po obou stranách koleje, volitelně přístřešek
 function stationTileGeometry(roof: boolean): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
@@ -244,6 +271,12 @@ export const ROAD_BRIDGE = roadBridgeGeometry();
 
 const STRAIGHT = pieceGeometry(1);
 const CORNER = pieceGeometry(Math.SQRT1_2);
+// Rovný a rohový dílek podle druhu koleje (RailType)
+const PIECE_GEOMETRY: Record<RailType, [THREE.BufferGeometry, THREE.BufferGeometry]> = {
+  [RailType.Rail]: [STRAIGHT, CORNER],
+  [RailType.Monorail]: [monorailGeometry(1), monorailGeometry(Math.SQRT1_2)],
+  [RailType.Maglev]: [maglevGeometry(1), maglevGeometry(Math.SQRT1_2)],
+};
 // Na přejezdu jen kolejnice zapuštěné ve vozovce
 const CROSSING = mergeGeometries([-0.1, 0.1].map((z) => box(1, 0.02, 0.025, RAIL, 0, 0.004, z)))!;
 const BRIDGE_MESH = bridgeGeometry();
@@ -275,31 +308,50 @@ export interface TrackItem {
   piece: number;
   crossing?: boolean;
   bridge?: boolean;
+  // Druh koleje; bez údaje železnice
+  type?: RailType;
 }
 
-// Kusy kolejí jako instancované meshe (rovné, rohové, přejezdy, mostovky)
+const RAIL_TYPES = [RailType.Rail, RailType.Monorail, RailType.Maglev] as const;
+
+// Kusy kolejí jako instancované meshe (rovné a rohové pro každý druh koleje, přejezdy, mostovky)
 export class TrackView {
   readonly object = new THREE.Group();
-  private straight: THREE.InstancedMesh;
-  private corner: THREE.InstancedMesh;
+  private pieces: [THREE.InstancedMesh, THREE.InstancedMesh][];
   private crossing: THREE.InstancedMesh;
   private bridge: THREE.InstancedMesh;
 
   constructor(private readonly material: THREE.Material) {
-    this.straight = new THREE.InstancedMesh(STRAIGHT, material, 0);
-    this.corner = new THREE.InstancedMesh(CORNER, material, 0);
+    this.pieces = RAIL_TYPES.map((type) => {
+      const [straight, corner] = PIECE_GEOMETRY[type];
+      return [new THREE.InstancedMesh(straight, material, 0), new THREE.InstancedMesh(corner, material, 0)];
+    });
     this.crossing = new THREE.InstancedMesh(CROSSING, material, 0);
     this.bridge = new THREE.InstancedMesh(BRIDGE_MESH, material, 0);
-    this.object.add(this.straight, this.corner, this.crossing, this.bridge);
+    this.object.add(...this.pieces.flat(), this.crossing, this.bridge);
   }
 
-  update(items: TrackItem[]): void {
-    const straight = items.filter((i) => !isCorner(i.piece) && !i.crossing);
-    const corner = items.filter((i) => isCorner(i.piece));
+  // type: druh koleje pro položky bez vlastního údaje (náhled stavby)
+  update(items: TrackItem[], type: RailType = RailType.Rail): void {
+    RAIL_TYPES.forEach((t, i) => {
+      const own = items.filter((item) => (item.type ?? type) === t);
+      const [straightGeometry, cornerGeometry] = PIECE_GEOMETRY[t];
+      const [straight, corner] = this.pieces[i];
+      this.pieces[i] = [
+        this.replace(
+          straight,
+          straightGeometry,
+          own.filter((item) => !isCorner(item.piece) && !item.crossing),
+        ),
+        this.replace(
+          corner,
+          cornerGeometry,
+          own.filter((item) => isCorner(item.piece)),
+        ),
+      ];
+    });
     const crossing = items.filter((i) => i.crossing);
     const bridge = items.filter((i) => i.bridge);
-    this.straight = this.replace(this.straight, STRAIGHT, straight);
-    this.corner = this.replace(this.corner, CORNER, corner);
     this.crossing = this.replace(this.crossing, CROSSING, crossing);
     this.bridge = this.replace(this.bridge, BRIDGE_MESH, bridge, true);
   }
@@ -339,8 +391,9 @@ export function networkTrack(rail: RailNetwork): TrackItem[] {
     if (mask !== 0 && rail.bridges.length > 0 && rail.bridgeAtHead(x, y)) return;
     const crossing = mask !== 0 && rail.map.get(x, y) === TileType.Crossing;
     const bridge = mask !== 0 && rail.map.get(x, y) === TileType.Bridge;
+    const type = rail.railType[i] as RailType;
     for (let piece = 0; mask >> piece; piece++) {
-      if (mask & (1 << piece)) items.push({ x, y, piece, crossing, bridge });
+      if (mask & (1 << piece)) items.push({ x, y, piece, crossing, bridge, ...(type ? { type } : {}) });
     }
   });
   return items;

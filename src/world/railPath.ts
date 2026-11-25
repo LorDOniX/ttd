@@ -168,7 +168,8 @@ export function autorailPlan(
       blocked.push({ x: p.x, y: p.y });
       return;
     }
-    const exists = rail.has(p.x, p.y, p.piece);
+    // Kolej jiného druhu (jednokolejka, maglev) se nepřevezme
+    const exists = rail.has(p.x, p.y, p.piece) && rail.railTypeAt(p.x, p.y) === rail.buildType;
     let ok = exists || rail.canPlace(p.x, p.y, p.piece);
     // Do depa se vjíždí jen vjezdem; přímka zadní stěnou neprojede
     const depot = ok ? rail.depotAt(p.x, p.y) : undefined;
