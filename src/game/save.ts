@@ -35,7 +35,7 @@ import { setConsist, wagonCargos } from './consist';
 import { cleanFlags, type OrderFlags, type Train } from './trains';
 import type { World } from '../world/generator';
 import { INDUSTRY_SIZE, averageProduction, isIndustryKind, type Industry } from '../world/industry';
-import { GameMap, TileType } from '../world/map';
+import { GameMap, MAX_HEIGHT, TileType } from '../world/map';
 import {
   RailNetwork,
   PIECES,
@@ -59,7 +59,8 @@ export interface SaveData {
   version: number;
   seed: number;
   seedText: string;
-  map: { width: number; height: number; tiles: string; owner: string };
+  // heights: úrovně terénu v rozích dlaždic; starší uložení je nemají (rovina)
+  map: { width: number; height: number; tiles: string; owner: string; heights?: string };
   towns: Town[];
   industries?: Industry[];
   // Hustota průmyslu z volby nové hry; starší uložení ji nemají
@@ -159,6 +160,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       width: map.width,
       height: map.height,
       tiles: encode(map.tiles),
+      heights: encode(map.heights),
       owner: encode(new Uint8Array(map.owner.buffer)),
     },
     towns: world.towns,
@@ -350,6 +352,10 @@ export function restoreGame(data: SaveData): Game {
   const { width, height } = data.map;
   const map = new GameMap(width, height);
   map.tiles.set(decode(data.map.tiles, width * height));
+  if (typeof data.map.heights === 'string') {
+    const levels = decode(data.map.heights, (width + 1) * (height + 1));
+    for (let i = 0; i < levels.length; i++) map.heights[i] = Math.min(MAX_HEIGHT, levels[i]);
+  }
   new Uint8Array(map.owner.buffer).set(decode(data.map.owner, width * height * 2));
 
   const rail = new RailNetwork(map);

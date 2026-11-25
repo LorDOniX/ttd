@@ -30,7 +30,7 @@ import type { Ship } from '../game/ships';
 import { openShip, openShipList, openShipyard, type ShipLinks } from '../ui/ships';
 import { WindowManager } from '../ui/windows';
 import { generateWorld } from '../world/generator';
-import { NO_OWNER } from '../world/map';
+import { HEIGHT_STEP, NO_OWNER } from '../world/map';
 import { industryAt, type Industry } from '../world/industry';
 import { openIndustry } from '../ui/industry';
 import { openStation } from '../ui/station';
@@ -332,8 +332,13 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
 
   game.news(message);
 
+  // Nejvyšší úroveň terénu se počítá jen po změně výšek
+  let terrainTop = { revision: -1, height: 0 };
   function tileAt(clientX: number, clientY: number): PointerTile | null {
-    const p = isoCamera.groundPoint(clientX, clientY);
+    if (terrainTop.revision !== map.heightRevision) {
+      terrainTop = { revision: map.heightRevision, height: map.maxLevel() * HEIGHT_STEP };
+    }
+    const p = isoCamera.terrainPoint(clientX, clientY, (x, z) => map.heightAt(x, z), terrainTop.height);
     if (!p) return null;
     const x = Math.floor(p.x);
     const y = Math.floor(p.z);

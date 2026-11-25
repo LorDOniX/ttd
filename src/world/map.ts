@@ -32,6 +32,18 @@ export function bridgeAlong(axis: 'x' | 'y', edge: number): boolean {
   return (edge % 2 === 1) === (axis === 'x');
 }
 
+// Výška terénu jako v OpenTTD: celá čísla v rozích dlaždic, sousední rohy se liší nejvýš o 1.
+// Jedna úroveň je HEIGHT_STEP světových jednotek; voda leží na úrovni 0.
+export const HEIGHT_STEP = 0.3;
+export const MAX_HEIGHT = 12;
+
+// Svah dlaždice: rovina, nakloněná rovina podél osy (kolej a silnice mohou vést do svahu), nebo jiný tvar
+export type TileSlope =
+  | { kind: 'flat'; level: number }
+  // up = hrana (0 S, 1 V, 2 J, 3 Z), směrem ke které terén stoupá; level = nižší úroveň
+  | { kind: 'incline'; level: number; up: 0 | 1 | 2 | 3 }
+  | { kind: 'other'; level: number };
+
 export interface TilePos {
   x: number;
   y: number;
@@ -47,6 +59,10 @@ export class GameMap {
   // Dlaždice pod železničními mosty (index y * šířka + x); spravuje je RailNetwork
   readonly bridged = new Set<number>();
   readonly tiles: Uint8Array;
+  // Úrovně terénu v rozích dlaždic, (width + 1) × (height + 1), index cy * (width + 1) + cx
+  readonly heights: Uint8Array;
+  // Počítadlo změn výšek (pro mezipaměti odvozené z terénu)
+  heightRevision = 0;
   // Id města, kterému dlaždice patří, jinak NO_OWNER
   readonly owner: Int16Array;
   // Indexy změněných dlaždic, aby vykreslování nemuselo procházet celou mapu
@@ -59,6 +75,84 @@ export class GameMap {
   ) {
     this.tiles = new Uint8Array(width * height);
     this.owner = new Int16Array(width * height).fill(NO_OWNER);
+    this.heights = new Uint8Array((width + 1) * (height + 1));
+  }
+
+  // Úroveň rohu (cx, cy) v rozsahu 0..width × 0..height; mimo mapu 0
+  cornerLevel(cx: number, cy: number): number {
+    if (cx < 0 || cy < 0 || cx > this.width || cy > this.height) return 0;
+    return this.heights[cy * (this.width + 1) + cx];
+  }
+
+  // Nastaví úroveň rohu a zaznamená změnu všech dlaždic, které roh sdílejí
+  setCornerLevel(cx: number, cy: number, level: number): void {
+    const i = cy * (this.width + 1) + cx;
+    const value = Math.max(0, Math.min(MAX_HEIGHT, Math.round(level)));
+    if (this.heights[i] === value) return;
+    this.heights[i] = value;
+    this.heightRevision++;
+    for (const [dx, dy] of [
+      [-1, -1],
+      [0, -1],
+      [-1, 0],
+      [0, 0],
+    ]) {
+      if (this.inBounds(cx + dx, cy + dy)) this.record((cy + dy) * this.width + cx + dx);
+    }
+  }
+
+  // Úrovně rohů dlaždice v pořadí SZ, SV, JV, JZ
+  tileCorners(x: number, y: number): [number, number, number, number] {
+    return [
+      this.cornerLevel(x, y),
+      this.cornerLevel(x + 1, y),
+      this.cornerLevel(x + 1, y + 1),
+      this.cornerLevel(x, y + 1),
+    ];
+  }
+
+  // Nejnižší roh dlaždice
+  tileLevel(x: number, y: number): number {
+    return Math.min(...this.tileCorners(x, y));
+  }
+
+  isFlat(x: number, y: number): boolean {
+    const [a, b, c, d] = this.tileCorners(x, y);
+    return a === b && b === c && c === d;
+  }
+
+  slope(x: number, y: number): TileSlope {
+    const [nw, ne, se, sw] = this.tileCorners(x, y);
+    const level = Math.min(nw, ne, se, sw);
+    if (nw === ne && ne === se && se === sw) return { kind: 'flat', level };
+    const one = (a: number, b: number): boolean => a === b && Math.max(nw, ne, se, sw) === level + 1;
+    if (one(nw, ne) && one(se, sw) && nw !== sw) return { kind: 'incline', level, up: nw > sw ? 0 : 2 };
+    if (one(nw, sw) && one(ne, se) && nw !== ne) return { kind: 'incline', level, up: ne > nw ? 1 : 3 };
+    return { kind: 'other', level };
+  }
+
+  // Světová výška spodku dlaždice (nejnižší roh); stavby stojí na rovných dlaždicích v této výšce
+  elevation(x: number, y: number): number {
+    return this.inBounds(x, y) ? this.tileLevel(x, y) * HEIGHT_STEP : 0;
+  }
+
+  // Světová výška terénu v bodě (fx, fy) mapy: dvě trojúhelníkové plochy dlaždice s úhlopříčkou SZ–JV,
+  // stejně jako ve vykreslení terénu
+  heightAt(fx: number, fy: number): number {
+    const x = Math.max(0, Math.min(this.width - 1, Math.floor(fx)));
+    const y = Math.max(0, Math.min(this.height - 1, Math.floor(fy)));
+    const u = Math.max(0, Math.min(1, fx - x));
+    const v = Math.max(0, Math.min(1, fy - y));
+    const [nw, ne, se, sw] = this.tileCorners(x, y);
+    const h = u >= v ? nw + (ne - nw) * u + (se - ne) * v : nw + (sw - nw) * v + (se - sw) * u;
+    return h * HEIGHT_STEP;
+  }
+
+  // Nejvyšší úroveň mapy (pro výběr dlaždice myší)
+  maxLevel(): number {
+    let max = 0;
+    for (const h of this.heights) if (h > max) max = h;
+    return max;
   }
 
   inBounds(x: number, y: number): boolean {

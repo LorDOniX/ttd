@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GameMap, MapChanges, TileType } from '../world/map';
+import { GameMap, HEIGHT_STEP, MapChanges, TileType } from '../world/map';
 import type { Town } from '../world/town';
 import { seasonWeight, type Season, type SeasonBlend } from '../game/seasons';
 import { setWaterIce, withWater } from './water';
@@ -133,6 +133,9 @@ export class TerrainView {
   private seasonKey = '';
   // Voda (1) nebo pevnina (0) při posledním vykreslení, při změně se přestaví břehy
   private readonly water: Uint8Array;
+  // Normály terénu (podle sklonu dlaždic) a verze výšek, pro kterou platí mřížka
+  private readonly normals: Float32Array;
+  private heightRevision = 0;
 
   constructor(
     private readonly map: GameMap,
@@ -140,6 +143,8 @@ export class TerrainView {
   ) {
     this.changes = new MapChanges(map);
     this.water = new Uint8Array(map.width * map.height);
+    this.normals = new Float32Array(map.width * map.height * 12);
+    this.heightRevision = map.heightRevision;
     this.geometry = this.buildGeometry();
     this.greenDetails = this.buildGreenDetails();
     this.greenDetailColors = this.greenDetails.getAttribute('color').array as Float32Array;
@@ -221,14 +226,29 @@ export class TerrainView {
     if (changes.length === 0) return;
     const colors = this.geometry.getAttribute('color') as THREE.BufferAttribute;
     const positions = this.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const normals = this.geometry.getAttribute('normal') as THREE.BufferAttribute;
     const detailColors = this.greenDetails.getAttribute('color') as THREE.BufferAttribute;
+    const detailPositions = this.greenDetails.getAttribute('position') as THREE.BufferAttribute;
     const { width } = this.map;
     let shoreChanged = false;
+    if (this.map.heightRevision !== this.heightRevision) {
+      this.heightRevision = this.map.heightRevision;
+      this.rebuildGrid();
+    }
     for (const i of new Set(changes)) {
       const x = i % width;
       const y = Math.floor(i / width);
       this.writeGreenDetailAlpha(x, y);
       detailColors.addUpdateRange(i * 16 + 3, 16);
+      // Změna dlaždice může být i změna výšky jejích rohů (úpravy terénu)
+      this.writeTileHeight(positions.array as Float32Array, x, y);
+      positions.addUpdateRange(i * 12, 12);
+      positions.needsUpdate = true;
+      normals.addUpdateRange(i * 12, 12);
+      normals.needsUpdate = true;
+      this.writeDetailHeight(x, y);
+      detailPositions.addUpdateRange(i * 12, 12);
+      detailPositions.needsUpdate = true;
       const water = this.isWater(x, y) ? 1 : 0;
       if (water === this.water[i]) {
         this.writeTileColor(colors.array as Float32Array, x, y);
@@ -237,9 +257,6 @@ export class TerrainView {
       }
       this.water[i] = water;
       shoreChanged = true;
-      this.writeTileHeight(positions.array as Float32Array, x, y);
-      positions.addUpdateRange(i * 12, 12);
-      positions.needsUpdate = true;
       this.writeTileColor(colors.array as Float32Array, x, y);
       colors.addUpdateRange(i * 12, 12);
     }
@@ -266,6 +283,15 @@ export class TerrainView {
     detailColors.needsUpdate = true;
     positions.clearUpdateRanges();
     positions.needsUpdate = true;
+    const normals = this.geometry.getAttribute('normal') as THREE.BufferAttribute;
+    normals.clearUpdateRanges();
+    normals.needsUpdate = true;
+    for (let y = 0; y < this.map.height; y++) for (let x = 0; x < this.map.width; x++) this.writeDetailHeight(x, y);
+    const detailPositions = this.greenDetails.getAttribute('position') as THREE.BufferAttribute;
+    detailPositions.clearUpdateRanges();
+    detailPositions.needsUpdate = true;
+    this.heightRevision = this.map.heightRevision;
+    this.rebuildGrid();
     this.rebuildShore();
   }
 
@@ -302,7 +328,8 @@ export class TerrainView {
       for (let x = 0; x < width; x++) {
         const i = y * width + x;
         const p = i * 12;
-        positions.set([x, 0.001, y, x + 1, 0.001, y, x + 1, 0.001, y + 1, x, 0.001, y + 1], p);
+        const [nw, ne, se, sw] = this.map.tileCorners(x, y).map((h) => h * HEIGHT_STEP + 0.001);
+        positions.set([x, nw, y, x + 1, ne, y, x + 1, se, y + 1, x, sw, y + 1], p);
         uvs.set(
           [x * 0.5, y * 0.5, (x + 1) * 0.5, y * 0.5, (x + 1) * 0.5, (y + 1) * 0.5, x * 0.5, (y + 1) * 0.5],
           i * 8,
@@ -359,15 +386,28 @@ export class TerrainView {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(this.normals, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-    geometry.computeVertexNormals();
     return withLampLightUv(geometry);
   }
 
+  // Rohy dlaždice ve výšce terénu (voda pod hladinou) a normála podle průměrného sklonu dlaždice
   private writeTileHeight(positions: Float32Array, x: number, y: number): void {
-    const h = this.isWater(x, y) ? -WATER_DEPTH : 0;
-    positions.set([x, h, y, x + 1, h, y, x + 1, h, y + 1, x, h, y + 1], (y * this.map.width + x) * 12);
+    const water = this.isWater(x, y);
+    const [nw, ne, se, sw] = this.map.tileCorners(x, y).map((h) => h * HEIGHT_STEP - (water ? WATER_DEPTH : 0));
+    const offset = (y * this.map.width + x) * 12;
+    positions.set([x, nw, y, x + 1, ne, y, x + 1, se, y + 1, x, sw, y + 1], offset);
+    const dx = (ne + se - nw - sw) / 2;
+    const dz = (sw + se - nw - ne) / 2;
+    const length = Math.hypot(dx, 1, dz);
+    for (let k = 0; k < 4; k++) this.normals.set([-dx / length, 1 / length, -dz / length], offset + k * 3);
+  }
+
+  private writeDetailHeight(x: number, y: number): void {
+    const positions = this.greenDetails.getAttribute('position').array as Float32Array;
+    const [nw, ne, se, sw] = this.map.tileCorners(x, y).map((h) => h * HEIGHT_STEP + 0.001);
+    positions.set([x, nw, y, x + 1, ne, y, x + 1, se, y + 1, x, sw, y + 1], (y * this.map.width + x) * 12);
   }
 
   private tileColor(x: number, y: number): THREE.Color {
@@ -502,17 +542,32 @@ export class TerrainView {
   }
 
   private buildGrid(): THREE.LineSegments {
+    return new THREE.LineSegments(
+      this.gridGeometry(),
+      new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.18 }),
+    );
+  }
+
+  private rebuildGrid(): void {
+    if (!this.grid) return;
+    this.grid.geometry.dispose();
+    this.grid.geometry = this.gridGeometry();
+  }
+
+  // Mřížka po hranách dlaždic ve výšce jejich rohů
+  private gridGeometry(): THREE.BufferGeometry {
     const { width, height } = this.map;
     const points: number[] = [];
     const lift = 0.01;
-    for (let x = 0; x <= width; x++) points.push(x, lift, 0, x, lift, height);
-    for (let y = 0; y <= height; y++) points.push(0, lift, y, width, lift, y);
-
+    const y = (cx: number, cy: number): number => this.map.cornerLevel(cx, cy) * HEIGHT_STEP + lift;
+    for (let cx = 0; cx <= width; cx++) {
+      for (let cy = 0; cy < height; cy++) points.push(cx, y(cx, cy), cy, cx, y(cx, cy + 1), cy + 1);
+    }
+    for (let cy = 0; cy <= height; cy++) {
+      for (let cx = 0; cx < width; cx++) points.push(cx, y(cx, cy), cy, cx + 1, y(cx + 1, cy), cy);
+    }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-    return new THREE.LineSegments(
-      geometry,
-      new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.18 }),
-    );
+    return geometry;
   }
 }

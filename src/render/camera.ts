@@ -172,6 +172,39 @@ export class IsoCamera {
     return this.ray(clientX, clientY).ray.intersectPlane(this.groundPlane, new THREE.Vector3());
   }
 
+  // Průsečík paprsku z kurzoru s terénem: paprsek se projde od nejvyšší výšky mapy dolů po krocích
+  // a místo průniku se zpřesní půlením; na rovině je to totéž jako groundPoint
+  terrainPoint(
+    clientX: number,
+    clientY: number,
+    heightAt: (x: number, z: number) => number,
+    maxHeight: number,
+  ): THREE.Vector3 | null {
+    const { ray } = this.ray(clientX, clientY);
+    if (maxHeight <= 0 || ray.direction.y >= 0) return this.groundPoint(clientX, clientY);
+    const at = (t: number): THREE.Vector3 => ray.at(t, new THREE.Vector3());
+    const tTop = (maxHeight + 0.01 - ray.origin.y) / ray.direction.y;
+    const tBottom = (-0.1 - ray.origin.y) / ray.direction.y;
+    const step = 0.04 / Math.max(0.2, Math.hypot(ray.direction.x, ray.direction.z));
+    let previous = Math.max(0, tTop);
+    for (let t = previous; t <= tBottom; t += step) {
+      const p = at(t);
+      if (p.y <= heightAt(p.x, p.z)) {
+        let lo = previous;
+        let hi = t;
+        for (let k = 0; k < 12; k++) {
+          const mid = (lo + hi) / 2;
+          const q = at(mid);
+          if (q.y <= heightAt(q.x, q.z)) hi = mid;
+          else lo = mid;
+        }
+        return at(hi);
+      }
+      previous = t;
+    }
+    return this.groundPoint(clientX, clientY);
+  }
+
   private updatePosition(): void {
     this.target.x = THREE.MathUtils.clamp(this.target.x, this.bounds.min.x, this.bounds.max.x);
     this.target.z = THREE.MathUtils.clamp(this.target.z, this.bounds.min.y, this.bounds.max.y);
