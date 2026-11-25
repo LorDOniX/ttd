@@ -121,6 +121,20 @@ export class GameMap {
     return a === b && b === c && c === d;
   }
 
+  // Vede z dlaždice kolej či silnice přes hranu edge (0 = S, 1 = V, 2 = J, 3 = Z)? Z roviny všemi směry,
+  // z nakloněné roviny jen nahoru a dolů po svahu, z jiného tvaru svahu nikam (jako v OpenTTD bez základů)
+  edgeOpen(x: number, y: number, edge: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const slope = this.slope(x, y);
+    return slope.kind === 'flat' || (slope.kind === 'incline' && edge % 2 === slope.up % 2);
+  }
+
+  // Jsou všechny dlaždice rovné? Stavby (nástupiště, depa, budovy…) stojí jen na rovině
+  allFlat(tiles: Iterable<{ x: number; y: number }>): boolean {
+    for (const t of tiles) if (!this.inBounds(t.x, t.y) || !this.isFlat(t.x, t.y)) return false;
+    return true;
+  }
+
   slope(x: number, y: number): TileSlope {
     const [nw, ne, se, sw] = this.tileCorners(x, y);
     const level = Math.min(nw, ne, se, sw);

@@ -24,12 +24,12 @@ proto jde po každém kroku hrát a commitovat. Body se odškrtávají průběž
 - [x] Kontrola v prohlížeči na ručně vytvořeném kopci, commit
 
 ## 3. Pravidla stavby
-- [ ] Stavby (nástupiště, depa, zastávky, garáže, letiště, přístavy, průmysl, budovy měst) jen na rovině
-- [ ] Kolej: na rovině jakýkoli dílek, ve svahu jen rovně ve směru svahu; autorail podle toho plánuje
-- [ ] Silnice: totéž (i stavba silnic městy)
-- [ ] Mosty: nájezdy ve stejné výšce, mostovka nad terénem
-- [ ] Vlak ve stoupání zpomalí, z kopce zrychlí (jako v OpenTTD)
-- [ ] Testy, commit
+- [x] Stavby (nástupiště, depa, zastávky, garáže, letiště, přístavy, průmysl, budovy měst) jen na rovině
+- [x] Kolej: na rovině jakýkoli dílek, ve svahu jen rovně ve směru svahu; autorail podle toho plánuje
+- [x] Silnice: totéž (napojení i jízda aut jen podél svahu); města zatím staví silnice i domy jen na rovině
+- [x] Mosty: nájezdy na rovině ve stejné výšce, terén pod polem nesmí být výš
+- [x] Vlak ve stoupání zpomalí, z kopce zrychlí (jako v OpenTTD)
+- [x] Testy, commit
 
 ## 4. Generátor s kopci
 - [ ] Výšková mapa ze šumu (vyšší vnitrozemí, roviny u vody), voda na úrovni 0, sousední rohy ±1

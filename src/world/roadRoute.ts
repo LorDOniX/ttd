@@ -10,7 +10,7 @@ export interface RoadTile extends TilePos {
 // přejezdem kolmo na kolej, mostem jen podél něj, garáží jen vjezdem.
 function opensTo(rail: RailNetwork, x: number, y: number, edge: Edge): boolean {
   const { map } = rail;
-  if (!map.inBounds(x, y)) return false;
+  if (!map.inBounds(x, y) || !map.edgeOpen(x, y, edge)) return false;
   switch (map.get(x, y)) {
     case TileType.Road: {
       // Nájezd silničního mostu jen zezadu; dopředu se jede po mostě (roadSteps), ne po zemi

@@ -122,7 +122,9 @@ function insideShape(town: Town, x: number, y: number, radius: number): boolean 
   return Math.hypot(dx, dy) <= radius * scale;
 }
 
+// Město staví silnice i domy jen na rovině (svahy zůstanou volné)
 function isFreeFor(map: GameMap, town: Town, x: number, y: number): boolean {
+  if (!map.inBounds(x, y) || !map.isFlat(x, y)) return false;
   const owner = map.getOwner(x, y);
   return owner === NO_OWNER || owner === town.id;
 }

@@ -19,6 +19,7 @@ import {
 } from './balance';
 import { needsService, newMaintenance, rollBreakdown, service, wearOut, type Maintained } from './reliability';
 import { Rng } from '../world/rng';
+import { HEIGHT_STEP } from '../world/map';
 import { formatMoney, type Game } from './game';
 import { CARGOS, isCargo, isFreight, type Cargo } from './cargo';
 import {
@@ -39,6 +40,7 @@ import {
   opposite,
   stationTiles,
   type Depot,
+  type RailNetwork,
   type Station,
   type StationShape,
   type Waypoint,
@@ -46,6 +48,7 @@ import {
 import {
   extendThroughStation,
   findRoute,
+  groundAt,
   railNetworks,
   pathLength,
   pointAt,
@@ -62,6 +65,27 @@ import {
 // Zrychlení a brzdění v dlaždicích za den za den
 const ACCELERATION = 2;
 const DECELERATION = 2;
+// Stoupání: na plném svahu (1 úroveň na dlaždici) lokomotiva sama zpomalí o HILL_BASE, každý vůz přidá
+// HILL_PER_WAGON, nejvýš o MAX_HILL_SLOWDOWN; z kopce vlak zrychluje o polovinu rychleji (jako v OpenTTD)
+const HILL_BASE = 0.2;
+const HILL_PER_WAGON = 0.06;
+const MAX_HILL_SLOWDOWN = 0.7;
+
+// Průměrné stoupání soupravy v úrovních na dlaždici: kladné do kopce, záporné z kopce
+export function trainClimb(train: Train, rail: RailNetwork): number {
+  if (train.path.length === 0) return 0;
+  const length = trainLength(train);
+  const head = groundAt(rail, train.path, train.pos);
+  const tail = groundAt(rail, train.path, train.pos - length);
+  return (head - tail) / length / HEIGHT_STEP;
+}
+
+// Nejvyšší rychlost vlaku v aktuálním stoupání (z kopce i po rovině plná rychlost modelu)
+export function hillSpeed(train: Train, rail: RailNetwork, top: number): number {
+  const climb = trainClimb(train, rail);
+  if (climb <= 0) return top;
+  return top * (1 - Math.min(MAX_HILL_SLOWDOWN, climb * (HILL_BASE + HILL_PER_WAGON * train.wagons)));
+}
 // Vlak bez cesty to zkusí znovu po této době
 const LOST_RETRY_DAYS = 5;
 // Vlak čekající na obsazenou trať po této době hledá jinou cestu (třeba volnou kolej nástupiště)
@@ -1065,7 +1089,13 @@ export class Fleet {
     const limit = Math.min(pathEnd, reservations.limit(train));
     const remaining = Math.max(0, limit - train.pos);
     const brakeLimit = Math.sqrt(2 * DECELERATION * remaining);
-    train.speed = Math.min(train.speed + ACCELERATION * days, model.speed, brakeLimit);
+    // Do kopce vlak postupně zpomalí na rychlost, kterou ve stoupání utáhne; z kopce rychleji zrychlí
+    const climb = trainClimb(train, this.game.world.rail);
+    const top = hillSpeed(train, this.game.world.rail, model.speed);
+    const accel = ACCELERATION * (climb < 0 ? 1.5 : 1);
+    train.speed =
+      train.speed > top ? Math.max(top, train.speed - DECELERATION * days) : Math.min(train.speed + accel * days, top);
+    train.speed = Math.min(train.speed, brakeLimit);
     // Minimální rychlost, aby brzdění vlak nezastavilo těsně před cílem
     train.speed = Math.max(train.speed, 0.15);
     const step = train.speed * days;

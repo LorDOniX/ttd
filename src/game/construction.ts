@@ -222,6 +222,7 @@ export class Construction {
     const { rail } = this.game.world;
     const electric = wires && rail.buildType === RailType.Rail;
     const cost = stationCost(shape) + (electric ? stationTiles(shape).length * ELECTRIFY_TILE_COST : 0);
+    if (!this.game.world.map.allFlat(stationTiles(shape))) return 'Nástupiště potřebuje rovný terén.';
     if (!rail.canPlaceStation(shape)) return 'Sem nástupiště postavit nelze.';
     if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
     const target = this.joinTarget(stationTiles(shape), join);
@@ -239,6 +240,7 @@ export class Construction {
     const { rail } = this.game.world;
     const axis = rail.roadStopAxis(x, y);
     if (!axis) return 'Zastávka aut jde jen na rovnou silnici bez křižovatky.';
+    if (!this.game.world.map.isFlat(x, y)) return 'Zastávka aut potřebuje rovný terén.';
     if (this.game.money < ROAD_STOP_COST) return `Nedostatek peněz (${formatMoney(ROAD_STOP_COST)}).`;
     const target = this.joinTarget([{ x, y }], join);
     if (typeof target === 'string') return target;
@@ -255,6 +257,7 @@ export class Construction {
     const spec = AIRPORT_TYPES[type];
     const shape = airportShape(type, x, y, axis);
     if (this.game.clock.date.year < spec.year) return `${spec.name} lze stavět až od roku ${spec.year}.`;
+    if (!this.game.world.map.allFlat(stationTiles(shape))) return 'Letiště potřebuje rovný terén.';
     if (!rail.canPlaceAirport(shape)) return 'Letiště potřebuje volnou zemi bez staveb, silnic a vody.';
     if (this.game.money < spec.cost) return `Nedostatek peněz (${formatMoney(spec.cost)}).`;
     const target = this.joinTarget(stationTiles(shape), join);
@@ -269,6 +272,10 @@ export class Construction {
   // Přístav na břehu: nábřeží na souši, kotviště na volné vodě před ním
   buildPort(shape: PortShape, join?: number | null): string | null {
     const { map, rail } = this.game.world;
+    const quay = stationTiles(shape);
+    if (quay.every((t) => map.inBounds(t.x, t.y)) && !map.allFlat(quay)) {
+      return 'Přístav potřebuje rovný břeh.';
+    }
     if (!canPlacePort(map, shape, (x, y) => rail.isBerth(x, y))) {
       return 'Přístav potřebuje dvě dlaždice volného břehu a před nimi volnou vodu.';
     }
@@ -285,6 +292,7 @@ export class Construction {
   buildRoadDepot(x: number, y: number, entrance: Edge): string | null {
     const { map, rail } = this.game.world;
     if (!map.isFree(x, y)) return 'Garáž jde jen na volnou dlaždici vedle silnice.';
+    if (!map.isFlat(x, y)) return 'Garáž potřebuje rovný terén.';
     if (this.game.money < ROAD_DEPOT_COST) return `Nedostatek peněz (${formatMoney(ROAD_DEPOT_COST)}).`;
     this.game.spend(ROAD_DEPOT_COST, 'construction');
     rail.addRoadDepot(x, y, entrance);
@@ -322,6 +330,7 @@ export class Construction {
       return null;
     }
     if (!rail.waypointAxis(x, y)) return 'Průjezdný bod jde jen na rovnou kolej bez výhybky, návěstidla a mostu.';
+    if (!this.game.world.map.isFlat(x, y)) return 'Průjezdný bod potřebuje rovný terén.';
     if (this.game.money < WAYPOINT_COST) return `Nedostatek peněz (${formatMoney(WAYPOINT_COST)}).`;
     const town = [...towns].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
     const base = town ? `${town.name} – bod` : 'Bod';
@@ -472,6 +481,7 @@ export class Construction {
 
   buildDepot(x: number, y: number, entrance: Edge, electric = false): string | null {
     const { rail } = this.game.world;
+    if (this.game.world.map.inBounds(x, y) && !this.game.world.map.isFlat(x, y)) return 'Depo potřebuje rovný terén.';
     if (!rail.canPlaceDepot(x, y)) return 'Sem depo postavit nelze.';
     const { links } = this.depotCost(x, y, entrance);
     const cost = this.depotCost(x, y, entrance).cost + (electric ? (1 + links.length) * ELECTRIFY_TILE_COST : 0);

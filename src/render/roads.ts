@@ -138,6 +138,8 @@ export function roadConnects(map: GameMap, rail: RailNetwork): RoadConnects {
       const otherExit = map.isType(nx, ny, TileType.Road) ? rail.roadBridgeExit(nx, ny) : null;
       if (otherExit !== null && edge !== otherExit) return false;
     }
+    // Ve svahu jen nahoru a dolů po svahu
+    if (!map.edgeOpen(x, y, edge) || !map.edgeOpen(nx, ny, opposite(edge))) return false;
     if (map.isRoad(nx, ny)) return true;
     return map.isType(nx, ny, TileType.RoadDepot) && rail.roadDepotAt(nx, ny)?.entrance === opposite(edge);
   };

@@ -323,6 +323,9 @@ export class RailNetwork {
 
   canPlace(x: number, y: number, piece: number): boolean {
     if (!this.map.inBounds(x, y)) return false;
+    // Ve svahu jen rovná kolej ve směru stoupání
+    const [ea, eb] = PIECES[piece];
+    if (!this.map.edgeOpen(x, y, ea) || !this.map.edgeOpen(x, y, eb)) return false;
     // Na dlaždici s kolejí jiného druhu nic nového nepřibude (sítě se nemíchají)
     if (this.mask(x, y) !== 0 && this.railTypeAt(x, y) !== this.buildType) return false;
     // Na nájezdu mostu jen kolej ve směru mostu (bez výhybky)
@@ -389,6 +392,7 @@ export class RailNetwork {
 
   canPlaceStation(shape: StationShape): boolean {
     const bit = 1 << axisPiece(shape.axis);
+    if (!this.map.allFlat(stationTiles(shape))) return false;
     return stationTiles(shape).every(
       (t) =>
         this.map.isFree(t.x, t.y) ||
@@ -526,7 +530,7 @@ export class RailNetwork {
 
   // Letiště zabere obdélník volné země (tráva, les)
   canPlaceAirport(shape: StationShape): boolean {
-    return stationTiles(shape).every((t) => this.map.isFree(t.x, t.y));
+    return stationTiles(shape).every((t) => this.map.isFree(t.x, t.y)) && this.map.allFlat(stationTiles(shape));
   }
 
   addAirport(shape: StationShape, type: AirportType, name: string, townId: number): Station {
@@ -598,7 +602,7 @@ export class RailNetwork {
   }
 
   canPlaceDepot(x: number, y: number): boolean {
-    return this.map.isFree(x, y);
+    return this.map.isFree(x, y) && this.map.isFlat(x, y);
   }
 
   addDepot(x: number, y: number, entrance: Edge): Depot {
@@ -746,6 +750,14 @@ export class RailNetwork {
   }
 
   private underSpanProblem(bridge: RailBridge): string | null {
+    // Nájezdy na rovině ve stejné výšce, terén pod polem mostu nesmí být výš než nájezdy
+    const heads = [bridge, bridgeEnd(bridge)];
+    if (!this.map.allFlat(heads)) return 'Nájezdy mostu musí stát na rovném terénu.';
+    const level = this.map.tileLevel(bridge.x, bridge.y);
+    if (heads.some((h) => this.map.tileLevel(h.x, h.y) !== level)) return 'Nájezdy mostu musí být ve stejné výšce.';
+    for (const t of bridgeSpanTiles(bridge)) {
+      if (Math.max(...this.map.tileCorners(t.x, t.y)) > level) return 'Terén pod mostem je výš než nájezdy.';
+    }
     for (const t of bridgeSpanTiles(bridge)) {
       if (this.map.isBridged(t.x, t.y) || this.anyBridgeHead(t.x, t.y)) return 'Mosty se nesmí křížit.';
       if (UNDER_BRIDGE_FORBIDDEN.includes(this.map.get(t.x, t.y))) {

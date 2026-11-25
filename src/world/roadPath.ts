@@ -26,7 +26,8 @@ function isRoadTile(map: GameMap, x: number, y: number): boolean {
 
 // Přes kolej vede silnice jen rovně a kolmo na jedinou rovnou kolej (přejezd)
 function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: number): boolean {
-  if (!map.inBounds(x, y)) return false;
+  // Ve svahu jen rovně nahoru nebo dolů
+  if (!map.inBounds(x, y) || !map.edgeOpen(x, y, dir)) return false;
   switch (map.get(x, y)) {
     case TileType.Grass:
     case TileType.Trees:
@@ -51,6 +52,7 @@ function passable(map: GameMap, rail: RailNetwork, x: number, y: number, dir: nu
 function straightOnly(map: GameMap, x: number, y: number): boolean {
   const type = map.get(x, y);
   return (
+    !map.isFlat(x, y) ||
     type === TileType.Rail ||
     type === TileType.Crossing ||
     type === TileType.RoadStop ||

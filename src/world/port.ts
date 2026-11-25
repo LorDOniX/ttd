@@ -86,6 +86,7 @@ export function canPlacePort(
 ): boolean {
   return (
     stationTiles(shape).every((t) => map.isFree(t.x, t.y)) &&
+    map.allFlat(stationTiles(shape)) &&
     berthTiles(shape).every((t) => navigable(map, t.x, t.y) && !isBerth(t.x, t.y))
   );
 }

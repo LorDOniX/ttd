@@ -238,6 +238,7 @@ export function industrySiteProblem(
   }
   const site = { x, y };
   if (!industryTiles(site).every((t) => map.isFree(t.x, t.y))) return 'Areál potřebuje volnou zem 3×3';
+  if (!map.allFlat(industryTiles(site))) return 'Areál potřebuje rovný terén';
   // Okolí musí jít vykácet na trávu, takže v něm nesmí být voda ani stavby
   if (kind !== 'forest' && !clearingTiles(site).every((t) => map.inBounds(t.x, t.y) && map.isFree(t.x, t.y))) {
     return 'Kolem areálu musí být pás volné země bez vody a staveb';
