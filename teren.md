@@ -53,4 +53,4 @@ proto jde po každém kroku hrát a commitovat. Body se odškrtávají průběž
 - [x] Uložení, info o dlaždici, testy, kontrola v prohlížeči, commit
 
 ## 7. Dokončení
-- [ ] Zápis do nth.md (Hotovo), odstranění položek „Tunely“ a „Výška terénu“ ze Zbývá
+- [x] Zápis do nth.md (Hotovo), odstranění položek „Tunely“ a „Výška terénu“ ze Zbývá
