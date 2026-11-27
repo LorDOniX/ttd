@@ -47,6 +47,15 @@ export const SNOW_MATERIAL = new THREE.MeshLambertMaterial({
   polygonOffsetFactor: -1,
 });
 
+// Sníh na střechách stavby; skrytý mimo zimu, období přepíná setSeason pohledu podle userData.snowRoof
+export function createSnowMesh(geometry: THREE.BufferGeometry | null, visible: boolean): THREE.Mesh {
+  const snow = new THREE.Mesh(geometry ?? new THREE.BufferGeometry(), SNOW_MATERIAL);
+  snow.name = 'snih';
+  snow.userData.snowRoof = true;
+  snow.visible = visible;
+  return snow;
+}
+
 // Nejnižší střecha se sněhem; nižší jsou jen chodníky a podesty modelů na zemi (do ~0,05), přízemní
 // přístavky a verandy domků mají střechy už od ~0,17
 const SNOW_MIN_HEIGHT = 0.06;
@@ -90,21 +99,43 @@ export function createSnowRoofGeometry(
   return snow;
 }
 
+// Zmenší model na půdorys budovy na dlaždici se středem v počátku a dnem v y = 0
+function normalizeMatrix(model: THREE.Object3D): THREE.Matrix4 {
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const scale = FOOTPRINT / Math.max(size.x, size.z);
+  return new THREE.Matrix4()
+    .makeScale(scale, scale, scale)
+    .multiply(new THREE.Matrix4().makeTranslation(-center.x, -box.min.y, -center.z));
+}
+
+// Model budovy se sněhem na střechách jako ve hře (náhled zimní varianty); práh výšky střech
+// platí pro budovu zmenšenou na dlaždici, sníh se proto spočte v ní a vrátí do souřadnic modelu
+export function withSnowRoofs(model: THREE.Object3D): THREE.Group {
+  const normalize = normalizeMatrix(model);
+  const back = normalize.clone().invert();
+  const snow: THREE.Mesh[] = [];
+  model.traverse((child) => {
+    // Díly s více materiály hra vynechává i se sněhem
+    if (!(child instanceof THREE.Mesh) || Array.isArray(child.material)) return;
+    const geometry = createSnowRoofGeometry(child.geometry, normalize.clone().multiply(child.matrixWorld));
+    if (!geometry) return;
+    const mesh = new THREE.Mesh(geometry.applyMatrix4(back), SNOW_MATERIAL);
+    mesh.name = `${child.name || 'dil'}-snih`;
+    snow.push(mesh);
+  });
+  return new THREE.Group().add(model, ...snow);
+}
+
 // Rozloží model na části a normalizuje ho na střed dlaždice se dnem v y = 0
 export function loadPrototype(kit: Kit, model: string): Promise<Part[]> {
   const key = `${kit}/${model}`;
   let pending = prototypes.get(key);
   if (!pending) {
     pending = loadScene(kit, model).then((scene) => {
-      scene.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(scene);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const scale = FOOTPRINT / Math.max(size.x, size.z);
-      const normalize = new THREE.Matrix4()
-        .makeScale(scale, scale, scale)
-        .multiply(new THREE.Matrix4().makeTranslation(-center.x, -box.min.y, -center.z));
-
+      const normalize = normalizeMatrix(scene);
       const parts: Part[] = [];
       scene.traverse((child) => {
         if (!(child instanceof THREE.Mesh)) return;

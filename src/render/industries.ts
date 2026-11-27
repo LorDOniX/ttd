@@ -450,9 +450,15 @@ const LAYOUTS: Record<IndustryKind, () => Promise<THREE.Object3D>[]> = {
   ],
 };
 
-export async function buildIndustryPreview(kind: IndustryKind): Promise<THREE.Group> {
+// Areál závodu; winter zapne sníh na střechách nezávisle na aktuálním období hry (náhled v galerii)
+export async function buildIndustryPreview(kind: IndustryKind, winter?: boolean): Promise<THREE.Group> {
   const area = new THREE.Group();
   area.add(industryGround(kind), industryFence(kind), industryFloodlights(), ...(await Promise.all(LAYOUTS[kind]())));
+  if (winter !== undefined) {
+    area.traverse((part) => {
+      if (part.userData.snowRoof) part.visible = winter;
+    });
+  }
   return area;
 }
 

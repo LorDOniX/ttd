@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadScene } from '../assets';
 import { CHAIN_LINK, customFence, floodlights, type FenceSegment, type FloodlightSpot } from './industryYard';
 import { withLampLight } from './nightLights';
+import { createSnowMesh, createSnowRoofGeometry } from './buildings';
 import { portFrame, portPoint, type PortShape } from '../world/port';
 import { WATER_DEPTH } from './terrain';
 
@@ -108,8 +109,8 @@ function layout(): THREE.BufferGeometry {
   return mergeGeometries(layoutParts().map(([, part]) => part))!;
 }
 
-// Přístav jako skupina pojmenovaných dílů (pro galerii modelů a export)
-export function portModel(): THREE.Group {
+// Přístav jako skupina pojmenovaných dílů (pro galerii modelů a export), winter přidá sníh jako v zimě ve hře
+export function portModel(winter = false): THREE.Group {
   const group = new THREE.Group();
   group.name = 'pristav';
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -118,10 +119,32 @@ export function portModel(): THREE.Group {
     mesh.name = name;
     group.add(mesh);
   }
+  if (winter) group.add(createSnowMesh(createSnowRoofGeometry(layout(), new THREE.Matrix4()), true));
   return group;
 }
 
+// Sníh na všech dílech objektu v jeho místní soustavě (díly sloučené do pár meshů, bez skrytých)
+function snowOf(root: THREE.Object3D): THREE.BufferGeometry | null {
+  root.updateMatrixWorld(true);
+  const local = root.matrixWorld.clone().invert();
+  const parts: THREE.BufferGeometry[] = [];
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || child.userData.snowRoof) return;
+    const snow = createSnowRoofGeometry(child.geometry, local.clone().multiply(child.matrixWorld));
+    if (snow) parts.push(snow);
+  });
+  return parts.length > 0 ? mergeGeometries(parts) : null;
+}
+
+// Podrobný model přístavu ze sady se sněhem, jak ho v zimě kreslí hra (náhled v galerii)
+export function withPortSnow(model: THREE.Object3D): THREE.Group {
+  return new THREE.Group().add(model, createSnowMesh(snowOf(model), true));
+}
+
 let geometry: THREE.BufferGeometry | null = null;
+// Sníh přístavu z kódu a podrobného modelu; undefined = ještě nespočtený
+let layoutSnow: THREE.BufferGeometry | null | undefined;
+let detailedSnow: THREE.BufferGeometry | null | undefined;
 
 // Podrobný model přístavu z assets/ports/port.glb ve stejné místní soustavě jako díly z kódu
 // (a podél nábřeží 0..2, voda na z < 0). Dokud se nenačte, nebo když chybí, kreslí se přístav z kódu.
@@ -221,8 +244,14 @@ export function portLamps(ports: readonly PortShape[]): THREE.Vector3[] {
   );
 }
 
-// Přístav na mapě s plotem; useModel = podrobný model (náhled stavby kreslí obrysy z kódu barvou platnosti, bez plotu)
-export function createPortObject(shape: PortShape, material: THREE.Material, useModel = true): THREE.Object3D {
+// Přístav na mapě s plotem; useModel = podrobný model (náhled stavby kreslí obrysy z kódu barvou platnosti, bez plotu);
+// s winter dostane sníh na střechách (viditelný v zimě)
+export function createPortObject(
+  shape: PortShape,
+  material: THREE.Material,
+  useModel = true,
+  winter?: boolean,
+): THREE.Object3D {
   geometry ??= layout();
   const object = new THREE.Group();
   const { origin, u } = portFrame(shape);
@@ -233,16 +262,30 @@ export function createPortObject(shape: PortShape, material: THREE.Material, use
     return object;
   }
   object.add(portFence(), portFloodlights());
+  // Sníh patří k právě kreslenému modelu; po načtení podrobného se mu jen vymění geometrie,
+  // aby zůstala viditelnost nastavená mezitím přepnutým obdobím
+  const snow = winter === undefined ? null : createSnowMesh(null, winter);
+  if (snow) object.add(snow);
+  const showDetailed = (model: THREE.Group): void => {
+    object.add(model.clone());
+    if (!snow) return;
+    if (detailedSnow === undefined) detailedSnow = snowOf(model);
+    snow.geometry = detailedSnow ?? new THREE.BufferGeometry();
+  };
   if (detailed) {
-    object.add(detailed.clone());
+    showDetailed(detailed);
     return object;
   }
   const fallback = new THREE.Mesh(geometry, material);
   object.add(fallback);
+  if (snow) {
+    if (layoutSnow === undefined) layoutSnow = createSnowRoofGeometry(geometry, new THREE.Matrix4());
+    if (layoutSnow) snow.geometry = layoutSnow;
+  }
   void loadPortModel().then((model) => {
     if (!model) return;
     object.remove(fallback);
-    object.add(model.clone());
+    showDetailed(model);
   });
   return object;
 }

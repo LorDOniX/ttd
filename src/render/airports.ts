@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { AIRPORT_TYPES, type AirportType } from '../game/balance';
 import { RUNWAY_C, STAND_C, TAXIWAY_C, airportPoint, hangarColumn, standColumns } from '../world/airport';
 import type { StationShape } from '../world/rail';
+import { createSnowMesh, createSnowRoofGeometry } from './buildings';
 
 const ASPHALT = 0x3f4246;
 const TAXIWAY = 0x55585d;
@@ -189,6 +190,7 @@ function layoutParts(type: AirportType): [string, THREE.BufferGeometry][] {
 }
 
 const layouts = new Map<AirportType, THREE.BufferGeometry>();
+const snows = new Map<AirportType, THREE.BufferGeometry | null>();
 
 function layoutGeometry(type: AirportType): THREE.BufferGeometry {
   let geometry = layouts.get(type);
@@ -199,8 +201,15 @@ function layoutGeometry(type: AirportType): THREE.BufferGeometry {
   return geometry;
 }
 
-// Letiště jako skupina pojmenovaných dílů (pro galerii modelů a export); počátek v rohu u začátku ranveje
-export function airportModel(type: AirportType): THREE.Group {
+// Sníh na střechách terminálu, hangáru, věže a nástupních mostů (ranvej a parkoviště jsou pod prahem výšky)
+function snowGeometry(type: AirportType): THREE.BufferGeometry | null {
+  if (!snows.has(type)) snows.set(type, createSnowRoofGeometry(layoutGeometry(type), new THREE.Matrix4()));
+  return snows.get(type)!;
+}
+
+// Letiště jako skupina pojmenovaných dílů (pro galerii modelů a export); počátek v rohu u začátku ranveje,
+// winter přidá sníh na střechách jako v zimě ve hře
+export function airportModel(type: AirportType, winter = false): THREE.Group {
   const group = new THREE.Group();
   group.name = `letiste-${type}`;
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -209,12 +218,20 @@ export function airportModel(type: AirportType): THREE.Group {
     mesh.name = name;
     group.add(mesh);
   }
+  if (winter) group.add(createSnowMesh(snowGeometry(type), true));
   return group;
 }
 
-// Letiště na mapě: místní a, c se natočí stejně jako v airportPoint (u osy y o −90°)
-export function createAirportObject(shape: StationShape, type: AirportType, material: THREE.Material): THREE.Mesh {
+// Letiště na mapě: místní a, c se natočí stejně jako v airportPoint (u osy y o −90°);
+// s winter dostane sníh na střechách (viditelný v zimě), náhled stavby a ikony ho nemají
+export function createAirportObject(
+  shape: StationShape,
+  type: AirportType,
+  material: THREE.Material,
+  winter?: boolean,
+): THREE.Mesh {
   const mesh = new THREE.Mesh(layoutGeometry(type), material);
+  if (winter !== undefined) mesh.add(createSnowMesh(snowGeometry(type), winter));
   const origin = airportPoint(shape, 0, 0);
   mesh.position.set(origin.x, 0, origin.y);
   if (shape.axis === 'y') mesh.rotation.y = -Math.PI / 2;

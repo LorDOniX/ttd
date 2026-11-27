@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MapChanges, NO_OWNER, TileType, type GameMap } from '../world/map';
 import { Edge, EDGE_DELTA, type RailNetwork } from '../world/rail';
+import { curbSpots, connectionCount } from '../world/sidewalks';
 import { SIDEWALK_HEIGHT, roadConnects, type RoadView } from './roads';
 
 type Shape = 'box' | 'cylinder' | 'cone' | 'sphere';
@@ -120,18 +121,18 @@ export class AmbientPropsView {
       const y = Math.floor(i / this.map.width);
       const value = hash(x, y, 100);
       if (this.map.isType(x, y, TileType.RoadStop)) {
-        const vertical = this.vertical(x, y);
-        const side = hash(x, y, 101) > 0.5 ? 0.045 : 0.955;
-        this.shelter(parts, vertical ? x + side : x + 0.5, vertical ? y + 0.5 : y + side, vertical ? Math.PI / 2 : 0);
+        const spots = curbSpots(this.connects, x, y, 0.045);
+        if (spots.length === 0) continue;
+        const spot = spots[Math.min(spots.length - 1, Math.floor(hash(x, y, 101) * spots.length))];
+        this.shelter(parts, spot.x, spot.y, spot.yaw);
         continue;
       }
-      if ([Edge.N, Edge.E, Edge.S, Edge.W].filter((edge) => this.connects(x, y, edge)).length >= 3) continue;
+      if (connectionCount(this.connects, x, y) >= 3) continue;
 
-      const vertical = this.vertical(x, y);
-      const side = hash(x, y, 101) > 0.5 ? 0.055 : 0.945;
-      const px = vertical ? x + side : x + 0.5;
-      const pz = vertical ? y + 0.5 : y + side;
-      const yaw = vertical ? Math.PI / 2 : 0;
+      // Jen na chodník podél nenapojené hrany, v zatáčce je druhá strana vozovka
+      const spots = curbSpots(this.connects, x, y, 0.055);
+      if (spots.length === 0) continue;
+      const { x: px, y: pz, yaw } = spots[Math.min(spots.length - 1, Math.floor(hash(x, y, 101) * spots.length))];
       if (value < 0.045) this.bench(parts, px, pz, yaw);
       else if (value < 0.09) this.bin(parts, px, pz);
       else if (value < 0.125) this.sign(parts, px, pz, yaw);
@@ -169,10 +170,6 @@ export class AmbientPropsView {
       }
     }
     return true;
-  }
-
-  private vertical(x: number, y: number): boolean {
-    return this.connects(x, y, Edge.N) || this.connects(x, y, Edge.S);
   }
 
   private component(

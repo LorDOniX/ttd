@@ -37,6 +37,33 @@ export function connectionCount(connects: RoadConnects, x: number, y: number): n
   return count;
 }
 
+// Místo na chodníku uprostřed hrany dlaždice; yaw otočí místní osu -z ven od vozovky
+export interface CurbSpot {
+  edge: Edge;
+  x: number;
+  y: number;
+  yaw: number;
+}
+
+const CURB_YAW: Record<Edge, number> = {
+  [Edge.N]: 0,
+  [Edge.E]: -Math.PI / 2,
+  [Edge.S]: Math.PI,
+  [Edge.W]: Math.PI / 2,
+};
+
+// Místa ve vzdálenosti inset od nenapojených hran dlaždice: tam je chodník po celé délce hrany,
+// u napojené hrany by uprostřed byla vozovka
+export function curbSpots(connects: RoadConnects, x: number, y: number, inset: number): CurbSpot[] {
+  const spots: CurbSpot[] = [];
+  for (let edge = Edge.N; edge <= Edge.W; edge++) {
+    if (connects(x, y, edge)) continue;
+    const [dx, dy] = EDGE_DELTA[edge];
+    spots.push({ edge, x: x + 0.5 + dx * (0.5 - inset), y: y + 0.5 + dy * (0.5 - inset), yaw: CURB_YAW[edge] });
+  }
+  return spots;
+}
+
 // Zebry jsou jen na křižovatkách městských silnic
 export function hasCrosswalks(map: GameMap, connects: RoadConnects, x: number, y: number): boolean {
   return sidewalkTown(map, x, y) !== NO_OWNER && connectionCount(connects, x, y) >= 3;

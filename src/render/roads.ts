@@ -3,7 +3,14 @@ import { GameMap, MapChanges, NO_OWNER, TileType, bridgeAlong } from '../world/m
 import { EDGE_DELTA, Edge, RailNetwork, opposite } from '../world/rail';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BRIDGE_DECK, ROAD_BRIDGE, axisRotation } from './rail';
-import { SIDEWALK_WIDTH, WALK_INSET, hasCrosswalks, sidewalkTown, type RoadConnects } from '../world/sidewalks';
+import {
+  SIDEWALK_WIDTH,
+  WALK_INSET,
+  curbSpots,
+  hasCrosswalks,
+  sidewalkTown,
+  type RoadConnects,
+} from '../world/sidewalks';
 import { withLampLightUv } from './nightLights';
 
 export type { RoadConnects } from '../world/sidewalks';
@@ -396,12 +403,10 @@ export class RoadView {
       const across = alongVertical ? x : y;
       if (along % 4 !== across % 4) continue;
 
-      if (alongVertical) {
-        positions.push(new THREE.Vector3(x + 0.035, SIDEWALK_HEIGHT, y + 0.5));
-        positions.push(new THREE.Vector3(x + 0.965, SIDEWALK_HEIGHT, y + 0.5));
-      } else {
-        positions.push(new THREE.Vector3(x + 0.5, SIDEWALK_HEIGHT, y + 0.035));
-        positions.push(new THREE.Vector3(x + 0.5, SIDEWALK_HEIGHT, y + 0.965));
+      // Lampy po stranách silnice, ale jen na nenapojených hranách (v zatáčce by jinak stála ve vozovce)
+      for (const spot of curbSpots(connects, x, y, 0.035)) {
+        const side = spot.edge === Edge.W || spot.edge === Edge.E;
+        if (side === alongVertical) positions.push(new THREE.Vector3(spot.x, SIDEWALK_HEIGHT, spot.y));
       }
     }
 

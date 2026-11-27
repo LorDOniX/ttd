@@ -20,6 +20,7 @@ import {
 import { BRIDGE_HEIGHT } from '../world/route';
 import { createAirportObject } from './airports';
 import { createPortObject } from './ports';
+import type { Season } from '../game/seasons';
 import type { PortShape } from '../world/port';
 import { WATER_DEPTH } from './terrain';
 
@@ -519,6 +520,8 @@ export class RailView {
   private readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
   private readonly track: TrackView;
   private readonly structures = new THREE.Group();
+  // Sníh na střechách letišť a přístavů
+  private winter = false;
 
   constructor(private readonly rail: RailNetwork) {
     this.track = new TrackView(this.material, rail.map);
@@ -532,6 +535,13 @@ export class RailView {
     return object;
   }
 
+  setSeason(season: Season): void {
+    this.winter = season === 'winter';
+    this.structures.traverse((part) => {
+      if (part.userData.snowRoof) part.visible = this.winter;
+    });
+  }
+
   rebuild(): void {
     this.track.update(networkTrack(this.rail));
     this.structures.clear();
@@ -541,9 +551,9 @@ export class RailView {
           s.kind === 'road'
             ? createRoadStopMesh(this.material, s.x, s.y, s.axis)
             : s.kind === 'air'
-              ? createAirportObject(s, s.airport ?? 'small', this.material)
+              ? createAirportObject(s, s.airport ?? 'small', this.material, this.winter)
               : s.kind === 'water'
-                ? createPortObject(s as PortShape, this.material)
+                ? createPortObject(s as PortShape, this.material, true, this.winter)
                 : createStationObject(s, this.material),
           s.x,
           s.y,

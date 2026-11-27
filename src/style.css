@@ -195,6 +195,26 @@ body {
   flex: 1 1 220px;
 }
 
+.model-gallery__season {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.model-gallery__season[hidden] {
+  display: none;
+}
+
+.model-gallery__filters .model-gallery__season input {
+  flex: none;
+  width: auto;
+  height: auto;
+  padding: 0;
+}
+
 .model-gallery__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -262,6 +282,10 @@ body {
 .model-viewer__modes {
   display: flex;
   gap: 4px;
+}
+
+.model-viewer__modes[hidden] {
+  display: none;
 }
 
 .model-viewer__header button {

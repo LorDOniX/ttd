@@ -116,6 +116,7 @@ export class GameView {
   private portLamps: THREE.Vector3[] = [];
   private seasonMode: SeasonMode = 'auto';
   private currentSeason: Season | null = null;
+  private readonly railView: RailView;
   private seasonKey = '';
   private nightTarget = false;
   // Průběh soumraku 0 (den) až 1 (noc), mění se plynule v reálném čase
@@ -178,7 +179,8 @@ export class GameView {
     this.industries = new IndustriesView(map);
     this.applySeason();
     void this.industries.sync(world.industries);
-    const railView = new RailView(world.rail);
+    const railView = (this.railView = new RailView(world.rail));
+    if (this.currentSeason) railView.setSeason(this.currentSeason);
     // Stavby, na které jde kliknout podle jejich 3D podoby
     this.pickables = [this.buildings.object, this.industries.object, railView.object, this.roads.object];
     this.portLamps = portLamps(world.rail.ports() as PortShape[]);
@@ -424,6 +426,8 @@ export class GameView {
     this.animals.setSeason(season);
     this.buildings.setSeason(season);
     this.industries.setSeason(season);
+    // Volá se poprvé ještě před vytvořením kolejí, ty si období převezmou při vzniku
+    this.railView?.setSeason(season);
   }
 
   // Přepne vykreslování na kameru z první osoby (null = zpět do izometrie, kamera izometrie se nemění)

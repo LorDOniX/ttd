@@ -58,6 +58,23 @@ function applyTreeSeason(blend: SeasonBlend): void {
   for (const [name, material] of treeMaterials) seasonColor(name, (material as THREE.MeshLambertMaterial).color);
 }
 
+// Model stromu ze sady přebarvený jako ve hře v daném období (náhled v galerii); listí a kůra dostanou
+// nové materiály, sdílené materiály modelu ze sady zůstanou beze změny
+export function treeInSeason<T extends THREE.Object3D>(model: T, season: Season): T {
+  const colors = SEASON_TREE_COLORS[season];
+  const recolor = (material: THREE.Material): THREE.Material => {
+    const color = colors[material.name];
+    if (color === undefined) return material;
+    // Hra kreslí stromy matně, kovový materiál ze sady by sníh ztmavil
+    return new THREE.MeshLambertMaterial({ color, name: material.name });
+  };
+  model.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.material = Array.isArray(child.material) ? child.material.map(recolor) : recolor(child.material);
+  });
+  return model;
+}
+
 function treeMaterial(material: THREE.Material): THREE.Material {
   let result = treeMaterials.get(material.name);
   if (!result) {

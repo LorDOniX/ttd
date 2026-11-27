@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GameMap, TileType } from './map';
-import { EDGE_DELTA } from './rail';
-import { hasCrosswalks, nodePoint, sidewalkSteps, type RoadConnects } from './sidewalks';
+import { EDGE_DELTA, Edge } from './rail';
+import { curbSpots, hasCrosswalks, nodePoint, sidewalkSteps, type RoadConnects } from './sidewalks';
 
 function townRoad(map: GameMap, tiles: [number, number][], town = 0): void {
   for (const [x, y] of tiles) {
@@ -81,5 +81,30 @@ describe('chodníky', () => {
   it('roh leží uprostřed chodníku', () => {
     const map = new GameMap(10, 10);
     expect(nodePoint(map, node(map, 2, 3, 2))).toEqual({ x: 2.9, y: 3.9 });
+  });
+
+  it('místa pro lampy a drobnosti leží jen u nenapojených hran, v zatáčce ne ve vozovce', () => {
+    const map = new GameMap(10, 10);
+    // Zatáčka na (5, 5) napojená na sever a východ
+    townRoad(map, [
+      [5, 4],
+      [5, 5],
+      [6, 5],
+    ]);
+    const spots = curbSpots(connects(map), 5, 5, 0.05);
+    expect(spots.map((s) => s.edge).sort()).toEqual([Edge.S, Edge.W]);
+    for (const spot of spots) {
+      const fx = spot.x - 5;
+      const fy = spot.y - 5;
+      // Na chodníku: blízko západního nebo jižního okraje dlaždice
+      expect(fx <= 0.2 || fy >= 0.8).toBe(true);
+      expect(fx).toBeLessThan(0.8);
+      expect(fy).toBeGreaterThan(0.2);
+    }
+    expect(
+      curbSpots(connects(map), 5, 4, 0.05)
+        .map((s) => s.edge)
+        .sort(),
+    ).toEqual([Edge.N, Edge.E, Edge.W]);
   });
 });

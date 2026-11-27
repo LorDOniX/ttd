@@ -13,10 +13,18 @@ export interface GalleryModel {
   name: string;
   category?: string;
   preview?: () => Promise<THREE.Object3D>;
+  // Zimní varianta se sněhem, jak ji kreslí hra; chybí u modelů, které v zimě vypadají stejně
+  winter?: () => Promise<THREE.Object3D>;
+}
+
+function loadEntry(entry: GalleryModel, winter: boolean): Promise<THREE.Object3D> {
+  if (winter && entry.winter) return entry.winter();
+  return entry.preview ? entry.preview() : loadModel(entry.kit as Kit, entry.name);
 }
 
 function renderAsset(
   entry: GalleryModel,
+  winter: boolean,
   card: HTMLElement,
   canvas: HTMLCanvasElement,
   status: HTMLElement,
@@ -30,7 +38,7 @@ function renderAsset(
   const task = async (): Promise<void> => {
     try {
       if (!canvas.isConnected) return;
-      const model = entry.preview ? await entry.preview() : await loadModel(entry.kit as Kit, entry.name);
+      const model = await loadEntry(entry, winter);
       model.updateMatrixWorld(true);
       const bounds = new THREE.Box3().setFromObject(model);
       if (bounds.isEmpty()) throw new Error('Model neobsahuje geometrii.');
@@ -89,7 +97,7 @@ function modelParts(model: THREE.Object3D): THREE.Group[] {
   model.updateMatrixWorld(true);
   const parts: THREE.Group[] = [];
   model.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
+    if (!(child instanceof THREE.Mesh) || !child.visible) return;
     const part = child.clone(false);
     child.matrixWorld.decompose(part.position, part.quaternion, part.scale);
     parts.push(grounded(part));
@@ -249,7 +257,11 @@ async function downloadTextures(copy: THREE.Object3D, name: string): Promise<num
     const canvas = document.createElement('canvas');
     canvas.width = image.width;
     canvas.height = image.height;
-    canvas.getContext('2d')!.drawImage(image, 0, 0);
+    const context = canvas.getContext('2d')!;
+    // Textura z dat (např. sníh) nemá obrázek, pixely se zapíšou přímo
+    const data = (image as { data?: ArrayLike<number> }).data;
+    if (data) context.putImageData(new ImageData(Uint8ClampedArray.from(data), image.width, image.height), 0, 0);
+    else context.drawImage(image, 0, 0);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
     if (!blob) continue;
     const suffix =
@@ -267,7 +279,10 @@ const GALLERY_PAGES: [string, string][] = [
 ];
 
 // Popup s velkým otáčelitelným náhledem modelu na čtvercové mřížce, sestaveným nebo rozloženým na díly
-function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: GalleryModel) => void } {
+function createModelViewer(): {
+  dialog: HTMLDialogElement;
+  open: (entry: GalleryModel, winter: boolean) => void;
+} {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0xdeddd7, 1);
@@ -291,6 +306,12 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
     assembled: h('button', { type: 'button' }, 'Sestavený'),
     exploded: h('button', { type: 'button' }, 'Rozložený na díly'),
   };
+  // Období modelu; přepínač je jen u modelů se zimní variantou
+  const seasonButtons = {
+    summer: h('button', { type: 'button', title: 'Model jako v létě' }, 'Léto'),
+    winter: h('button', { type: 'button', title: 'Zimní varianta se sněhem, jak ji kreslí hra' }, '❄ Zima'),
+  };
+  const seasonSwitch = h('div', { className: 'model-viewer__modes' }, seasonButtons.summer, seasonButtons.winter);
   const exportButton = h(
     'button',
     {
@@ -317,6 +338,7 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
       'header',
       { className: 'model-viewer__header' },
       h('div', { className: 'model-viewer__title' }, title, subtitle),
+      seasonSwitch,
       h(
         'div',
         { className: 'model-viewer__modes' },
@@ -335,6 +357,8 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
   let modelName = '';
   let mode: ViewerMode = 'assembled';
   let request = 0;
+  let current: GalleryModel | null = null;
+  let winter = false;
 
   const resize = (): void => {
     const { clientWidth: width, clientHeight: height } = stage;
@@ -439,31 +463,53 @@ function createModelViewer(): { dialog: HTMLDialogElement; open: (entry: Gallery
   });
   dialog.addEventListener('close', () => {
     request++;
+    current = null;
     model = null;
     content.clear();
   });
 
-  const open = (entry: GalleryModel): void => {
-    const current = ++request;
-    title.textContent = entry.name;
-    modelName = entry.name;
-    subtitle.textContent = entry.category ? `${entry.category} · ${entry.kit}` : entry.kit;
+  // Načte model aktuálního záznamu v aktuálním období; režim zobrazení zůstává
+  const load = (): void => {
+    if (!current) return;
+    const entry = current;
+    const id = ++request;
+    const seasonal = winter && entry.winter !== undefined;
+    seasonSwitch.hidden = !entry.winter;
+    seasonButtons.summer.classList.toggle('is-active', !seasonal);
+    seasonButtons.winter.classList.toggle('is-active', seasonal);
+    modelName = seasonal ? `${entry.name}-zima` : entry.name;
     info.textContent = 'Načítám…';
     model = null;
-    mode = 'assembled';
     content.clear();
-    dialog.showModal();
-    resize();
-    void (entry.preview ? entry.preview() : loadModel(entry.kit as Kit, entry.name))
+    render();
+    void loadEntry(entry, seasonal)
       .then((loaded) => {
-        if (current !== request) return;
+        if (id !== request) return;
         model = loaded;
         show();
       })
       .catch((error: unknown) => {
-        if (current !== request) return;
+        if (id !== request) return;
         info.textContent = error instanceof Error ? error.message : 'Model se nepodařilo načíst.';
       });
+  };
+  for (const [key, button] of Object.entries(seasonButtons)) {
+    button.addEventListener('click', () => {
+      if (winter === (key === 'winter')) return;
+      winter = key === 'winter';
+      load();
+    });
+  }
+
+  const open = (entry: GalleryModel, winterVariant: boolean): void => {
+    current = entry;
+    winter = winterVariant;
+    title.textContent = entry.name;
+    subtitle.textContent = entry.category ? `${entry.category} · ${entry.kit}` : entry.kit;
+    mode = 'assembled';
+    dialog.showModal();
+    resize();
+    load();
   };
 
   return { dialog, open };
@@ -504,6 +550,13 @@ export function runModelGallery(
     ...groups.map((group) => h('option', { value: group }, group)),
   );
   kitFilter.setAttribute('aria-label', 'Filtrovat skupinu');
+  // Náhledy v zimní variantě tam, kde ji model ve hře má
+  const winterToggle = h('input', { type: 'checkbox' });
+  const hasWinter = models.some((entry) => entry.winter);
+  const winterLabel = h('label', { className: 'model-gallery__season' }, winterToggle, '❄ Zima se sněhem');
+  winterLabel.title =
+    'Zobrazit zimní variantu u modelů, které ji ve hře mají (budovy, průmysl, letiště, přístav, stromy)';
+  winterLabel.hidden = !hasWinter;
   const count = h('span', { className: 'model-gallery__count' });
   const grid = h('div', { className: 'model-gallery__grid' });
   const viewer = createModelViewer();
@@ -519,7 +572,8 @@ export function runModelGallery(
         const model = modelsByCard.get(card);
         if (!model) continue;
         card.dataset.state = 'queued';
-        renderQueue = renderQueue.then(() => renderAsset(model, card, canvas, status, renderer, scene, camera));
+        const winter = winterToggle.checked;
+        renderQueue = renderQueue.then(() => renderAsset(model, winter, card, canvas, status, renderer, scene, camera));
         observer.unobserve(card);
       }
     },
@@ -549,18 +603,22 @@ export function runModelGallery(
           'div',
           { className: 'model-gallery__identity' },
           h('strong', {}, entry.name),
-          h('span', {}, entry.category ? `${entry.category} · ${entry.kit}` : entry.kit),
+          h(
+            'span',
+            {},
+            `${entry.category ? `${entry.category} · ${entry.kit}` : entry.kit}${entry.winter ? ' · ❄' : ''}`,
+          ),
         ),
       );
       modelsByCard.set(card, entry);
       card.tabIndex = 0;
       card.setAttribute('role', 'button');
       card.setAttribute('aria-label', `Zobrazit model ${entry.name}`);
-      card.addEventListener('click', () => viewer.open(entry));
+      card.addEventListener('click', () => viewer.open(entry, winterToggle.checked));
       card.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
-        viewer.open(entry);
+        viewer.open(entry, winterToggle.checked);
       });
       grid.append(card);
       observer.observe(card);
@@ -569,6 +627,7 @@ export function runModelGallery(
   };
   search.addEventListener('input', renderGrid);
   kitFilter.addEventListener('change', renderGrid);
+  winterToggle.addEventListener('change', renderGrid);
 
   const header = h(
     'header',
@@ -591,7 +650,7 @@ export function runModelGallery(
       ),
     ),
     count,
-    h('div', { className: 'model-gallery__filters' }, search, kitFilter),
+    h('div', { className: 'model-gallery__filters' }, search, kitFilter, winterLabel),
   );
   const page = h('div', { className: 'model-gallery' }, header, grid, renderer.domElement, viewer.dialog);
   container.replaceChildren(page);
