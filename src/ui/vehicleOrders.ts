@@ -1,5 +1,11 @@
 import { CARGOS, type Cargo } from '../game/cargo';
-import type { OrderFlags } from '../game/trains';
+import {
+  CONDITION_COMPARATORS,
+  CONDITION_VARIABLES,
+  conditionText,
+  type OrderCondition,
+  type OrderFlags,
+} from '../game/trains';
 import { poolId, type Station } from '../world/rail';
 import { h } from './dom';
 import { onStationPickChange, startStationPick, stationPick, stopStationPick } from './stationPicker';
@@ -43,6 +49,7 @@ export interface OrdersSource {
     get: (index: number) => OrderFlags;
     set: (index: number, patch: Omit<OrderFlags, 'depot'>) => void;
     setOrders: (orders: number[], flags: OrderFlags[]) => string | null;
+    setCondition: (index: number, condition: OrderCondition) => void;
     depots: () => { id: number; name: string }[];
     depotName: (depotId: number) => string;
     focusDepot: (depotId: number) => void;
@@ -59,6 +66,11 @@ export interface OrdersSource {
 const END = -1;
 
 // Popisky voleb příkazu za názvem zastávky, jako „[Do plna]“ v OpenTTD
+// Přečísluje cíle podmíněných příkazů po vložení, smazání či přesunu příkazů
+function remapGotos(flags: OrderFlags[], map: (index: number) => number): OrderFlags[] {
+  return flags.map((f) => (f.condition ? { ...f, condition: { ...f.condition, goto: map(f.condition.goto) } } : f));
+}
+
 function flagsText(flags: OrderFlags): string {
   const parts: string[] = [];
   if (flags.load === 'full') parts.push('Do plna');
@@ -104,7 +116,7 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
     const orders = source.orders();
     const at = selected === END ? orders.length : selected;
     const next = [...orders.slice(0, at), stationId, ...orders.slice(at)];
-    const current = flagsOf();
+    const current = remapGotos(flagsOf(), (k) => (k >= at ? k + 1 : k));
     const error = save(next, [...current.slice(0, at), flags, ...current.slice(at)]);
     if (error) return error;
     if (selected !== END) selected++;
@@ -172,11 +184,13 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
       }
       el.draggable = true;
       el.addEventListener('dblclick', () =>
-        flags[index].depot
-          ? source.flags?.focusDepot(orders[index])
-          : flags[index].waypoint
-            ? source.flags?.focusWaypoint(orders[index])
-            : source.focusStation(orders[index]),
+        flags[index].condition
+          ? undefined
+          : flags[index].depot
+            ? source.flags?.focusDepot(orders[index])
+            : flags[index].waypoint
+              ? source.flags?.focusWaypoint(orders[index])
+              : source.focusStation(orders[index]),
       );
       el.addEventListener('dragstart', (e) => {
         dragFrom = index;
@@ -196,10 +210,13 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
       dragFrom = null;
       if (from === null || from === to || from + 1 === to) return;
       const next = [...orders];
-      const nextFlags = [...flags];
+      const at = to > from ? to - 1 : to;
+      // Nové pořadí indexů: kam se který příkaz posune (kvůli cílům podmínek)
+      const order = orders.map((_, k) => k);
+      order.splice(at, 0, ...order.splice(from, 1));
+      const nextFlags = remapGotos([...flags], (k) => order.indexOf(k));
       const [moved] = next.splice(from, 1);
       const [movedFlags] = nextFlags.splice(from, 1);
-      const at = to > from ? to - 1 : to;
       next.splice(at, 0, moved);
       nextFlags.splice(at, 0, movedFlags);
       if (apply(next, nextFlags)) selected = at;
@@ -219,6 +236,7 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
           );
         }
         const f = flags[i];
+        if (f.condition) return row(i, `${i + 1}: ${conditionText(f.condition)}`, '[podmínka]');
         if (f.depot) return row(i, `${i + 1}: Jet do ${source.flags.depotName(stationId)} na servis`, '');
         if (f.waypoint) {
           const name = source.flags.waypoints().find((w) => w.id === stationId)?.name ?? '?';
@@ -321,7 +339,10 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
     function remove(): void {
       if (selected === END) return;
       const next = orders.filter((_, k) => k !== selected);
-      const nextFlags = flags.filter((_, k) => k !== selected);
+      const removed = selected;
+      const nextFlags = remapGotos(flags, (k) =>
+        k > removed ? k - 1 : k === removed ? k % Math.max(1, next.length) : k,
+      ).filter((_, k) => k !== removed);
       if (apply(next, nextFlags)) refresh();
     }
 
@@ -329,7 +350,8 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
     function flagControls(api: NonNullable<OrdersSource['flags']>): HTMLElement[] {
       const index = selected;
       const f = index !== END ? flags[index] : undefined;
-      const editable = f !== undefined && !f.depot && !f.waypoint;
+      const editable = f !== undefined && !f.depot && !f.waypoint && !f.condition;
+      if (f?.condition) return conditionControls(api, index, f.condition);
       const choice = <T extends string>(
         label: string,
         title: string,
@@ -416,7 +438,55 @@ export function openOrders(windows: WindowManager, source: OrdersSource): void {
         () => api.openTimetable(),
         false,
       );
-      return [load, unload, refit, via, depot, waypoint, times];
+      const condition = button(
+        'Podmínka',
+        'Přidat podmíněný příkaz (před vybraný řádek): když podmínka platí, vlak skočí na zvolený příkaz',
+        () => {
+          const error = insert(0, { condition: { variable: 'load', comparator: '>=', value: 80, goto: 0 } });
+          if (error) {
+            message = error;
+            refresh();
+          }
+        },
+      );
+      return [load, unload, refit, via, depot, waypoint, condition, times];
+    }
+
+    // Úprava vybrané podmínky: veličina, porovnání, hodnota a příkaz, kam skočit
+    function conditionControls(
+      api: NonNullable<OrdersSource['flags']>,
+      index: number,
+      condition: OrderCondition,
+    ): HTMLElement[] {
+      const set = (patch: Partial<OrderCondition>): void => api.setCondition(index, { ...condition, ...patch });
+      const variable = h('select', { title: 'Co podmínka sleduje' });
+      for (const [v, text] of Object.entries(CONDITION_VARIABLES)) {
+        variable.append(h('option', { value: v, selected: v === condition.variable }, text));
+      }
+      variable.addEventListener('change', () => set({ variable: variable.value as OrderCondition['variable'] }));
+      const simple = condition.variable === 'always';
+      const comparator = h('select', { title: 'Porovnání', disabled: simple });
+      for (const c of CONDITION_COMPARATORS) {
+        comparator.append(h('option', { value: c, selected: c === condition.comparator }, c));
+      }
+      comparator.addEventListener('change', () =>
+        set({ comparator: comparator.value as OrderCondition['comparator'] }),
+      );
+      const value = h('input', {
+        type: 'number',
+        value: String(condition.value),
+        disabled: simple,
+        title: condition.variable === 'service' ? '1 = potřebuje servis, 0 = nepotřebuje' : 'Hodnota',
+      });
+      value.style.width = '4em';
+      value.addEventListener('change', () => set({ value: Number(value.value) }));
+      const goto = h('select', { title: 'Kam vlak skočí, když podmínka platí' });
+      orders.forEach((_, k) => {
+        if (k !== index)
+          goto.append(h('option', { value: String(k), selected: k === condition.goto }, `skoč na ${k + 1}`));
+      });
+      goto.addEventListener('change', () => set({ goto: Number(goto.value) }));
+      return [h('label', { className: 'ottd-orders__choice' }, 'Když', variable), comparator, value, goto];
     }
   }
 

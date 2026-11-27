@@ -17,7 +17,15 @@ import {
   type TrainModel,
   REFIT_COST_PER_WAGON,
 } from './balance';
-import { needsService, newMaintenance, rollBreakdown, service, wearOut, type Maintained } from './reliability';
+import {
+  needsService,
+  newMaintenance,
+  rollBreakdown,
+  service,
+  wearOut,
+  type BreakdownSetting,
+  type Maintained,
+} from './reliability';
 import { Rng } from '../world/rng';
 import { HEIGHT_STEP } from '../world/map';
 import { formatMoney, type Game } from './game';
@@ -121,11 +129,112 @@ export interface OrderFlags {
   // Přestavět vagony na stanici na tento náklad (jako automatická přestavba v OpenTTD): po vyložení
   // prázdné vagony přestaví a naloží nový náklad
   refit?: Cargo;
+  // Podmíněný příkaz jako v OpenTTD: když podmínka platí, vlak pokračuje příkazem goto, jinak dalším
+  condition?: OrderCondition;
+}
+
+// Veličina podmínky: naložení a spolehlivost v %, stáří v letech, potřeba servisu (1 = ano), vždy
+export type ConditionVariable = 'load' | 'reliability' | 'age' | 'service' | 'always';
+export type ConditionComparator = '<' | '<=' | '>' | '>=' | '=' | '!=';
+
+export interface OrderCondition {
+  variable: ConditionVariable;
+  comparator: ConditionComparator;
+  value: number;
+  // Index příkazu, kam vlak skočí, když podmínka platí
+  goto: number;
+}
+
+export const CONDITION_VARIABLES: Record<ConditionVariable, string> = {
+  load: 'Naložení (%)',
+  reliability: 'Spolehlivost (%)',
+  age: 'Stáří (roky)',
+  service: 'Potřebuje servis',
+  always: 'Vždy',
+};
+
+export const CONDITION_COMPARATORS: ConditionComparator[] = ['<', '<=', '>', '>=', '=', '!='];
+
+const COMPARATOR_TEXT: Record<ConditionComparator, string> = {
+  '<': '<',
+  '<=': '≤',
+  '>': '>',
+  '>=': '≥',
+  '=': '=',
+  '!=': '≠',
+};
+
+// Text podmínky do řádu: „Když naložení (%) ≥ 80, skoč na 1“
+export function conditionText(condition: OrderCondition): string {
+  const target = `skoč na ${condition.goto + 1}`;
+  if (condition.variable === 'always') return `Vždy ${target}`;
+  if (condition.variable === 'service') {
+    const needs = (condition.value === 1) === (condition.comparator !== '!=');
+    return `Když ${needs ? 'potřebuje' : 'nepotřebuje'} servis, ${target}`;
+  }
+  const name = CONDITION_VARIABLES[condition.variable].toLowerCase();
+  return `Když ${name} ${COMPARATOR_TEXT[condition.comparator]} ${condition.value}, ${target}`;
+}
+
+function isConditionVariable(value: unknown): value is ConditionVariable {
+  return typeof value === 'string' && value in CONDITION_VARIABLES;
+}
+
+// Platí podmínka pro vlak právě teď?
+export function conditionMet(
+  train: Train,
+  condition: OrderCondition,
+  context: { today: number; now: number; breakdowns: BreakdownSetting },
+): boolean {
+  let value: number;
+  switch (condition.variable) {
+    case 'always':
+      return true;
+    case 'load': {
+      const capacity = consistCargos(train).reduce((sum, c) => sum + cargoCapacity(train, c), 0);
+      value = capacity > 0 ? (totalLoad(train) / capacity) * 100 : 0;
+      break;
+    }
+    case 'reliability':
+      value = train.reliability * 100;
+      break;
+    case 'age':
+      value = trainAge(train, context.today);
+      break;
+    case 'service':
+      value = needsService(train, context.now, context.breakdowns) ? 1 : 0;
+      break;
+  }
+  const v = condition.value;
+  switch (condition.comparator) {
+    case '<':
+      return value < v;
+    case '<=':
+      return value <= v;
+    case '>':
+      return value > v;
+    case '>=':
+      return value >= v;
+    case '=':
+      return Math.round(value) === v;
+    case '!=':
+      return Math.round(value) !== v;
+  }
 }
 
 // Volby bez prázdných hodnot (do uložení i pro porovnání)
 export function cleanFlags(flags: OrderFlags): OrderFlags {
   const clean: OrderFlags = {};
+  const c = flags.condition;
+  if (c) {
+    clean.condition = {
+      variable: isConditionVariable(c.variable) ? c.variable : 'always',
+      comparator: CONDITION_COMPARATORS.includes(c.comparator) ? c.comparator : '>=',
+      value: Number.isFinite(c.value) ? Math.round(c.value) : 0,
+      goto: Number.isInteger(c.goto) && c.goto >= 0 ? c.goto : 0,
+    };
+    return clean;
+  }
   const travel = timetableDays(flags.travel);
   if (flags.depot) {
     clean.depot = true;
@@ -164,10 +273,11 @@ export function servesStation(train: Train, stationId: number): boolean {
 
 // Příkaz, který nevede do stanice: servis v depu, nebo průjezdný bod
 export function isSpecialOrder(flags: OrderFlags): boolean {
-  return flags.depot === true || flags.waypoint === true;
+  return flags.depot === true || flags.waypoint === true || flags.condition !== undefined;
 }
 
-function orderKind(flags: OrderFlags): 'depot' | 'waypoint' | 'station' {
+function orderKind(flags: OrderFlags): 'depot' | 'waypoint' | 'station' | 'condition' {
+  if (flags.condition) return 'condition';
   return flags.depot ? 'depot' : flags.waypoint ? 'waypoint' : 'station';
 }
 
@@ -374,11 +484,13 @@ export function nextStop(train: Train): number {
 // Chyba jízdního řádu, nebo null; potřebuje aspoň dvě nástupiště a stejný příkaz nesmí následovat
 // po sobě ani přes konec seznamu
 export function ordersError(orders: number[], flags: readonly OrderFlags[] = []): string | null {
-  const kind = (i: number): string => (flags[i]?.depot ? 'depot' : flags[i]?.waypoint ? 'waypoint' : 'station');
+  const kind = (i: number): string => orderKind(flags[i] ?? {});
   if (orders.filter((_, i) => kind(i) === 'station').length < 2) return 'Jízdní řád potřebuje aspoň dvě zastávky.';
+  const jump = flags.findIndex((f, i) => f?.condition && (f.condition.goto >= orders.length || f.condition.goto === i));
+  if (jump >= 0) return `Podmínka v příkazu ${jump + 1} skáče na neexistující příkaz.`;
   const repeated = orders.findIndex((id, i) => {
     const j = (i + 1) % orders.length;
-    return id === orders[j] && kind(i) === kind(j);
+    return id === orders[j] && kind(i) === kind(j) && kind(i) !== 'condition';
   });
   if (repeated >= 0) {
     return kind(repeated) === 'depot'
@@ -442,6 +554,7 @@ export class Fleet {
   // Chyba řádu, když mezi některými po sobě jdoucími příkazy (i přes konec řádu) nevede kolej
   routeError(orders: number[], flags: readonly OrderFlags[] = []): string | null {
     const place = (i: number): { x: number; y: number; name: string } | undefined => {
+      if (flags[i]?.condition) return undefined;
       if (flags[i]?.waypoint) return this.waypointById(orders[i]);
       if (!flags[i]?.depot) return this.station(orders[i]);
       const depot = this.depotById(orders[i]);
@@ -633,7 +746,9 @@ export class Fleet {
     if (error) return error;
     const depot = this.depot(train);
     const places = orders.map((_, i) => this.placeOf(orders, nextFlags, i));
-    if (!depot || places.some((p) => !p)) return 'Nástupiště, depo nebo průjezdný bod neexistuje.';
+    if (!depot || places.some((p, i) => !p && !nextFlags[i]?.condition)) {
+      return 'Nástupiště, depo nebo průjezdný bod neexistuje.';
+    }
 
     const exit = this.depotExit(depot);
     // Z depa vlak vyrazí k nejbližšímu nástupišti řádu
@@ -688,7 +803,7 @@ export class Fleet {
     // Po automatickém servisu pokračuje k příkazu, kam jel, po servisu z řádu k dalšímu
     const resume = train.servicing?.resume;
     train.servicing = undefined;
-    train.target = resume !== undefined && resume < train.orders.length ? resume : nextStop(train);
+    train.target = resume !== undefined && resume < train.orders.length ? resume : this.nextOrder(train);
     const goal = this.goal(train);
     const route = goal && this.routeTo(segmentStart(this.depotExit(depot)), goal, train);
     if (route) {
@@ -817,10 +932,44 @@ export class Fleet {
     this.changed();
   }
 
+  // Příkaz, kterým vlak pokračuje od indexu: podmíněné příkazy se hned vyhodnotí (nejvýš jednou každý,
+  // aby se smyčka podmínek nezacyklila)
+  resolveOrder(train: Train, index: number): number {
+    const orders = train.orders;
+    if (!orders || orders.length === 0) return index;
+    const context = { today: this.game.clock.day, now: this.game.clock.now, breakdowns: this.game.breakdowns };
+    let at = ((index % orders.length) + orders.length) % orders.length;
+    for (let step = 0; step < orders.length; step++) {
+      const condition = orderFlags(train, at).condition;
+      if (!condition) return at;
+      at = conditionMet(train, condition, context) ? condition.goto % orders.length : (at + 1) % orders.length;
+    }
+    return orders.findIndex((_, i) => !isSpecialOrder(orderFlags(train, i)));
+  }
+
+  // Další příkaz po aktuálním cíli (s vyhodnocenými podmínkami)
+  nextOrder(train: Train): number {
+    return train.orders ? this.resolveOrder(train, train.target + 1) : -1;
+  }
+
+  // Úprava podmíněného příkazu (u sdíleného řádu celé linky)
+  setCondition(train: Train, index: number, condition: OrderCondition): void {
+    if (!train.orders || index < 0 || index >= train.orders.length) return;
+    for (const member of this.lineOf(train)) {
+      if (!orderFlags(member, index).condition) continue;
+      const next = [...member.orderFlags];
+      next[index] = cleanFlags({ condition });
+      member.orderFlags = next;
+    }
+    this.changed();
+  }
+
   // Název příkazu pro okna: nástupiště, nebo „Depo 3“
   orderName(train: Train, index: number): string {
     const id = train.orders?.[index];
     if (id === undefined) return '?';
+    const condition = orderFlags(train, index).condition;
+    if (condition) return conditionText(condition);
     if (orderFlags(train, index).depot) return `Depo ${id + 1}`;
     if (orderFlags(train, index).waypoint) return this.waypointById(id)?.name ?? '?';
     return this.stationName(id);
@@ -906,7 +1055,7 @@ export class Fleet {
       if (train.target >= 0 && orders[train.target] === orders[index]) return;
       // Při odjezdu se cíl posune na následující zastávku
       train.target = (index - 1 + orders.length) % orders.length;
-    } else train.target = index;
+    } else train.target = this.resolveOrder(train, index);
     train.servicing = undefined;
     this.replan(train);
     this.changed();
@@ -993,7 +1142,7 @@ export class Fleet {
     if (train.orderFlags.some((f) => f.depot)) return false;
     const depot = this.nearestServiceDepot(train);
     if (!depot) return false;
-    train.servicing = { depotId: depot.id, resume: nextStop(train) };
+    train.servicing = { depotId: depot.id, resume: this.nextOrder(train) };
     this.replan(train);
     // replan stav změní; TypeScript o tom neví
     if ((train.state as TrainState) !== 'running') {
@@ -1152,7 +1301,7 @@ export class Fleet {
   // Naváže cestu za stanicí „projet“ k dalšímu příkazu bez otáčení; když to nejde, vlak ve stanici jen zastaví
   private chainVia(train: Train): void {
     if (!train.orders || this.viaFailed.get(train.id) === train.target) return;
-    const next = nextStop(train);
+    const next = this.nextOrder(train);
     const goal = this.orderGoal(train, next);
     const last = train.path[train.path.length - 1];
     const route = goal && last ? this.routeTo(segmentStart(last), goal, train) : null;
@@ -1389,7 +1538,7 @@ export class Fleet {
   // Naplánuje cestu k dalšímu cíli; vlak může pokračovat vpřed, nebo se otočit
   private replan(train: Train): void {
     if (train.state === 'loading' && train.orders && train.target !== -1) {
-      train.target = nextStop(train);
+      train.target = this.nextOrder(train);
       train.departedAt = this.game.clock.now;
     }
     const goal = this.goal(train);
@@ -1476,6 +1625,7 @@ export class Fleet {
 
   private placeOf(orders: readonly number[], flags: readonly OrderFlags[], index: number): Goal | undefined {
     const id = orders[index];
+    if (flags[index]?.condition) return undefined;
     if (flags[index]?.depot) return this.depotById(id);
     if (flags[index]?.waypoint) return this.waypointById(id);
     return this.station(id);

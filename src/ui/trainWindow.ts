@@ -6,7 +6,6 @@ import { Game, formatMoney } from '../game/game';
 import {
   formatLoad,
   isOld,
-  nextStop,
   orderFlags,
   ordersError,
   sellPrice,
@@ -44,7 +43,7 @@ export function stateText(game: Game, train: Train): string {
     case 'loading':
       if (game.fleet.isFillingUp(train)) return `Nakládá do plna: ${formatLoad(train)}`;
       return `Ve stanici, další cíl: ${
-        train.target === -1 ? 'depo' : train.orders ? game.fleet.orderName(train, nextStop(train)) : ''
+        train.target === -1 ? 'depo' : train.orders ? game.fleet.orderName(train, game.fleet.nextOrder(train)) : ''
       }`;
     case 'lost':
       return `Nemůže najít cestu: ${target}`;
@@ -145,6 +144,7 @@ function trainOrders(windows: WindowManager, game: Game, train: Train, links: Tr
       get: (index) => orderFlags(train, index),
       set: (index, patch) => fleet.setOrderFlags(train, index, patch),
       setOrders: (orders, flags) => fleet.setOrders(train, orders, flags),
+      setCondition: (index, condition) => fleet.setCondition(train, index, condition),
       depots: () => game.world.rail.depots.map((d) => ({ id: d.id, name: `Depo ${d.id + 1}` })),
       depotName: (depotId) => `depa ${depotId + 1}`,
       focusDepot: (depotId) => {
@@ -169,7 +169,8 @@ function trainOrders(windows: WindowManager, game: Game, train: Train, links: Tr
       'Vlak objíždí příkazy dokola. U vybraného příkazu nastavíte nakládání (do plna, nenakládat), ' +
       'vykládání (vyložit vše, překládka pro další vozidlo, nevykládat), přestavbu prázdných vagonů ' +
       'na jiný náklad (po vyložení, za poplatek) nebo „Projet“ bez zastavení. ' +
-      '„Servis v depu“ přidá zajížďku do depa, „Průjezdný bod“ cestu přes bod na trati (bez zastavení).',
+      '„Servis v depu“ přidá zajížďku do depa, „Průjezdný bod“ cestu přes bod na trati (bez zastavení). ' +
+      '„Podmínka“ přidá podmíněný skok: když podmínka při odjezdu platí, vlak pokračuje vybraným příkazem.',
     focusStation: (stationId) => {
       const station = game.world.rail.stations.find((s) => s.id === stationId);
       if (station) links.focus(station.x + 0.5, station.y + 0.5);

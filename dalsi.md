@@ -36,9 +36,9 @@ se převedou (nové údaje mají rozumný výchozí stav). Konkurenční společ
 - [x] Hledání cesty lodí přes kanály a zdymadla, testy, kontrola v prohlížeči, commit
 
 ## 6. Podmíněné příkazy
-- [ ] Příkaz „Podmínka“: když (naložení %, spolehlivost, stáří, potřeba servisu, vždy) splňuje porovnání, skoč na příkaz N
-- [ ] Vyhodnocení při odjezdu ze zastávky, editor v okně řádu vlaku, uložení
-- [ ] Testy, commit
+- [x] Příkaz „Podmínka“: když (naložení %, spolehlivost, stáří, potřeba servisu, vždy) splňuje porovnání, skoč na příkaz N
+- [x] Vyhodnocení při odjezdu ze zastávky, editor v okně řádu vlaku, uložení
+- [x] Testy, commit
 
 ## 7. Nasazení
 - [ ] Build, `npm run upload`, ověření na https://app.makuderovi.cz/ttd/

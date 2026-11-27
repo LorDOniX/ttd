@@ -161,8 +161,8 @@ export function openTimetable(windows: WindowManager, game: Game, train: Train):
           travel: f.travel,
           wait: f.wait,
           measured: train.lastTravel?.[i] ?? null,
-          passing: f.waypoint === true || f.via === true,
-          canWait: !f.depot && !f.waypoint && !f.via,
+          passing: f.waypoint === true || f.via === true || f.condition !== undefined,
+          canWait: !f.depot && !f.waypoint && !f.via && !f.condition,
         };
       }),
     current: () => (train.state !== 'depot' ? train.target : -1),
