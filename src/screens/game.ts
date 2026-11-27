@@ -1,3 +1,4 @@
+import { newGameDistribution } from '../game/cargodist';
 import { START_YEAR, formatDate } from '../game/clock';
 import { Game } from '../game/game';
 import type { RoadVehicle } from '../game/roadVehicles';
@@ -56,7 +57,7 @@ export const DEFAULT_OPTIONS: Omit<NewGameOptions, 'seedText'> = {
 };
 
 function newGame(options: NewGameOptions): Game {
-  return new Game(
+  const game = new Game(
     generateWorld(hashSeed(options.seedText), options.size, START_YEAR, {
       waterLevel: WATER_LEVELS[options.water],
       townDensity: TOWN_DENSITY[options.towns],
@@ -66,6 +67,8 @@ function newGame(options: NewGameOptions): Game {
       terrain: options.terrain ?? 'flat',
     }),
   );
+  game.cargodist.settings = newGameDistribution();
+  return game;
 }
 
 // Hra podle volby z úvodní obrazovky; poškozené uložení vrátí na úvodní obrazovku

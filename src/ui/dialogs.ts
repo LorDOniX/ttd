@@ -1,3 +1,10 @@
+import {
+  DISTRIBUTION_CLASSES,
+  DISTRIBUTION_CLASS_LABELS,
+  DISTRIBUTION_LABELS,
+  distributionModes,
+  type DistributionMode,
+} from '../game/cargodist';
 import { AIRCRAFT_CREDITS } from './aircraft';
 import { AD_CAMPAIGN_COST, AD_RATING_BOOST } from '../game/balance';
 import { formatDate } from '../game/clock';
@@ -84,6 +91,23 @@ export function openSettings(
     }
   });
 
+  // Distribuce nákladu jako v OpenTTD, zvlášť pro cestující, poštu a ostatní náklad
+  const distributionFields = DISTRIBUTION_CLASSES.map((kind) => {
+    const select = h(
+      'select',
+      {
+        title:
+          'Ručně: náklad jede, kam ho vozidlo doveze. Asymetricky: náklad má cílovou stanici, která ho přijímá. ' +
+          'Symetricky: cestující a pošta jezdí mezi stanicemi tam i zpět.',
+      },
+      ...distributionModes(kind).map((mode) =>
+        h('option', { value: mode, selected: mode === game.cargodist.settings[kind] }, DISTRIBUTION_LABELS[mode]),
+      ),
+    );
+    select.addEventListener('change', () => game.cargodist.setMode(kind, select.value as DistributionMode));
+    return h('label', { className: 'form__field' }, DISTRIBUTION_CLASS_LABELS[kind], select);
+  });
+
   const theme = loadTheme();
   const themeSelect = h(
     'select',
@@ -120,6 +144,8 @@ export function openSettings(
     h('label', { className: 'form__field' }, 'Poruchy vozidel', breakdownSelect),
     h('label', { className: 'form__field' }, 'Dotace (násobek jízdného)', subsidySelect),
     h('label', { className: 'form__field' }, 'Ekonomika (změny výroby)', economySelect),
+    h('h4', {}, 'Distribuce nákladu (cargodist)'),
+    ...distributionFields,
     h('label', { className: 'form__field' }, 'Vzhled', themeSelect),
     h('label', { className: 'form__field' }, 'Název společnosti', nameInput),
     h('div', { className: 'form__hint' }, `Seed mapy: ${seed}`),

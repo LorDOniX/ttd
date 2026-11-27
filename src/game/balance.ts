@@ -1006,3 +1006,6 @@ export const SUBSIDY_MAX_DISTANCE = 70;
 export const SUBSIDY_MIN_POPULATION = 400;
 // Náklad nabízí jen závod, ze kterého se minulý měsíc odvezlo nejvýš tolik výroby
 export const SUBSIDY_MAX_TRANSPORTED = 0.42;
+
+// Cargodist: odhad kapacity linky za měsíc počítá s takovým staním na každé zastávce (dny)
+export const CARGO_DIST_STOP_DAYS = 2;

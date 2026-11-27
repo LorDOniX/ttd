@@ -1,3 +1,4 @@
+import { parseDistribution } from './cargodist';
 import { isEconomySetting } from './industryLife';
 import {
   AIRCRAFT_MODELS,
@@ -103,6 +104,8 @@ export interface SaveData {
     autoRenew?: boolean;
     breakdowns?: string;
     economy?: string;
+    // Distribuce nákladu (cargodist); starší uložení ji nemají (vše ručně)
+    distribution?: unknown;
   };
   // Dotace; starší uložení je nemají
   subsidies?: unknown;
@@ -198,6 +201,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       autoRenew: game.autoRenew,
       breakdowns: game.breakdowns,
       economy: game.economy,
+      distribution: { ...game.cargodist.settings },
     },
     subsidies: game.subsidies.serialize(),
     groups: game.groups.serialize(),
@@ -487,6 +491,7 @@ export function restoreGame(data: SaveData): Game {
   game.breakdowns = isBreakdownSetting(data.game.breakdowns) ? data.game.breakdowns : 'normal';
   // Starší uložení měla skokové změny výroby (původní ekonomika)
   game.economy = isEconomySetting(data.game.economy) ? data.game.economy : 'original';
+  game.cargodist.settings = parseDistribution(data.game.distribution);
   game.money = data.game.money;
   game.loan = data.game.loan;
   // Přepravený náklad starší uložení nezná nebo zná jen uhlí

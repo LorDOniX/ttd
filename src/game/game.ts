@@ -16,6 +16,7 @@ import { Fleet } from './trains';
 import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
 import type { BreakdownSetting } from './reliability';
+import { CargoDist } from './cargodist';
 import type { EconomySetting } from './industryLife';
 import { growTown } from '../world/town';
 
@@ -120,6 +121,7 @@ export class Game {
   readonly freight: Freight;
   readonly industryLife: IndustryLife;
   readonly subsidies: Subsidies;
+  readonly cargodist: CargoDist;
   readonly groups: VehicleGroups;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
@@ -154,6 +156,7 @@ export class Game {
     this.industryLife = new IndustryLife(this);
     // Až po IndustryLife: měsíční nabídky vidí uzavřený odvoz a zaniklé závody
     this.subsidies = new Subsidies(this);
+    this.cargodist = new CargoDist(this);
     this.groups = new VehicleGroups(
       (kind) => this.vehiclesOf(kind),
       () => this.events.emit('groupsChanged'),
