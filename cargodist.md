@@ -46,4 +46,4 @@ jako dosud.
 - [x] Kontrola v prohlížeči, commit
 
 ## 6. Dokončení
-- [ ] Zápis do nth.md (Hotovo), odstranění „Cargodist“ ze Zbývá
+- [x] Zápis do nth.md (Hotovo), odstranění „Cargodist“ ze Zbývá
