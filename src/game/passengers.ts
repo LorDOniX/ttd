@@ -247,6 +247,7 @@ export class Passengers {
     const { game } = this;
     const { atPlatform } = hold;
     let unloaded = 0;
+    if (!loadOnly) game.cargodist.recordTrip('passengers', hold.prev, station, train.passengers, hold.capacity);
     const split =
       !loadOnly && train.passengers > 0 ? game.cargodist.split(station, 'passengers', train, hold.next) : undefined;
     if (!loadOnly && options.unload !== 'none' && train.passengers > 0 && train.boardedStation !== station.id) {

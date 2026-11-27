@@ -10,7 +10,7 @@ import {
   TRAIN_SELL_REFUND,
   type RoadVehicleModel,
 } from './balance';
-import { CARGOS, isFreight, nextOrderStop, type Cargo } from './cargo';
+import { CARGOS, isFreight, nextOrderStop, prevOrderStop, type Cargo } from './cargo';
 import { formatMoney, type Game } from './game';
 import { TileType, type TilePos } from '../world/map';
 import { bridgeEnd, bridgeSpanTiles, type Depot, type RailBridge, type Station } from '../world/rail';
@@ -776,6 +776,7 @@ export class RoadFleet {
       capacity,
       speed: model.speed,
       next: nextOrderStop(vehicle.orders, vehicle.target, station.id),
+      prev: prevOrderStop(vehicle.orders, vehicle.target, station.id),
     };
     const cargo = vehicleCargo(vehicle);
     if (isFreight(cargo)) return this.game.freight.exchange(vehicle, hold, station, cargo, loadOnly);

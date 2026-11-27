@@ -5,10 +5,10 @@ podmíněné příkazy, nasazení. Každá fáze končí testy, kontrolou v proh
 se převedou (nové údaje mají rozumný výchozí stav). Konkurenční společnost (AI) je v nth.md.
 
 ## 1. Mapa toků (cargodist)
-- [ ] Vytížení spojení: plánovaný tok po spojení proti kapacitě (z výpočtu toků)
-- [ ] Překryv mapy: spojení mezi stanicemi jako oblouky, barva podle vytížení (zelená → červená), tloušťka podle kapacity
-- [ ] Okno „Toky nákladu“: zapnutí překryvu, výběr druhu nákladu, legenda, seznam nejvytíženějších spojení
-- [ ] Testy, kontrola v prohlížeči, commit
+- [x] Vytížení spojení: převezený náklad proti kapacitě vozidel, které po spojení jela (měsíčně, i při ruční distribuci); bez jízd odhad z řádů
+- [x] Překryv mapy: spojení mezi stanicemi jako oblouky, barva podle vytížení (zelená → červená), tloušťka podle kapacity
+- [x] Okno „Toky nákladu“: zapnutí překryvu, výběr druhu nákladu, legenda, seznam nejvytíženějších spojení
+- [x] Testy, kontrola v prohlížeči, commit
 
 ## 2. Místní úřad
 - [ ] Hodnocení společnosti v každém městě (−1000 až 1000 jako v OpenTTD, stupně Hrozné … Vynikající)

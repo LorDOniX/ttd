@@ -5,6 +5,7 @@ import {
   CARGO_DIST_STOP_DAYS,
 } from './balance';
 import {
+  CARGO_TYPES,
   destTotal,
   trimDests,
   type Cargo,
@@ -361,6 +362,12 @@ export function computeFlows(graph: LinkGraph, demand: Demand): Flows {
   return flows;
 }
 
+// Převezený náklad a kapacita vozidel po spojení za tento a minulý měsíc
+interface LinkStats {
+  current: { amount: number; capacity: number };
+  last: { amount: number; capacity: number };
+}
+
 // Poptávka a toky jednoho druhu nákladu; platí pro graf s daným klíčem (seznamem spojení)
 interface CargoPlan {
   key: string;
@@ -381,6 +388,8 @@ export class CargoDist {
   settings: DistributionSettings = manualDistribution();
   private graphs: Map<Cargo, LinkGraph> | null = null;
   private plans = new Map<Cargo, CargoPlan>();
+  // Skutečně převezený náklad a kapacita vozidel po spojeních (z → do): tento a minulý měsíc
+  private usage = new Map<Cargo, Map<string, LinkStats>>();
 
   constructor(private readonly game: Game) {
     const invalidate = (): void => {
@@ -399,6 +408,13 @@ export class CargoDist {
       this.graphs = null;
       this.plans.clear();
       this.dropUnreachable();
+      for (const links of this.usage.values()) {
+        for (const [key, entry] of links) {
+          if (entry.current.capacity <= 0 && entry.last.capacity <= 0) links.delete(key);
+          entry.last = entry.current;
+          entry.current = { amount: 0, capacity: 0 };
+        }
+      }
     });
   }
 
@@ -691,5 +707,78 @@ export class CargoDist {
     const rest = load.passengers - destTotal(load.dests);
     if (rest > 0) parts.push(`bez cíle ${rest}`);
     return parts.join(' · ');
+  }
+
+  // Vozidlo přijelo z předchozí zastávky (id stanice) s nákladem amount a kapacitou capacity:
+  // započte se do vytížení spojení
+  recordTrip(cargo: Cargo, from: number | undefined, to: Station, amount: number, capacity: number): void {
+    const a = this.poolOf(from);
+    const b = poolId(to);
+    if (a === undefined || a === b || capacity <= 0) return;
+    const links = this.usage.get(cargo) ?? new Map<string, LinkStats>();
+    this.usage.set(cargo, links);
+    const key = `${a}>${b}`;
+    const entry = links.get(key) ?? { current: { amount: 0, capacity: 0 }, last: { amount: 0, capacity: 0 } };
+    links.set(key, entry);
+    entry.current.amount += Math.max(0, amount);
+    entry.current.capacity += capacity;
+  }
+
+  // Převezený náklad a kapacita po spojení za měsíc: minulý měsíc, dokud tento nemá víc jízd
+  linkStats(cargo: Cargo, link: Pick<Link, 'from' | 'to'>): { amount: number; capacity: number } | undefined {
+    const entry = this.usage.get(cargo)?.get(`${link.from}>${link.to}`);
+    if (!entry) return undefined;
+    const month = entry.current.capacity >= entry.last.capacity ? entry.current : entry.last;
+    return month.capacity > 0 ? month : undefined;
+  }
+
+  linkUsage(cargo: Cargo, link: Pick<Link, 'from' | 'to'>): number {
+    return this.linkStats(cargo, link)?.amount ?? 0;
+  }
+
+  // Všechna spojení druhu nákladu s vytížením: převezený náklad proti kapacitě vozidel, které po spojení
+  // jela; dokud nikdo nejel, proti odhadu z řádů
+  linkLoads(cargo: Cargo): { link: Link; usage: number; capacity: number; ratio: number }[] {
+    return graphLinks(this.graph(cargo)).map((link) => {
+      const stats = this.linkStats(cargo, link);
+      const usage = stats?.amount ?? 0;
+      const capacity = stats?.capacity ?? link.capacity;
+      return { link, usage, capacity, ratio: capacity > 0 ? usage / capacity : 0 };
+    });
+  }
+
+  // Druhy nákladu, které po síti někdo veze
+  linkedCargos(): Cargo[] {
+    return CARGO_TYPES.filter((c) => this.graph(c).size > 0);
+  }
+
+  // Vytížení do uložení: druh → „z>do“ → [náklad, kapacita tento měsíc, náklad, kapacita minulý]
+  serializeUsage(): Record<string, Record<string, number[]>> {
+    const data: Record<string, Record<string, number[]>> = {};
+    for (const [cargo, links] of this.usage) {
+      data[cargo] = Object.fromEntries(
+        [...links].map(([key, e]) => [key, [e.current.amount, e.current.capacity, e.last.amount, e.last.capacity]]),
+      );
+    }
+    return data;
+  }
+
+  restoreUsage(value: unknown): void {
+    this.usage.clear();
+    if (typeof value !== 'object' || value === null) return;
+    for (const cargo of CARGO_TYPES) {
+      const links = (value as Record<string, unknown>)[cargo];
+      if (typeof links !== 'object' || links === null) continue;
+      const map = new Map<string, LinkStats>();
+      for (const [key, list] of Object.entries(links)) {
+        if (!/^\d+>\d+$/.test(key) || !Array.isArray(list)) continue;
+        const [a, b, c, d] = [0, 1, 2, 3].map((i) => {
+          const n: unknown = list[i];
+          return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, n) : 0;
+        });
+        map.set(key, { current: { amount: a, capacity: b }, last: { amount: c, capacity: d } });
+      }
+      if (map.size > 0) this.usage.set(cargo, map);
+    }
   }
 }

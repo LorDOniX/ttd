@@ -36,6 +36,7 @@ import { industryAt, type Industry } from '../world/industry';
 import { openIndustry } from '../ui/industry';
 import { openStation } from '../ui/station';
 import { openTrafficOverview } from '../ui/traffic';
+import { openFlows } from '../ui/flows';
 import { onStationPickChange, pickStationAt, stationPick, stopStationPick } from '../ui/stationPicker';
 import type { Depot, Station } from '../world/rail';
 import { hashSeed } from '../world/rng';
@@ -202,6 +203,13 @@ export function runGame(container: HTMLElement, intent: LaunchIntent): void {
     openIndustryFund: () => buildTools.openIndustryWindow(),
     rotateView: (direction) => isoCamera.rotate(direction),
     openMinimap: () => openMinimap(windows, game, isoCamera, renderer.domElement),
+    openFlows: () =>
+      openFlows(windows, game, {
+        overlay: view.flowOverlay,
+        getCargo: () => view.flowCargo,
+        setCargo: (cargo) => (view.flowCargo = cargo),
+        focus,
+      }),
     openTraffic: () =>
       openTrafficOverview(windows, {
         hotspots: () => view.trafficHotspots(),

@@ -11,6 +11,7 @@ import { ShipsView } from './ships';
 import { MiniViews } from './miniViews';
 import { portLamps } from './ports';
 import type { PortShape } from '../world/port';
+import { stationTiles } from '../world/rail';
 import { AmbientPropsView } from './ambientProps';
 import { AnimalsView } from './animals';
 import { BuildingsView } from './buildings';
@@ -32,6 +33,7 @@ import { TerrainView } from './terrain';
 import { updateWater } from './water';
 import { TrafficLightsView } from './trafficLights';
 import { TrafficOverlayView } from './trafficOverlay';
+import { FlowOverlayView, type FlowLink } from './flowOverlay';
 import { NIGHT_DETAIL_ZOOM, NightLightsView } from './nightLights';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
@@ -94,6 +96,10 @@ export class GameView {
   private readonly trafficLightView: TrafficLightsView;
   private readonly nightLights: NightLightsView;
   readonly trafficOverlay = new TrafficOverlayView();
+  // Mapa toků nákladu (cargodist); zobrazený druh nákladu, nebo všechen
+  readonly flowOverlay = new FlowOverlayView();
+  flowCargo: Cargo | 'all' = 'all';
+  private flowRefreshAt = 0;
   // Živé pohledy v oknech vozidel
   readonly miniViews = new MiniViews();
   private readonly floatingTexts: FloatingTexts;
@@ -187,6 +193,7 @@ export class GameView {
       roads.object,
       this.nightLights.object,
       this.trafficOverlay.object,
+      this.flowOverlay.object,
       this.ambientProps.object,
       this.trafficLightView.object,
       this.buildings.object,
@@ -303,6 +310,36 @@ export class GameView {
 
   get forestMistEnabled(): boolean {
     return this.forestMist.isEnabled;
+  }
+
+  // Spojení pro mapu toků: u všeho nákladu se kapacity a převezený náklad stejných spojení sčítají
+  flowLinks(): FlowLink[] {
+    const { cargodist, world } = this.game;
+    const { rail, map } = world;
+    const cargos = this.flowCargo === 'all' ? cargodist.linkedCargos() : [this.flowCargo];
+    const merged = new Map<string, { from: number; to: number; capacity: number; usage: number }>();
+    for (const cargo of cargos) {
+      for (const { link, usage, capacity } of cargodist.linkLoads(cargo)) {
+        const key = `${link.from}>${link.to}`;
+        const entry = merged.get(key) ?? { from: link.from, to: link.to, capacity: 0, usage: 0 };
+        merged.set(key, entry);
+        entry.capacity += capacity;
+        entry.usage += usage;
+      }
+    }
+    const point = (id: number): FlowLink['from'] | null => {
+      const station = rail.stations.find((s) => s.id === id);
+      if (!station) return null;
+      const tiles = stationTiles(station);
+      const x = tiles.reduce((sum, t) => sum + t.x, 0) / tiles.length + 0.5;
+      const y = tiles.reduce((sum, t) => sum + t.y, 0) / tiles.length + 0.5;
+      return { x, y, ground: map.heightAt(x, y) };
+    };
+    return [...merged.values()].flatMap((l) => {
+      const from = point(l.from);
+      const to = point(l.to);
+      return from && to ? [{ from, to, capacity: l.capacity, usage: l.usage }] : [];
+    });
   }
 
   trafficHotspots(): TrafficHotspot[] {
@@ -548,6 +585,11 @@ export class GameView {
       this.roads.version,
     );
     if (this.trafficOverlay.visible) this.trafficOverlay.update(this.trafficHotspots());
+    // Mapa toků se přepočítá nejvýš dvakrát za sekundu
+    if (this.flowOverlay.visible && now >= this.flowRefreshAt) {
+      this.flowRefreshAt = now + 500;
+      this.flowOverlay.update(this.flowLinks());
+    }
     this.nightLights.update(
       this.lightsAmount,
       mainFrustum,

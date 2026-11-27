@@ -469,6 +469,8 @@ export interface Hold {
   speed: number;
   // Další zastávka vozidla podle řádu (id stanice); cargodist podle ní vybírá náklad
   next?: number;
+  // Předchozí zastávka (id stanice), odkud vozidlo přijelo; kvůli vytížení spojení
+  prev?: number;
 }
 
 // Další zastávka v řádu po stanici current, u které vozidlo stojí (řád aut, letadel a lodí jsou jen stanice)
@@ -476,4 +478,11 @@ export function nextOrderStop(orders: readonly number[] | null, target: number, 
   if (!orders || orders.length === 0) return undefined;
   const at = orders[target] === current ? target : orders.indexOf(current);
   return at < 0 ? undefined : orders[(at + 1) % orders.length];
+}
+
+// Předchozí zastávka v řádu před stanicí current, u které vozidlo stojí
+export function prevOrderStop(orders: readonly number[] | null, target: number, current: number): number | undefined {
+  if (!orders || orders.length === 0) return undefined;
+  const at = orders[target] === current ? target : orders.indexOf(current);
+  return at < 0 ? undefined : orders[(at - 1 + orders.length) % orders.length];
 }

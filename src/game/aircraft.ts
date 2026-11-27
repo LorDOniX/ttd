@@ -14,7 +14,7 @@ import {
   type AircraftModel,
   type AirportType,
 } from './balance';
-import { CARGOS, isFreight, nextOrderStop, type Cargo } from './cargo';
+import { CARGOS, isFreight, nextOrderStop, prevOrderStop, type Cargo } from './cargo';
 import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
 import {
   arrived,
@@ -625,6 +625,7 @@ export class AirFleet {
       capacity,
       speed: model.speed,
       next: nextOrderStop(plane.orders, plane.target, airport.id),
+      prev: prevOrderStop(plane.orders, plane.target, airport.id),
     };
     const cargo = aircraftCargo(plane);
     if (isFreight(cargo)) return this.game.freight.exchange(plane, hold, airport, cargo, loadOnly);

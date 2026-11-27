@@ -12,6 +12,7 @@ export interface ToolbarActions {
   openFinance: () => void;
   openSubsidies: () => void;
   openTraffic: () => void;
+  openFlows: () => void;
   // Den/noc a roční období
   scene: SceneControls;
   openRailBuild: () => void;
@@ -112,6 +113,7 @@ export class Hud {
       [
         windowButton('minimap', '🗺️', 'Minimapa (M)', actions.openMinimap),
         windowButton('traffic', '🚦', 'Městský provoz', actions.openTraffic),
+        windowButton('flows', '🔀', 'Toky nákladu (mapa spojení)', actions.openFlows),
         dayNight,
         season,
       ],

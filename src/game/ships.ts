@@ -9,7 +9,7 @@ import {
   TRAIN_SELL_REFUND,
   type ShipModel,
 } from './balance';
-import { CARGOS, isFreight, nextOrderStop, type Cargo } from './cargo';
+import { CARGOS, isFreight, nextOrderStop, prevOrderStop, type Cargo } from './cargo';
 import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
 import {
   arrived,
@@ -641,6 +641,7 @@ export class ShipFleet {
       capacity,
       speed: model.speed,
       next: nextOrderStop(ship.orders, ship.target, port.id),
+      prev: prevOrderStop(ship.orders, ship.target, port.id),
     };
     const cargo = shipCargo(ship);
     if (isFreight(cargo)) return this.game.freight.exchange(ship, hold, port, cargo, loadOnly);

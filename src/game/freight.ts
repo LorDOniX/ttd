@@ -114,6 +114,7 @@ export class Freight {
     const { game } = this;
     const { atPlatform } = hold;
     let unloaded = 0;
+    if (!loadOnly) game.cargodist.recordTrip(type, hold.prev, station, train.passengers, hold.capacity);
     const accepted = this.accepted(station).includes(type);
     const split = !loadOnly && train.passengers > 0 ? game.cargodist.split(station, type, train, hold.next) : undefined;
     if (!loadOnly && options.unload !== 'none' && train.passengers > 0 && train.boardedStation !== station.id) {

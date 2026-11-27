@@ -14,7 +14,7 @@ import {
   type LinkGraph,
 } from './cargodist';
 import { parseSave, restoreGame, serializeGame } from './save';
-import { buildLine, buyTrain } from '../test/fixtures';
+import { buildLine, buyTrain, runDays } from '../test/fixtures';
 import { defaultStationShape } from '../world/rail';
 
 const at = (x: number) => ({ x, y: 0 });
@@ -182,5 +182,43 @@ describe('cargodist: poptávka a toky', () => {
     expect(demand.get(b.id)).toBeCloseTo(game.passengers.inflow(a));
     expect(game.cargodist.nextHops(a, 'passengers', b.id)).toEqual(new Map([[b.id, 1]]));
     expect(game.cargodist.flowsAt(b, 'passengers').get(a.id)).toBeDefined();
+  });
+});
+
+describe('cargodist: vytížení spojení', () => {
+  it('příjezd z předchozí zastávky se započte, po měsíci se přesune do minulého; uložení ho zachová', () => {
+    const { game, a, b, depot } = buildLine();
+    const train = buyTrain(game, depot, 3);
+    expect(game.fleet.start(train, [a.id, b.id])).toBeNull();
+    const [before] = game.cargodist.linkLoads('passengers').filter((l) => l.link.from === a.id);
+    // Dokud nikdo nejel, kapacita je odhad z řádu
+    expect(before).toMatchObject({ usage: 0, ratio: 0, capacity: before.link.capacity });
+    game.cargodist.recordTrip('passengers', a.id, b, 40, 90);
+    game.cargodist.recordTrip('passengers', a.id, b, 20, 90);
+    // Stejná stanice a neznámá stanice se nepočítají
+    game.cargodist.recordTrip('passengers', b.id, b, 99, 90);
+    game.cargodist.recordTrip('passengers', 999, b, 99, 90);
+    const [ab] = game.cargodist.linkLoads('passengers').filter((l) => l.link.from === a.id);
+    expect(ab).toMatchObject({ usage: 60, capacity: 180 });
+    expect(ab.ratio).toBeCloseTo(60 / 180);
+    game.clock.events.emit('month', game.clock.date);
+    game.cargodist.recordTrip('passengers', a.id, b, 10, 90);
+    expect(game.cargodist.linkUsage('passengers', { from: a.id, to: b.id })).toBe(60);
+    const restored = restoreGame(parseSave(JSON.stringify(serializeGame(game, 'cd'))));
+    expect(restored.cargodist.linkUsage('passengers', { from: a.id, to: b.id })).toBe(60);
+    expect(restored.cargodist.linkedCargos()).toEqual(['passengers']);
+    game.clock.events.emit('month', game.clock.date);
+    game.clock.events.emit('month', game.clock.date);
+    expect(game.cargodist.linkUsage('passengers', { from: a.id, to: b.id })).toBe(0);
+  });
+
+  it('vlak v provozu po spojení skutečně vozí: vytížení roste', () => {
+    const { game, a, b, depot } = buildLine();
+    game.money = 10_000_000;
+    const train = buyTrain(game, depot, 3);
+    expect(game.fleet.start(train, [a.id, b.id])).toBeNull();
+    runDays(game, 60);
+    const total = game.cargodist.linkLoads('passengers').reduce((sum, l) => sum + l.usage, 0);
+    expect(total).toBeGreaterThan(0);
   });
 });
