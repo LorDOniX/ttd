@@ -17,6 +17,7 @@ import {
   TrackView,
   createDepotMesh,
   createRailBridgeObject,
+  createTunnelPortal,
   createRoadDepotMesh,
   createRoadStopMesh,
   createStationObject,
@@ -56,6 +57,8 @@ export type SceneIcon =
   | 'airport-large'
   | 'port'
   | 'demolish'
+  | 'tunnel'
+  | 'road-tunnel'
   | 'terraform-raise'
   | 'terraform-lower'
   | 'terraform-level';
@@ -187,6 +190,9 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
   'airport-large': () => airport('large'),
   port,
   demolish: async () => [await loadModel('car kit', 'tractor-shovel')],
+  // Portál tunelu ve svahu s kolejí (silnicí) vedoucí do ústí
+  tunnel: () => [tile(), track('x'), createTunnelPortal(0, 0, Edge.E, 0)],
+  'road-tunnel': () => [tile(), road('x'), createTunnelPortal(0, 0, Edge.E, 0)],
   'terraform-raise': () => [tile(), hillShape(0.55, GRASS)],
   // Údolí: obrácený jehlan hlíny nad dlaždicí
   'terraform-lower': () => [hillShape(-0.55, 0x8a6a45)],

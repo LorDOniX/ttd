@@ -122,7 +122,8 @@ export class RoadVehiclesView {
       if (!view.group.visible) continue;
       this.place(vehicle.path, vehicle.pos, view);
       const { x, y, z } = view.group.position;
-      view.group.visible = key !== this.cabKey && inView(frustum, x, y, z, 0.3);
+      view.group.visible =
+        key !== this.cabKey && !this.inTunnel(vehicle.path, vehicle.pos) && inView(frustum, x, y, z, 0.3);
       view.lights.visible = night && view.group.visible;
     }
     for (const car of cityCars) {
@@ -138,7 +139,7 @@ export class RoadVehiclesView {
       view.placed = true;
       this.place(car.path, car.pos, view);
       const { x, y, z } = view.group.position;
-      view.group.visible = key !== this.cabKey && inView(frustum, x, y, z, 0.3);
+      view.group.visible = key !== this.cabKey && !this.inTunnel(car.path, car.pos) && inView(frustum, x, y, z, 0.3);
       view.lights.visible = night && view.group.visible;
     }
   }
@@ -208,10 +209,23 @@ export class RoadVehiclesView {
   }
 
   // Výška vozovky (bez ROAD_TOP) v místě pos trasy: terén, nebo mostovka ve výšce nájezdu
+  // Je auto v tunelu? Mizí v portálu (ve středu jeho dlaždice) a vyjede z druhého
+  private inTunnel(path: RoadVehicle['path'], pos: number): boolean {
+    const k = Math.max(0, Math.min(path.length - 1, Math.round(pos)));
+    const u = pos - k;
+    return Boolean(path[k]?.tunnel || (path[k + 1]?.tunnel && u > 0) || (path[k - 1]?.tunnel && u < 0));
+  }
+
   private roadHeight(path: RoadVehicle['path'], pos: number): number {
     const { x, y } = vehiclePoint(path, pos);
     const height = roadElevation(path, pos);
     const k = Math.max(0, Math.min(path.length - 1, Math.round(pos)));
+    // Tunel i portál vedou rovně ve výšce portálu
+    if (path[k]?.tunnel || path[k + 1]?.tunnel || path[k - 1]?.tunnel) {
+      let portal = k;
+      while (portal > 0 && path[portal]?.tunnel) portal--;
+      return path[portal] ? this.map.elevation(path[portal].x, path[portal].y) : this.map.heightAt(x, y);
+    }
     let head = k;
     while (head > 0 && path[head]?.level) head--;
     if (path[head]?.level) while (head < path.length - 1 && path[head].level) head++;

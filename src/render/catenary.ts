@@ -56,6 +56,9 @@ export class CatenaryView {
       const x = i % map.width;
       const y = Math.floor(i / map.width);
       let poled = false;
+      // V portálu tunelu vede kolej rovně ve výšce portálu
+      const flat = this.rail.bridges.length > 0 && this.rail.bridgeAtHead(x, y)?.tunnel ? map.elevation(x, y) : null;
+      const groundAt = (px: number, pz: number): number => flat ?? map.heightAt(px, pz);
       for (let p = 0; p < PIECES.length && wires < MAX_PIECES; p++) {
         if (!this.rail.has(x, y, p)) continue;
         const [a, b] = PIECES[p];
@@ -64,8 +67,8 @@ export class CatenaryView {
         const length = Math.hypot(bx - ax, bz - az);
         const angle = Math.atan2(-(bz - az), bx - ax);
         // Drát sleduje terén: ve svahu stoupá spolu s kolejí
-        const ha = map.heightAt(x + ax, y + az);
-        const hb = map.heightAt(x + bx, y + bz);
+        const ha = groundAt(x + ax, y + az);
+        const hb = groundAt(x + bx, y + bz);
         m.makeTranslation(x + ax, ha + WIRE_HEIGHT, y + az)
           .multiply(rotation.makeRotationY(angle))
           .multiply(pitch.makeRotationZ(Math.atan2(hb - ha, length)))
@@ -81,7 +84,7 @@ export class CatenaryView {
         // U rovné koleje stojí stožár vždy na stejné straně
         if (p < 2) [nx, nz] = p === 0 ? [1, 0] : [0, 1];
         const [px, pz] = [x + mx + nx * POLE_OFFSET, y + mz + nz * POLE_OFFSET];
-        const ground = map.heightAt(px, pz);
+        const ground = groundAt(px, pz);
         m.makeTranslation(px, ground, pz);
         this.poles.setMatrixAt(poles, m);
         m.makeTranslation(px, ground + WIRE_HEIGHT + 0.04, pz)

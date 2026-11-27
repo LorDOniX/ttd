@@ -28,6 +28,8 @@ export const SIGNAL_COST = 5_000;
 export const ROAD_TILE_COST = 3_000;
 // Dílek silničního mostu nad vodou, stejný poměr k silnici jako u kolejí
 export const ROAD_BRIDGE_COST = 12_000;
+// Pole tunelu (železničního i silničního) pod kopcem
+export const TUNNEL_PIECE_COST = 15_000;
 
 // Demolice: stavby hráče vrací část ceny, majetek měst se platí
 export const DEMOLISH_REFUND = 0.5;

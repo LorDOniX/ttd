@@ -147,9 +147,11 @@ export class TerrainView {
   private readonly normals: Float32Array;
   private heightRevision = 0;
 
+  // flatTile: dlaždice kreslená rovně ve výšce nejnižšího rohu (portál tunelu zaříznutý do svahu)
   constructor(
     private readonly map: GameMap,
     private readonly towns: readonly Town[],
+    private readonly flatTile: (x: number, y: number) => boolean = () => false,
   ) {
     this.changes = new MapChanges(map);
     this.water = new Uint8Array(map.width * map.height);
@@ -369,7 +371,7 @@ export class TerrainView {
       for (let x = 0; x < width; x++) {
         const i = y * width + x;
         const p = i * 12;
-        const [nw, ne, se, sw] = this.map.tileCorners(x, y).map((h) => h * HEIGHT_STEP + 0.001);
+        const [nw, ne, se, sw] = this.corners(x, y).map((h) => h * HEIGHT_STEP + 0.001);
         positions.set([x, nw, y, x + 1, ne, y, x + 1, se, y + 1, x, sw, y + 1], p);
         uvs.set(
           [x * 0.5, y * 0.5, (x + 1) * 0.5, y * 0.5, (x + 1) * 0.5, (y + 1) * 0.5, x * 0.5, (y + 1) * 0.5],
@@ -433,10 +435,18 @@ export class TerrainView {
     return withLampLightUv(geometry);
   }
 
+  // Úrovně rohů dlaždice tak, jak se kreslí
+  private corners(x: number, y: number): number[] {
+    const corners = this.map.tileCorners(x, y);
+    if (!this.flatTile(x, y)) return corners;
+    const level = Math.min(...corners);
+    return [level, level, level, level];
+  }
+
   // Rohy dlaždice ve výšce terénu (voda pod hladinou) a normála podle průměrného sklonu dlaždice
   private writeTileHeight(positions: Float32Array, x: number, y: number): void {
     const water = this.isWater(x, y);
-    const [nw, ne, se, sw] = this.map.tileCorners(x, y).map((h) => h * HEIGHT_STEP - (water ? WATER_DEPTH : 0));
+    const [nw, ne, se, sw] = this.corners(x, y).map((h) => h * HEIGHT_STEP - (water ? WATER_DEPTH : 0));
     const offset = (y * this.map.width + x) * 12;
     positions.set([x, nw, y, x + 1, ne, y, x + 1, se, y + 1, x, sw, y + 1], offset);
     // Sklon normály je zesílený, aby svahy byly v izometrii jasně světlejší či tmavší jako v OpenTTD
@@ -448,7 +458,7 @@ export class TerrainView {
 
   private writeDetailHeight(x: number, y: number): void {
     const positions = this.greenDetails.getAttribute('position').array as Float32Array;
-    const [nw, ne, se, sw] = this.map.tileCorners(x, y).map((h) => h * HEIGHT_STEP + 0.001);
+    const [nw, ne, se, sw] = this.corners(x, y).map((h) => h * HEIGHT_STEP + 0.001);
     positions.set([x, nw, y, x + 1, ne, y, x + 1, se, y + 1, x, sw, y + 1], (y * this.map.width + x) * 12);
   }
 

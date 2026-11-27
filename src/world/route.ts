@@ -81,10 +81,43 @@ export function segmentPoint(s: Segment, t: number): [number, number] {
 
 // Výška koleje nad zemí v bodě t (0–1) kusu trasy: pole mostu nahoře, nájezdy stoupají a klesají
 export function segmentHeight(rail: RailNetwork, s: Segment, t: number): number {
-  if (s.span) return BRIDGE_HEIGHT;
-  if (rail.bridgeFrom(s.x, s.y, s.exit)) return BRIDGE_HEIGHT * t;
-  if (rail.bridgeFrom(s.x, s.y, s.entry)) return BRIDGE_HEIGHT * (1 - t);
+  if (s.span) return spanBridge(rail, s)?.tunnel ? 0 : BRIDGE_HEIGHT;
+  const out = rail.bridgeFrom(s.x, s.y, s.exit);
+  if (out) return out.tunnel ? 0 : BRIDGE_HEIGHT * t;
+  const into = rail.bridgeFrom(s.x, s.y, s.entry);
+  if (into) return into.tunnel ? 0 : BRIDGE_HEIGHT * (1 - t);
   return 0;
+}
+
+// Most nebo tunel, přes který vede pole s.span
+function spanBridge(rail: RailNetwork, s: Segment) {
+  const [dx, dy] = EDGE_DELTA[s.entry];
+  return rail.bridgeFrom(s.x + dx, s.y + dy, s.exit);
+}
+
+// Je bod t (0–1) kusu trasy v tunelu? Vozidlo zmizí v portálu (v polovině jeho dlaždice) a vyjede z druhého
+export function segmentInTunnel(rail: RailNetwork, s: Segment, t: number): boolean {
+  if (s.span) return spanBridge(rail, s)?.tunnel === true;
+  if (rail.bridgeFrom(s.x, s.y, s.exit)?.tunnel) return t > 0.5;
+  if (rail.bridgeFrom(s.x, s.y, s.entry)?.tunnel) return t < 0.5;
+  return false;
+}
+
+// Kus trasy a poloha na něm ve vzdálenosti d
+function segmentAt(path: readonly Segment[], d: number): { s: Segment | undefined; t: number } {
+  let rest = Math.max(0, d);
+  for (const s of path) {
+    const len = segmentLength(s);
+    if (rest <= len) return { s, t: rest / len };
+    rest -= len;
+  }
+  return { s: path[path.length - 1], t: 1 };
+}
+
+// Je vozidlo ve vzdálenosti d trasy v tunelu (není vidět)?
+export function inTunnelAt(rail: RailNetwork, path: readonly Segment[], d: number): boolean {
+  const { s, t } = segmentAt(path, d);
+  return s ? segmentInTunnel(rail, s, t) : false;
 }
 
 // Výška koleje nad zemí ve vzdálenosti d od začátku trasy
@@ -115,6 +148,11 @@ export function groundAt(rail: RailNetwork, path: readonly Segment[], d: number)
   }
   if (!s) return 0;
   const { map } = rail;
+  // Tunel i jeho portály vedou rovně ve výšce portálu (portál je zaříznutý do svahu)
+  const tunnel = s.span
+    ? spanBridge(rail, s)
+    : (rail.bridgeFrom(s.x, s.y, s.exit) ?? rail.bridgeFrom(s.x, s.y, s.entry));
+  if (tunnel?.tunnel) return map.elevation(tunnel.x, tunnel.y);
   if (s.span) {
     const [sx, sy] = segmentPoint(s, 0);
     const [ex, ey] = segmentPoint(s, 1);

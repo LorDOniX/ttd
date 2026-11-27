@@ -1,5 +1,5 @@
 import { MAINTENANCE_RATE } from '../game/balance';
-import { roadBridgeCost, trackPieceCost } from '../game/construction';
+import { roadBridgeCost, trackPieceCost, tunnelCost } from '../game/construction';
 import { Game, formatMoney } from '../game/game';
 import { catchmentArea, inArea } from '../game/passengers';
 import { NO_OWNER, TileType, type TilePos } from '../world/map';
@@ -64,12 +64,28 @@ export function openTileInfo(windows: WindowManager, game: Game, tile: TilePos, 
     if (map.isRoad(x, y)) {
       rows.push(['Vlastník silnice', town ? town.name : 'vaše společnost']);
     }
-    const roadBridge = rail.roadBridgeAtHead(x, y) ?? rail.roadBridgeOver(x, y);
-    if (roadBridge) {
+    const over = rail.roadBridgeOver(x, y);
+    const roadBridge = rail.roadBridgeAtHead(x, y) ?? (over?.tunnel ? undefined : over);
+    if (roadBridge && !roadBridge.tunnel) {
       rows.push(
         [rail.roadBridgeAtHead(x, y) ? 'Nájezd mostu' : 'Nad dlaždicí', `silniční most, ${roadBridge.span} polí`],
         ['Údržba mostu', monthly(roadBridgeCost(roadBridge.span))],
       );
+    }
+    const portal = rail.tunnelAtPortal(x, y);
+    if (portal) {
+      const road = rail.roadBridges.includes(portal);
+      rows.push(
+        ['Portál tunelu', `${road ? 'silniční' : 'železniční'} tunel, ${portal.span} polí`],
+        ['Údržba tunelu', monthly(tunnelCost(portal.span))],
+      );
+    }
+    const under = rail.tunnelUnder(x, y);
+    if (under) rows.push(['Pod dlaždicí', `${rail.roadBridges.includes(under) ? 'silniční' : 'železniční'} tunel`]);
+    const slope = map.slope(x, y);
+    if (map.maxLevel() > 0 || slope.level > 0) {
+      const shape = slope.kind === 'flat' ? 'rovina' : slope.kind === 'incline' ? 'svah' : 'nerovný svah';
+      rows.push(['Terén', `${shape}, výška ${slope.level}`]);
     }
     if (type === TileType.Building && town) {
       const building = buildingAt(town, x, y);

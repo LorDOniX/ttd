@@ -187,10 +187,14 @@ export interface RailBridge {
   dir: Edge;
   // Počet polí mezi nájezdy
   span: number;
+  // Tunel místo mostu: nájezdy jsou portály ve svahu, trasa vede pod terénem ve výšce portálů
+  tunnel?: true;
 }
 
 // Nejdelší most (polí mezi nájezdy)
 export const MAX_BRIDGE_SPAN = 16;
+// Nejdelší tunel (polí mezi portály)
+export const MAX_TUNNEL_SPAN = 40;
 
 export function bridgeAxis(bridge: RailBridge): Axis {
   return bridge.dir % 2 === 1 ? 'x' : 'y';
@@ -711,10 +715,101 @@ export class RailNetwork {
     return bridge.x === x && bridge.y === y ? bridge.dir : opposite(bridge.dir);
   }
 
-  // Silniční most, jehož pole vede nad (x, y), nebo undefined
+  // Silniční most (nebo tunel), jehož pole vede nad (pod) (x, y), nebo undefined
   roadBridgeOver(x: number, y: number): RailBridge | undefined {
-    if (this.roadBridges.length === 0 || !this.map.isBridged(x, y)) return undefined;
-    return this.roadBridges.find((b) => bridgeSpanTiles(b).some((t) => t.x === x && t.y === y));
+    if (this.roadBridges.length === 0) return undefined;
+    const bridged = this.map.isBridged(x, y);
+    return this.roadBridges.find(
+      (b) => (bridged || b.tunnel) && bridgeSpanTiles(b).some((t) => t.x === x && t.y === y),
+    );
+  }
+
+  // Tunel (železniční nebo silniční) s portálem na (x, y), nebo undefined
+  tunnelAtPortal(x: number, y: number): RailBridge | undefined {
+    const head = this.bridgeAtHead(x, y) ?? this.roadBridgeAtHead(x, y);
+    return head?.tunnel ? head : undefined;
+  }
+
+  // Tunel vedoucí pod dlaždicí (x, y) (bez portálů), nebo undefined
+  tunnelUnder(x: number, y: number): RailBridge | undefined {
+    for (const b of [...this.bridges, ...this.roadBridges]) {
+      if (b.tunnel && bridgeSpanTiles(b).some((t) => t.x === x && t.y === y)) return b;
+    }
+    return undefined;
+  }
+
+  // Tunel od portálu (x, y) jako v OpenTTD: portál na svahu stoupajícím do kopce, tunel vede rovně
+  // pod terénem k protějšímu svahu ve stejné výšce. Vrací tvar tunelu, nebo důvod, proč nejde
+  tunnelShape(x: number, y: number, road: boolean): RailBridge | string {
+    const { map } = this;
+    if (!map.inBounds(x, y)) return 'Tunel musí stát celý na mapě.';
+    const slope = map.slope(x, y);
+    if (slope.kind !== 'incline') return 'Portál tunelu musí stát na rovném svahu.';
+    const dir = slope.up as Edge;
+    const level = slope.level;
+    const [dx, dy] = EDGE_DELTA[dir];
+    for (let k = 1; k <= MAX_TUNNEL_SPAN + 1; k++) {
+      const tx = x + k * dx;
+      const ty = y + k * dy;
+      if (!map.inBounds(tx, ty)) return 'Tunel by vedl mimo mapu.';
+      const far = map.slope(tx, ty);
+      if (far.kind === 'incline' && far.up === opposite(dir) && far.level === level) {
+        if (k === 1) return 'Tunel musí vést aspoň pod jedním polem kopce.';
+        const shape: RailBridge = { id: -1, x, y, dir, span: k - 1, tunnel: true };
+        return this.portalProblem(shape, road) ?? shape;
+      }
+      if (map.tileLevel(tx, ty) <= level) return 'Tunel by vyšel na povrch: na druhé straně není svah ve stejné výšce.';
+      if (map.isBridged(tx, ty)) return 'Tunel nesmí vést pod mostem.';
+      const other = this.tunnelUnder(tx, ty);
+      if (other && map.tileLevel(other.x, other.y) === level) return 'Tunely se nesmí křížit.';
+    }
+    return `Tunel může mít nejvýš ${MAX_TUNNEL_SPAN} polí.`;
+  }
+
+  // Portály tunelu: volná země, nebo rovná kolej (silnice) ve směru tunelu
+  private portalProblem(tunnel: RailBridge, road: boolean): string | null {
+    const axis = bridgeAxis(tunnel);
+    for (const head of [{ x: tunnel.x, y: tunnel.y }, bridgeEnd(tunnel)]) {
+      if (this.anyBridgeHead(head.x, head.y)) return 'Tady už je most nebo tunel.';
+      if (this.map.isFree(head.x, head.y)) continue;
+      if (road) {
+        if (this.map.isType(head.x, head.y, TileType.Road)) continue;
+        return 'Portál silničního tunelu musí být na volné zemi nebo na silnici.';
+      }
+      const straight =
+        this.map.isType(head.x, head.y, TileType.Rail) &&
+        (this.mask(head.x, head.y) | (1 << axisPiece(axis))) === 1 << axisPiece(axis) &&
+        this.railTypeAt(head.x, head.y) === this.buildType;
+      if (!straight) return 'Portál tunelu musí být na volné zemi nebo na rovné koleji ve směru tunelu.';
+    }
+    return null;
+  }
+
+  // Postaví železniční tunel (ověřený tunnelShape): na portálech kolej ve směru tunelu
+  addTunnel(x: number, y: number): RailBridge {
+    const shape = this.tunnelShape(x, y, false) as RailBridge;
+    const tunnel = { ...shape, id: this.nextBridgeId++ };
+    this.bridges.push(tunnel);
+    const piece = axisPiece(bridgeAxis(tunnel));
+    for (const head of [{ x, y }, bridgeEnd(tunnel)]) {
+      if (!this.has(head.x, head.y, piece)) this.addPiece(head.x, head.y, piece);
+      this.map.touch(head.x, head.y);
+    }
+    this.revision++;
+    return tunnel;
+  }
+
+  // Postaví silniční tunel (ověřený tunnelShape): portály se stanou silnicí
+  addRoadTunnel(x: number, y: number): RailBridge {
+    const shape = this.tunnelShape(x, y, true) as RailBridge;
+    const tunnel = { ...shape, id: this.nextBridgeId++ };
+    this.roadBridges.push(tunnel);
+    for (const head of [{ x, y }, bridgeEnd(tunnel)]) {
+      if (this.map.isOpenGround(head.x, head.y)) this.map.set(head.x, head.y, TileType.Road);
+      this.map.touch(head.x, head.y);
+    }
+    this.revision++;
+    return tunnel;
   }
 
   // Proč silniční most mezi nájezdy postavit nejde, nebo null. Nájezd je volná země nebo silnice
@@ -788,6 +883,7 @@ export class RailNetwork {
     if (index < 0) return;
     this.roadBridges.splice(index, 1);
     for (const t of bridgeSpanTiles(bridge)) this.map.bridged.delete(t.y * this.map.width + t.x);
+    if (bridge.tunnel) for (const head of [bridge, bridgeEnd(bridge)]) this.map.touch(head.x, head.y);
     this.revision++;
   }
 

@@ -18,6 +18,7 @@ import {
   STATION_SPREAD,
   TERRAFORM_CORNER_COST,
   TRACK_PIECE_COST,
+  TUNNEL_PIECE_COST,
   WAYPOINT_COST,
   type AirportType,
   MAGLEV_COST_FACTOR,
@@ -32,6 +33,7 @@ import {
   PIECES,
   RailType,
   axisPiece,
+  bridgeAxis,
   bridgeEnd,
   bridgeSpanTiles,
   opposite,
@@ -77,6 +79,16 @@ export function roadBridgeCost(span: number): number {
   return span * ROAD_BRIDGE_COST;
 }
 
+// Cena polí tunelu (bez kolejí a silnice v portálech)
+export function tunnelCost(span: number): number {
+  return span * TUNNEL_PIECE_COST;
+}
+
+// Cena polí mostu nebo tunelu
+export function spanCost(bridge: RailBridge, road: boolean): number {
+  return bridge.tunnel ? tunnelCost(bridge.span) : road ? roadBridgeCost(bridge.span) : bridgeCost(bridge.span);
+}
+
 // Cena nového dílku silnice: přes vodu se staví most
 export function roadPieceCost(map: GameMap, x: number, y: number): number {
   return map.isType(x, y, TileType.Water) || map.roadBridgeAxis(x, y) ? ROAD_BRIDGE_COST : ROAD_TILE_COST;
@@ -96,8 +108,8 @@ export function infrastructureValue(world: World): number {
   }
   for (const station of rail.stations) value += stationCost(station);
   for (const on of rail.electrified) value += on * ELECTRIFY_TILE_COST;
-  for (const bridge of rail.bridges) value += bridgeCost(bridge.span);
-  for (const bridge of rail.roadBridges) value += roadBridgeCost(bridge.span);
+  for (const bridge of rail.bridges) value += spanCost(bridge, false);
+  for (const bridge of rail.roadBridges) value += spanCost(bridge, true);
   return (
     value +
     rail.depots.length * DEPOT_COST +
@@ -156,7 +168,8 @@ export class Construction {
 
   // Úprava terénu (zvednout, snížit, srovnat); cena podle počtu změněných rohů i s dorovnaným okolím
   terraformPlan(corners: readonly TilePos[], mode: TerraformMode, target = 0): TerraformPlan & { cost: number } {
-    const plan = planTerraform(this.game.world.map, corners, mode, target);
+    const { map, rail } = this.game.world;
+    const plan = planTerraform(map, corners, mode, target, (x, y) => rail.tunnelUnder(x, y) !== undefined);
     return { ...plan, cost: plan.levels.size * TERRAFORM_CORNER_COST };
   }
 
@@ -469,6 +482,31 @@ export class Construction {
     return { cost: roadBridgeCost(span) + heads * ROAD_TILE_COST, problem, span };
   }
 
+  // Tunel od portálu (x, y) k protějšímu svahu: cena polí tunelu a nové koleje (silnice) v portálech
+  tunnelPlan(x: number, y: number, road: boolean): { cost: number; problem: string | null; tunnel: RailBridge | null } {
+    const { map, rail } = this.game.world;
+    const shape = rail.tunnelShape(x, y, road);
+    if (typeof shape === 'string') return { cost: 0, problem: shape, tunnel: null };
+    const heads = [shape, bridgeEnd(shape)];
+    const piece = axisPiece(bridgeAxis(shape));
+    const fresh = road
+      ? heads.filter((h) => map.isOpenGround(h.x, h.y)).length * ROAD_TILE_COST
+      : heads.filter((h) => !rail.has(h.x, h.y, piece)).length * TRACK_PIECE_COST * railTypeCostFactor(rail.buildType);
+    return { cost: tunnelCost(shape.span) + fresh, problem: null, tunnel: shape };
+  }
+
+  buildTunnel(x: number, y: number, road = false): string | null {
+    const { cost, problem } = this.tunnelPlan(x, y, road);
+    if (problem) return problem;
+    if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'construction');
+    if (road) this.game.world.rail.addRoadTunnel(x, y);
+    else this.game.world.rail.addTunnel(x, y);
+    this.game.events.emit('railChanged');
+    if (road) this.game.events.emit('roadsChanged');
+    return null;
+  }
+
   // Silniční most jako v OpenTTD: přes koleje, silnice, vodu i souš; provoz pod ním zůstane
   buildRoadBridge(x0: number, y0: number, x1: number, y1: number): string | null {
     const { cost, problem } = this.roadBridgePlan(x0, y0, x1, y1);
@@ -598,7 +636,7 @@ export class Construction {
           continue;
         }
         bridges.add(roadBridge.id);
-        cost -= roadBridgeCost(roadBridge.span) * DEMOLISH_REFUND;
+        cost -= spanCost(roadBridge, true) * DEMOLISH_REFUND;
         tiles.push({ x: roadBridge.x, y: roadBridge.y }, bridgeEnd(roadBridge));
         continue;
       }
@@ -612,7 +650,7 @@ export class Construction {
           continue;
         }
         bridges.add(bridge.id);
-        cost -= bridgeCost(bridge.span) * DEMOLISH_REFUND + 2 * TRACK_PIECE_COST * DEMOLISH_REFUND;
+        cost -= spanCost(bridge, false) * DEMOLISH_REFUND + 2 * TRACK_PIECE_COST * DEMOLISH_REFUND;
         tiles.push({ x: bridge.x, y: bridge.y }, bridgeEnd(bridge));
         continue;
       }

@@ -48,6 +48,8 @@ export function planTerraform(
   corners: readonly TilePos[],
   mode: TerraformMode,
   target = 0,
+  // Dlaždice, pod kterými vede tunel: terén nad ním zůstane
+  locked: (x: number, y: number) => boolean = () => false,
 ): TerraformPlan {
   const stride = map.width + 1;
   const levels = new Map<number, number>();
@@ -91,6 +93,7 @@ export function planTerraform(
         if (map.isType(x, y, TileType.Water)) return { levels, problem: 'Terén u vody zůstane na úrovni hladiny.' };
         if (!canReshape(map, x, y))
           return { levels, problem: 'Nejdřív je třeba odstranit stavbu, kolej nebo silnici.' };
+        if (locked(x, y)) return { levels, problem: 'Nad tunelem terén měnit nejde.' };
       }
     }
   }

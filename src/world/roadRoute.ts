@@ -4,6 +4,8 @@ import { EDGE_DELTA, RailNetwork, axisPiece, bridgeEnd, opposite, type Edge } fr
 // Dlaždice cesty auta; level 1 = na poli silničního mostu nad dlaždicí (pod mostem může vést jiná silnice)
 export interface RoadTile extends TilePos {
   level?: 1;
+  // Pole tunelu (level je pak 1, aby se auta v tunelu a na povrchu navzájem neviděla)
+  tunnel?: 1;
 }
 
 // Smí auto opustit (nebo vjet na) dlaždici přes danou hranu? Zastávkou jen podél silnice,
@@ -55,14 +57,18 @@ export function roadSteps(rail: RailNetwork, tile: RoadTile): RoadTile[] {
       const nx = x + sign * dx;
       const ny = y + sign * dy;
       const head = (nx === bridge.x && ny === bridge.y) || (nx === end.x && ny === end.y);
-      return head ? { x: nx, y: ny } : { x: nx, y: ny, level: 1 as const };
+      if (head) return { x: nx, y: ny };
+      return bridge.tunnel
+        ? { x: nx, y: ny, level: 1 as const, tunnel: 1 as const }
+        : { x: nx, y: ny, level: 1 as const };
     });
   }
   const moves: RoadTile[] = roadMoves(rail, x, y);
   const exit = rail.roadBridges.length > 0 && rail.map.isType(x, y, TileType.Road) ? rail.roadBridgeExit(x, y) : null;
   if (exit !== null) {
     const [dx, dy] = EDGE_DELTA[exit];
-    moves.push({ x: x + dx, y: y + dy, level: 1 });
+    const tunnel = rail.roadBridgeAtHead(x, y)?.tunnel;
+    moves.push(tunnel ? { x: x + dx, y: y + dy, level: 1, tunnel: 1 } : { x: x + dx, y: y + dy, level: 1 });
   }
   return moves;
 }
@@ -99,7 +105,10 @@ export function findRoadRoute(
   const tileOf = (key: number): RoadTile => {
     const index = key % size;
     const tile: RoadTile = { x: index % width, y: Math.floor(index / width) };
-    if (key >= size) tile.level = 1;
+    if (key >= size) {
+      tile.level = 1;
+      if (rail.roadBridgeOver(tile.x, tile.y)?.tunnel) tile.tunnel = 1;
+    }
     return tile;
   };
   const from = new Map<number, number>([[keyOf(start), -1]]);

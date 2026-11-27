@@ -153,7 +153,9 @@ const FLAT: GroundHeight = () => 0;
 // Terén mapy pod silnicí; silnice na mostě leží ve výšce nájezdu
 export function roadGround(map: GameMap, rail?: RailNetwork): GroundHeight {
   return (x, y, px, pz) => {
-    const bridge = rail?.roadBridgeOver(x, y) ?? rail?.roadBridgeAtHead(x, y);
+    // Silnice nad tunelem leží na terénu; v portálu tunelu rovně ve výšce portálu
+    const over = rail?.roadBridgeOver(x, y);
+    const bridge = (over?.tunnel ? undefined : over) ?? rail?.roadBridgeAtHead(x, y);
     return bridge ? map.elevation(bridge.x, bridge.y) : map.heightAt(px, pz);
   };
 }

@@ -206,6 +206,11 @@ export class GameMap {
     return this.changeLog.slice(cursor - this.logStart);
   }
 
+  // Ohlásí změnu dlaždice bez změny jejího druhu (např. nový portál tunelu na existující silnici)
+  touch(x: number, y: number): void {
+    if (this.inBounds(x, y)) this.record(y * this.width + x);
+  }
+
   private record(index: number): void {
     this.changeLog.push(index);
     if (this.changeLog.length > MAX_CHANGE_LOG) {

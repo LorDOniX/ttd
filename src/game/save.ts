@@ -39,6 +39,7 @@ import { GameMap, MAX_HEIGHT, TileType } from '../world/map';
 import {
   RailNetwork,
   PIECES,
+  bridgeEnd,
   stationTiles,
   type Depot,
   type Edge,
@@ -406,7 +407,9 @@ export function restoreGame(data: SaveData): Game {
     if (Number.isInteger(tile) && tile >= 0 && tile < width * height) rail.signals.add(tile);
   }
   // Mosty: neplatné (mimo mapu, křížící se, nad stavbou) se zahodí
-  const bridgeHeads = (list: unknown): { id: number; x0: number; y0: number; x1: number; y1: number }[] =>
+  const bridgeHeads = (
+    list: unknown,
+  ): { id: number; x0: number; y0: number; x1: number; y1: number; tunnel: boolean }[] =>
     (Array.isArray(list) ? (list as RailBridge[]) : []).flatMap((b) => {
       if (!isObject(b) || ![b.x, b.y, b.dir, b.span].every((n) => Number.isInteger(n))) return [];
       if (b.dir < 0 || b.dir > 3) return [];
@@ -416,13 +419,36 @@ export function restoreGame(data: SaveData): Game {
         [0, 1],
         [-1, 0],
       ][b.dir];
-      return [{ id: b.id, x0: b.x, y0: b.y, x1: b.x + (b.span + 1) * dx, y1: b.y + (b.span + 1) * dy }];
+      return [
+        {
+          id: b.id,
+          x0: b.x,
+          y0: b.y,
+          x1: b.x + (b.span + 1) * dx,
+          y1: b.y + (b.span + 1) * dy,
+          tunnel: b.tunnel === true,
+        },
+      ];
     });
+  // Tunel se obnoví jen tehdy, když terén pořád vede k témuž protějšímu portálu
+  const sameTunnel = (b: { x0: number; y0: number; x1: number; y1: number }, road: boolean): boolean => {
+    const shape = rail.tunnelShape(b.x0, b.y0, road);
+    if (typeof shape === 'string') return false;
+    const end = bridgeEnd(shape);
+    return end.x === b.x1 && end.y === b.y1;
+  };
   for (const b of bridgeHeads(data.rail.bridges)) {
-    if (rail.bridgeProblem(b.x0, b.y0, b.x1, b.y1) === null) rail.addBridge(b.x0, b.y0, b.x1, b.y1).id = b.id;
+    if (b.tunnel) {
+      const type = rail.buildType;
+      rail.buildType = rail.railTypeAt(b.x0, b.y0);
+      if (sameTunnel(b, false)) rail.addTunnel(b.x0, b.y0).id = b.id;
+      rail.buildType = type;
+    } else if (rail.bridgeProblem(b.x0, b.y0, b.x1, b.y1) === null) rail.addBridge(b.x0, b.y0, b.x1, b.y1).id = b.id;
   }
   for (const b of bridgeHeads(data.rail.roadBridges)) {
-    if (rail.roadBridgeProblem(b.x0, b.y0, b.x1, b.y1, false) === null) {
+    if (b.tunnel) {
+      if (sameTunnel(b, true)) rail.addRoadTunnel(b.x0, b.y0).id = b.id;
+    } else if (rail.roadBridgeProblem(b.x0, b.y0, b.x1, b.y1, false) === null) {
       rail.addRoadBridge(b.x0, b.y0, b.x1, b.y1).id = b.id;
     }
   }

@@ -1,7 +1,7 @@
 import type { GameMap } from '../world/map';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { TileType } from '../world/map';
+import { HEIGHT_STEP, TileType } from '../world/map';
 import {
   EDGE_DELTA,
   EDGE_MID,
@@ -9,6 +9,8 @@ import {
   PIECES,
   RailNetwork,
   RailType,
+  bridgeEnd,
+  opposite,
   isCorner,
   stationTiles,
   type Axis,
@@ -306,6 +308,7 @@ function pieceMatrix(
   lift: number,
   target: THREE.Matrix4,
   map?: GameMap,
+  flat = false,
 ): THREE.Matrix4 {
   const [a, b] = PIECES[piece];
   const [ax, az] = EDGE_MID[a];
@@ -314,6 +317,7 @@ function pieceMatrix(
   const cx = x + (ax + bx) / 2;
   const cz = y + (az + bz) / 2;
   if (!map) return target.makeRotationY(angle).setPosition(cx, 0.002 + lift, cz);
+  if (flat) return target.makeRotationY(angle).setPosition(cx, map.elevation(x, y) + 0.002 + lift, cz);
   const ha = map.heightAt(x + ax, y + az);
   const hb = map.heightAt(x + bx, y + bz);
   target.makeRotationY(angle).setPosition(cx, (ha + hb) / 2 + 0.002 + lift, cz);
@@ -331,6 +335,8 @@ export interface TrackItem {
   bridge?: boolean;
   // Druh koleje; bez údaje železnice
   type?: RailType;
+  // Portál tunelu: kolej vede rovně ve výšce portálu, ne po svahu
+  flat?: boolean;
 }
 
 const RAIL_TYPES = [RailType.Rail, RailType.Monorail, RailType.Maglev] as const;
@@ -397,7 +403,10 @@ export class TrackView {
     const m = new THREE.Matrix4();
     items.forEach((item, i) => {
       const lift = item.bridge && !deck ? BRIDGE_DECK : 0;
-      mesh.setMatrixAt(i, pieceMatrix(item.x, item.y, item.piece, deck ? -0.002 : lift, m, this.map));
+      mesh.setMatrixAt(
+        i,
+        pieceMatrix(item.x, item.y, item.piece, deck ? -0.002 : lift, m, this.map, item.flat === true),
+      );
     });
     mesh.count = items.length;
     mesh.instanceMatrix.needsUpdate = true;
@@ -412,16 +421,62 @@ export function networkTrack(rail: RailNetwork): TrackItem[] {
   rail.pieces.forEach((mask, i) => {
     const x = i % width;
     const y = Math.floor(i / width);
-    // Kolej na nájezdu mostu je součástí mostu
-    if (mask !== 0 && rail.bridges.length > 0 && rail.bridgeAtHead(x, y)) return;
+    // Kolej na nájezdu mostu je součástí mostu; v portálu tunelu vede rovně
+    const head = mask !== 0 && rail.bridges.length > 0 ? rail.bridgeAtHead(x, y) : undefined;
+    if (head && !head.tunnel) return;
+    const flat = head?.tunnel === true;
     const crossing = mask !== 0 && rail.map.get(x, y) === TileType.Crossing;
     const bridge = mask !== 0 && rail.map.get(x, y) === TileType.Bridge;
     const type = rail.railType[i] as RailType;
     for (let piece = 0; mask >> piece; piece++) {
-      if (mask & (1 << piece)) items.push({ x, y, piece, crossing, bridge, ...(type ? { type } : {}) });
+      if (mask & (1 << piece)) {
+        items.push({ x, y, piece, crossing, bridge, ...(type ? { type } : {}), ...(flat ? { flat } : {}) });
+      }
     }
   });
   return items;
+}
+
+const PORTAL_STONE = new THREE.MeshLambertMaterial({ color: 0x9a9184, side: THREE.DoubleSide });
+const PORTAL_MOUTH = new THREE.MeshBasicMaterial({ color: 0x141414 });
+const PORTAL_HEIGHT = HEIGHT_STEP + 0.12;
+// Boční opěrná zeď portálu: trojúhelník od vnějšího okraje dlaždice (0) po vnitřní (výška svahu)
+const PORTAL_SIDE = new THREE.BufferGeometry().setAttribute(
+  'position',
+  new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, HEIGHT_STEP + 0.02, 0], 3),
+);
+PORTAL_SIDE.computeVertexNormals();
+
+// Portál tunelu na dlaždici (x, y) ve výšce level: čelní zeď s tmavým ústím na vnitřní hraně (inner)
+// a boční zdi, které zakryjí svah kolem zaříznutého portálu
+export function createTunnelPortal(x: number, y: number, inner: Edge, ground: number): THREE.Group {
+  const group = new THREE.Group();
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(0.08, PORTAL_HEIGHT, 1), PORTAL_STONE);
+  wall.position.set(0.46, PORTAL_HEIGHT / 2, 0);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.3, 0.52), PORTAL_MOUTH);
+  mouth.position.set(0.415, 0.15, 0);
+  group.add(wall, mouth);
+  for (const side of [-0.5, 0.5]) {
+    const sideWall = new THREE.Mesh(PORTAL_SIDE, PORTAL_STONE);
+    sideWall.position.z = side;
+    group.add(sideWall);
+  }
+  group.position.set(x + 0.5, ground, y + 0.5);
+  // Místní osa +x míří k vnitřní hraně (do kopce)
+  group.rotation.y = [Math.PI / 2, 0, -Math.PI / 2, Math.PI][inner];
+  return group;
+}
+
+// Oba portály tunelu
+export function createTunnelPortals(tunnel: RailBridge, map: GameMap): THREE.Group {
+  const group = new THREE.Group();
+  const end = bridgeEnd(tunnel);
+  const ground = map.elevation(tunnel.x, tunnel.y);
+  group.add(
+    createTunnelPortal(tunnel.x, tunnel.y, tunnel.dir, ground),
+    createTunnelPortal(end.x, end.y, opposite(tunnel.dir), ground),
+  );
+  return group;
 }
 
 // Nástupiště libovolné velikosti z dílků; přístřešek nad prostředním dílkem každé koleje
@@ -505,10 +560,14 @@ export class RailView {
       placeDepot(mesh, d.x, d.y, d.entrance);
       this.structures.add(this.placed(mesh, d.x, d.y));
     }
-    for (const b of this.rail.bridges)
-      this.structures.add(this.placed(createRailBridgeObject(b, this.material), b.x, b.y));
+    for (const b of [...this.rail.bridges, ...this.rail.roadBridges]) {
+      if (b.tunnel) this.structures.add(createTunnelPortals(b, this.rail.map));
+    }
+    for (const b of this.rail.bridges) {
+      if (!b.tunnel) this.structures.add(this.placed(createRailBridgeObject(b, this.material), b.x, b.y));
+    }
     for (const b of this.rail.roadBridges) {
-      this.structures.add(this.placed(createRailBridgeObject(b, this.material, true), b.x, b.y));
+      if (!b.tunnel) this.structures.add(this.placed(createRailBridgeObject(b, this.material, true), b.x, b.y));
     }
   }
 }

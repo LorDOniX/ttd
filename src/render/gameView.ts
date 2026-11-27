@@ -137,7 +137,7 @@ export class GameView {
     this.sun.position.set(10, 20, 5);
     scene.add(this.sun);
 
-    this.terrain = new TerrainView(map, towns);
+    this.terrain = new TerrainView(map, towns, (x, y) => world.rail.tunnelAtPortal(x, y) !== undefined);
     const roads = (this.roads = new RoadView(map, world.rail));
     this.nightLights = new NightLightsView(map.width, map.height, map);
     this.nightLights.light(this.terrain.groundMaterial, ...roads.groundMaterials);

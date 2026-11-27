@@ -10,6 +10,7 @@ import {
   PLATFORM_TILE_COST,
   PORT_COST,
   ROAD_BRIDGE_COST,
+  TUNNEL_PIECE_COST,
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
   ROAD_TILE_COST,
@@ -79,6 +80,8 @@ type RailKind = 'rail' | 'electric' | 'monorail' | 'maglev';
 export type BuildTool =
   | 'track'
   | 'bridge'
+  | 'tunnel'
+  | 'road-tunnel'
   | 'station'
   | 'depot'
   | 'signal'
@@ -314,6 +317,7 @@ export class BuildTools {
         ['station', '🚉', 'Nástupiště', 'N', `${formatMoneyShort(PLATFORM_TILE_COST)} / dílek`],
         ['depot', '🏭', 'Depo', 'D', formatMoneyShort(DEPOT_COST)],
         ['bridge', '🌉', 'Most', 'J', `${formatMoneyShort(BRIDGE_PIECE_COST)} / pole`],
+        ['tunnel', '🚇', 'Tunel', '—', `${formatMoneyShort(TUNNEL_PIECE_COST)} / pole`],
         ['signal', '🚦', 'Návěstidla', 'B', `${formatMoneyShort(SIGNAL_COST)} / kus`],
         ['waypoint', '🚩', 'Průjezdný bod', 'C', formatMoneyShort(WAYPOINT_COST)],
         ['electrify', '⚡', 'Elektrizace', '—', `${formatMoneyShort(ELECTRIFY_TILE_COST)} / pole`],
@@ -323,6 +327,8 @@ export class BuildTools {
         'tažením rovný úsek nebo úhlopříčku podle směru tažení. Ctrl/Cmd odebírá koleje, Shift ukáže jen cenu. ' +
         'Depo se samo napojí na kolej před vjezdem. Nástupiště: rozměr a orientace v okně, nebo Drag & Drop. ' +
         'Most: táhněte od nájezdu k nájezdu přes koleje, silnice, vodu i trávu, provoz pod ním zůstane. ' +
+        'Tunel: klikněte na svah, kde má být portál; tunel se prokope rovně do kopce k protějšímu svahu ' +
+        've stejné výšce. ' +
         'Návěstidla dělí trať na úseky, aby za sebou mohlo jet víc vlaků. Průjezdný bod na rovné koleji ' +
         'lze dát do jízdního řádu: vlak jím projede bez zastavení (vybere tak trasu); kliknutím na bod ho odstraníte. ' +
         'Elektrizace natáhne trolejové vedení tažením po trati z koleje na kolej (mimo kolej v obdélníku; ' +
@@ -396,11 +402,13 @@ export class BuildTools {
         ['road-stop', '🚏', 'Zastávka', 'Z', formatMoneyShort(ROAD_STOP_COST)],
         ['road-depot', '🏠', 'Garáž', 'U', formatMoneyShort(ROAD_DEPOT_COST)],
         ['road-bridge', '🌉', 'Most', '—', `${formatMoneyShort(ROAD_BRIDGE_COST)} / pole`],
+        ['road-tunnel', '🚇', 'Tunel', '—', `${formatMoneyShort(TUNNEL_PIECE_COST)} / pole`],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Silnice a demolice: táhněte levým tlačítkem. Zastávka aut jde na rovnou silnici bez křižovatky, ' +
         'garáž se natočí vjezdem k silnici. Most: táhněte od nájezdu k nájezdu přes koleje, silnice, vodu ' +
         'i trávu; nájezd je volná země nebo silnice bez křižovatky a provoz pod mostem zůstane. ' +
+        'Tunel: klikněte na svah, kde má být portál, tunel vede rovně k protějšímu svahu ve stejné výšce. ' +
         'R – otočit garáž, Esc – zrušit nástroj.',
     );
   }
@@ -852,6 +860,11 @@ export class BuildTools {
       this.updatePath();
     } else if (this.tool === 'waypoint') {
       this.report(this.game.construction.toggleWaypoint(tile.x, tile.y));
+    } else if (this.tool === 'tunnel' || this.tool === 'road-tunnel') {
+      if (this.tool === 'tunnel') this.applyRailKind();
+      if (!this.estimateMode) {
+        this.report(this.game.construction.buildTunnel(tile.x, tile.y, this.tool === 'road-tunnel'));
+      }
     } else if (this.tool === 'road-stop') {
       this.placeStation([tile], (join) => this.game.construction.buildRoadStop(tile.x, tile.y, join));
     } else if (this.tool === 'port') {
@@ -1471,6 +1484,21 @@ export class BuildTools {
             (this.removeMode
               ? `sundat vedení z ${count} polí · vrátí ${formatMoneyShort(-cost)}`
               : `trolejové vedení na ${count} polích · ${formatMoneyShort(cost)}`);
+    } else if ((this.tool === 'tunnel' || this.tool === 'road-tunnel') && tile) {
+      const plan = this.game.construction.tunnelPlan(tile.x, tile.y, this.tool === 'road-tunnel');
+      if (plan.tunnel) {
+        const [dx, dy] = EDGE_DELTA[plan.tunnel.dir];
+        const tiles = Array.from({ length: plan.tunnel.span + 2 }, (_, i) => ({
+          x: plan.tunnel!.x + i * dx,
+          y: plan.tunnel!.y + i * dy,
+        }));
+        const affordable = this.game.money >= plan.cost;
+        this.preview.showArea(tiles, affordable ? 'valid' : 'invalid');
+        text = `Tunel ${plan.tunnel.span} polí · ${formatMoneyShort(plan.cost)}${affordable ? '' : ' · nedostatek peněz'}`;
+      } else {
+        this.preview.showArea([tile], 'invalid');
+        text = plan.problem ?? '';
+      }
     } else if (terraformMode(this.tool) && tile) {
       const terraform = this.terraformTarget();
       if (terraform) {

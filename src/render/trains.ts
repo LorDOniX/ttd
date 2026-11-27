@@ -5,7 +5,7 @@ import { loadOf, wagonCargos } from '../game/consist';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { trainModel, type Fleet, type Train } from '../game/trains';
 import { TileType, type GameMap } from '../world/map';
-import { groundAt, heightAt, pointAt } from '../world/route';
+import { groundAt, heightAt, inTunnelAt, pointAt } from '../world/route';
 import type { RailNetwork } from '../world/rail';
 import { inView, type ViewFrustums } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
@@ -239,6 +239,7 @@ export class TrainsView {
       vehicle.visible =
         center > 0 &&
         !(i === 0 && train.id === this.cabTrain) &&
+        !inTunnelAt(this.rail, train.path, center) &&
         this.map.get(Math.floor(x), Math.floor(z)) !== TileType.Depot &&
         inView(frustum, x, y, z, VEHICLE_LENGTH);
     }
