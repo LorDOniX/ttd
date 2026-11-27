@@ -1009,3 +1009,9 @@ export const SUBSIDY_MAX_TRANSPORTED = 0.42;
 
 // Cargodist: odhad kapacity linky za měsíc počítá s takovým staním na každé zastávce (dny)
 export const CARGO_DIST_STOP_DAYS = 2;
+// Vzdálenost snižuje poptávku: cíl takto daleko (dlaždice) má poloviční váhu
+export const CARGO_DIST_DISTANCE_SCALE = 100;
+// Poptávka se do sítě rozkládá po tolika dávkách; přetížené spojení se prodraží o tolik násobků délky
+// na každou kapacitu navíc
+export const CARGO_DIST_ROUNDS = 4;
+export const CARGO_DIST_OVERLOAD_PENALTY = 2;

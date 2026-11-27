@@ -1,11 +1,19 @@
-import { CARGO_DIST_STOP_DAYS } from './balance';
+import {
+  CARGO_DIST_DISTANCE_SCALE,
+  CARGO_DIST_OVERLOAD_PENALTY,
+  CARGO_DIST_ROUNDS,
+  CARGO_DIST_STOP_DAYS,
+} from './balance';
 import type { Cargo } from './cargo';
 import { cargoCapacity, consistCargos, wagonCapacity } from './consist';
 import type { Game } from './game';
+import { inflowFactor } from './rating';
 import { aircraftCapacity, aircraftCargo, aircraftModel } from './aircraft';
 import { roadVehicleModel, vehicleCapacity, vehicleCargo } from './roadVehicles';
 import { shipCapacity, shipCargo, shipModel } from './ships';
 import { isSpecialOrder, orderFlags, refitLoadStops, trainModel, type Train } from './trains';
+import { MinHeap } from '../world/heap';
+import { INDUSTRY_TYPES } from '../world/industry';
 import { poolId, type RailNetwork, type Station } from '../world/rail';
 
 const DAYS_PER_MONTH = 30;
@@ -200,10 +208,171 @@ export function graphLinks(graph: LinkGraph): Link[] {
   return [...graph.values()].flatMap((links) => [...links.values()]);
 }
 
-// Distribuce nákladu: graf linek pro druhy nákladu, které se nerozvážejí ručně
+// Nabídka a cíle pro výpočet poptávky jednoho druhu nákladu
+export interface DemandInput {
+  // Měsíční nabídka stanice (hlavní části)
+  supply: ReadonlyMap<number, number>;
+  // Stanice, které náklad přijímají (smí být cílem)
+  accepts: ReadonlySet<number>;
+  // Poloha stanice pro vliv vzdálenosti
+  positions: ReadonlyMap<number, { x: number; y: number }>;
+}
+
+// Poptávka: zdroj → cíl → měsíční množství
+export type Demand = Map<number, Map<number, number>>;
+
+// Toky: stanice → cíl → další zastávka → měsíční množství
+export type Flows = Map<number, Map<number, Map<number, number>>>;
+
+// Stanice dosažitelné ze stanice po grafu
+export function reachable(graph: LinkGraph, from: number): Set<number> {
+  const seen = new Set([from]);
+  const queue = [from];
+  while (queue.length > 0) {
+    const at = queue.pop()!;
+    for (const to of graph.get(at)?.keys() ?? []) {
+      if (!seen.has(to)) {
+        seen.add(to);
+        queue.push(to);
+      }
+    }
+  }
+  seen.delete(from);
+  return seen;
+}
+
+// Poptávka jako v OpenTTD: nabídka zdroje se rozdělí mezi dosažitelné cíle, které náklad přijímají.
+// Symetricky podle nabídky cíle (velká města přitahují víc cestujících), asymetricky rovným dílem;
+// vzdálenost váhu cíle snižuje
+export function computeDemand(graph: LinkGraph, input: DemandInput, mode: DistributionMode): Demand {
+  const demand: Demand = new Map();
+  if (mode === 'manual') return demand;
+  for (const [source, supply] of input.supply) {
+    if (supply <= 0 || !graph.has(source)) continue;
+    const from = input.positions.get(source);
+    const weights = new Map<number, number>();
+    for (const dest of reachable(graph, source)) {
+      if (!input.accepts.has(dest)) continue;
+      const base = mode === 'symmetric' ? (input.supply.get(dest) ?? 0) : 1;
+      const to = input.positions.get(dest);
+      const d = from && to ? distance(from, to) : 0;
+      const weight = base / (1 + d / CARGO_DIST_DISTANCE_SCALE);
+      if (weight > 0) weights.set(dest, weight);
+    }
+    const total = [...weights.values()].reduce((sum, w) => sum + w, 0);
+    if (total <= 0) continue;
+    demand.set(source, new Map([...weights].map(([dest, w]) => [dest, (supply * w) / total])));
+  }
+  return demand;
+}
+
+// Nejkratší cesty ze stanice; cena spojení je délka, přetížené spojení se prodraží
+function shortestTree(graph: LinkGraph, from: number, load?: ReadonlyMap<Link, number>): Map<number, number> {
+  const cost = new Map<number, number>([[from, 0]]);
+  const previous = new Map<number, number>();
+  const ids = new Map<number, number>();
+  const nodes: number[] = [];
+  const index = (node: number): number => {
+    let i = ids.get(node);
+    if (i === undefined) {
+      i = nodes.length;
+      ids.set(node, i);
+      nodes.push(node);
+    }
+    return i;
+  };
+  const heap = new MinHeap();
+  heap.push(index(from), 0);
+  const done = new Set<number>();
+  while (heap.size > 0) {
+    const at = nodes[heap.pop()];
+    if (done.has(at)) continue;
+    done.add(at);
+    for (const link of graph.get(at)?.values() ?? []) {
+      const used = load?.get(link) ?? 0;
+      const over = link.capacity > 0 ? used / link.capacity : 1;
+      const step = Math.max(1, link.distance) * (1 + CARGO_DIST_OVERLOAD_PENALTY * Math.max(0, over - 1) + 0.01 * over);
+      const next = cost.get(at)! + step;
+      if (next < (cost.get(link.to) ?? Infinity)) {
+        cost.set(link.to, next);
+        previous.set(link.to, at);
+        heap.push(index(link.to), next);
+      }
+    }
+  }
+  return previous;
+}
+
+// Cesta ze stromu nejkratších cest: zdroj, …, cíl (prázdná, když cíl není dosažitelný)
+function treePath(previous: ReadonlyMap<number, number>, from: number, to: number): number[] {
+  const path = [to];
+  let at = to;
+  while (at !== from) {
+    const prev = previous.get(at);
+    if (prev === undefined) return [];
+    path.push(prev);
+    at = prev;
+  }
+  return path.reverse();
+}
+
+// Další zastávka po nejkratší cestě ze stanice k cíli, nebo undefined (cíl je nedosažitelný)
+export function shortestNextHop(graph: LinkGraph, from: number, to: number): number | undefined {
+  if (from === to) return undefined;
+  const path = treePath(shortestTree(graph, from), from, to);
+  return path.length > 1 ? path[1] : undefined;
+}
+
+// Toky jako zjednodušený multikomoditní tok v OpenTTD: poptávka se rozkládá po dávkách po nejkratších
+// cestách a každá dávka vidí zatížení spojení předchozími, takže přetížené spojení si náklad najde objížďku
+export function computeFlows(graph: LinkGraph, demand: Demand): Flows {
+  const flows: Flows = new Map();
+  const load = new Map<Link, number>();
+  const add = (station: number, dest: number, next: number, amount: number): void => {
+    const byDest = flows.get(station) ?? new Map<number, Map<number, number>>();
+    flows.set(station, byDest);
+    const byNext = byDest.get(dest) ?? new Map<number, number>();
+    byDest.set(dest, byNext);
+    byNext.set(next, (byNext.get(next) ?? 0) + amount);
+  };
+  for (let round = 0; round < CARGO_DIST_ROUNDS; round++) {
+    for (const [source, dests] of demand) {
+      const previous = shortestTree(graph, source, load);
+      for (const [dest, amount] of dests) {
+        const path = treePath(previous, source, dest);
+        if (path.length < 2) continue;
+        const part = amount / CARGO_DIST_ROUNDS;
+        for (let i = 0; i + 1 < path.length; i++) {
+          add(path[i], dest, path[i + 1], part);
+          const link = graph.get(path[i])!.get(path[i + 1])!;
+          load.set(link, (load.get(link) ?? 0) + part);
+        }
+      }
+    }
+  }
+  return flows;
+}
+
+// Poptávka a toky jednoho druhu nákladu; platí pro graf s daným klíčem (seznamem spojení)
+interface CargoPlan {
+  key: string;
+  demand: Demand;
+  flows: Flows;
+}
+
+function graphKey(graph: LinkGraph): string {
+  return graphLinks(graph)
+    .map((l) => `${l.from}>${l.to}`)
+    .sort()
+    .join(',');
+}
+
+// Distribuce nákladu: graf linek, poptávka a toky pro druhy nákladu, které se nerozvážejí ručně.
+// Graf se staví znovu po změně vozidel a řádů; poptávka a toky každý měsíc a po změně spojení
 export class CargoDist {
   settings: DistributionSettings = manualDistribution();
   private graphs: Map<Cargo, LinkGraph> | null = null;
+  private plans = new Map<Cargo, CargoPlan>();
 
   constructor(private readonly game: Game) {
     const invalidate = (): void => {
@@ -218,7 +387,10 @@ export class CargoDist {
     ] as const) {
       game.events.on(event, invalidate);
     }
-    game.clock.events.on('month', invalidate);
+    game.clock.events.on('month', () => {
+      this.graphs = null;
+      this.plans.clear();
+    });
   }
 
   mode(cargo: Cargo): DistributionMode {
@@ -234,6 +406,7 @@ export class CargoDist {
     if (!distributionModes(kind).includes(mode)) return;
     (this.settings as unknown as Record<string, DistributionMode>)[kind] = mode;
     this.graphs = null;
+    this.plans.clear();
     this.game.events.emit('stationsChanged');
   }
 
@@ -250,5 +423,76 @@ export class CargoDist {
   // Spojení ze stanice (hlavní části) pro daný náklad
   linksFrom(station: Station, cargo: Cargo): Link[] {
     return [...(this.graph(cargo).get(poolId(station))?.values() ?? [])];
+  }
+
+  // Měsíční nabídka stanice: cestující a pošta z měst v dosahu, náklad z obsluhovaných závodů
+  supply(station: Station, cargo: Cargo): number {
+    const { game } = this;
+    const primary = game.world.rail.primaryOf(station);
+    const factor = inflowFactor(primary.ratings[cargo].rating);
+    if (cargo === 'passengers') return game.passengers.inflow(primary);
+    if (cargo === 'mail') return game.freight.monthlyMail(primary) * factor;
+    let sum = 0;
+    for (const industry of game.freight.industriesInReach(primary)) {
+      if (INDUSTRY_TYPES[industry.kind].produces !== cargo) continue;
+      const pickup = game.freight.pickupStations(industry);
+      if (pickup.some((s) => s.id === primary.id)) sum += (industry.production / pickup.length) * factor;
+    }
+    return sum;
+  }
+
+  // Smí být stanice cílem nákladu? Cestující jedou do měst, ostatní náklad tam, kde se vykupuje
+  accepts(station: Station, cargo: Cargo): boolean {
+    const primary = this.game.world.rail.primaryOf(station);
+    if (cargo === 'passengers') return this.game.passengers.townsInReach(primary).length > 0;
+    return this.game.freight.accepted(primary).includes(cargo);
+  }
+
+  private plan(cargo: Cargo): CargoPlan {
+    const graph = this.graph(cargo);
+    // Klíč i s volbou distribuce: nastavení jde přiřadit i přímo (načtení hry)
+    const key = `${this.mode(cargo)}|${graphKey(graph)}`;
+    const cached = this.plans.get(cargo);
+    if (cached && cached.key === key) return cached;
+    const { rail } = this.game.world;
+    const supply = new Map<number, number>();
+    const accepts = new Set<number>();
+    const positions = new Map<number, { x: number; y: number }>();
+    const nodes = new Set([...graph.keys(), ...graphLinks(graph).map((l) => l.to)]);
+    for (const id of nodes) {
+      const station = rail.stations.find((s) => s.id === id);
+      if (!station) continue;
+      supply.set(id, this.supply(station, cargo));
+      if (this.accepts(station, cargo)) accepts.add(id);
+      positions.set(id, { x: station.x, y: station.y });
+    }
+    const demand = computeDemand(graph, { supply, accepts, positions }, this.mode(cargo));
+    const plan = { key, demand, flows: computeFlows(graph, demand) };
+    this.plans.set(cargo, plan);
+    return plan;
+  }
+
+  // Měsíční poptávka ze stanice podle cíle (prázdná při ruční distribuci)
+  demandFrom(station: Station, cargo: Cargo): Map<number, number> {
+    if (!this.enabled(cargo)) return new Map();
+    return this.plan(cargo).demand.get(poolId(station)) ?? new Map();
+  }
+
+  // Plánované toky přes stanici: cíl → další zastávka → měsíční množství
+  flowsAt(station: Station, cargo: Cargo): Map<number, Map<number, number>> {
+    if (!this.enabled(cargo)) return new Map();
+    return this.plan(cargo).flows.get(poolId(station)) ?? new Map();
+  }
+
+  // Podíly dalších zastávek pro náklad ze stanice k cíli: podle toků, jinak nejkratší cesta;
+  // prázdné, když cíl není po síti dosažitelný
+  nextHops(station: Station, cargo: Cargo, dest: number): Map<number, number> {
+    const from = poolId(station);
+    if (from === dest) return new Map();
+    const planned = this.flowsAt(station, cargo).get(dest);
+    const total = planned ? [...planned.values()].reduce((sum, v) => sum + v, 0) : 0;
+    if (planned && total > 0) return new Map([...planned].map(([next, v]) => [next, v / total]));
+    const next = shortestNextHop(this.graph(cargo), from, dest);
+    return next === undefined ? new Map() : new Map([[next, 1]]);
   }
 }

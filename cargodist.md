@@ -19,12 +19,12 @@ jako dosud.
 - [x] Testy, commit
 
 ## 2. Poptávka a toky
-- [ ] Nabídka stanice za měsíc (cestující, pošta, výroba závodů v dosahu)
-- [ ] Poptávka: symetricky podle nabídky cíle (tam i zpět), asymetricky ke stanicím, které náklad vykupují;
+- [x] Nabídka stanice za měsíc (cestující, pošta, výroba závodů v dosahu)
+- [x] Poptávka: symetricky podle nabídky cíle (tam i zpět), asymetricky ke stanicím, které náklad vykupují;
       vzdálenost poptávku mírně snižuje; jen cíle dosažitelné po grafu
-- [ ] Toky: cesta po grafu (nejkratší, přetížená spojení se prodražují, poptávka se rozkládá po dávkách),
+- [x] Toky: cesta po grafu (nejkratší, přetížená spojení se prodražují, poptávka se rozkládá po dávkách),
       výsledek pro stanici a cíl = podíly dalších zastávek
-- [ ] Přepočet měsíčně a po změně grafu, testy, commit
+- [x] Přepočet měsíčně a po změně grafu, testy, commit
 
 ## 3. Náklad s cílem
 - [ ] Čerstvý náklad na stanici rozdělený podle další zastávky a cíle (součet = `waiting` / `freight`),
