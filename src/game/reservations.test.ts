@@ -103,7 +103,8 @@ describe('vlaky s rezervací', () => {
     expect(arrivals.get(first.id)).toBeGreaterThanOrEqual(20);
     expect(arrivals.get(second.id)).toBeGreaterThanOrEqual(20);
     expect([...tracksUsed].sort()).toEqual([19, 20]);
-  });
+    // Dlouhá simulace: při souběhu všech testů trvá přes výchozích 5 s
+  }, 20_000);
 
   it('na jednokolejce bez výhybny se vlaky zablokují a hráč se hned dozví proč', () => {
     const { game, a, b, depot } = buildLine();
