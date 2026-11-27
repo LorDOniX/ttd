@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { destTotal, transferWaiting, type Carrier } from './cargo';
 import { newGameDistribution } from './cargodist';
 import type { Game } from './game';
+import { parseSave, restoreGame, serializeGame } from './save';
 import { ROAD_VEHICLE_MODELS, TRAIN_MODELS } from './balance';
 import type { Train } from './trains';
 import { addBuilding, addIndustry, buildLine, buyTrain, emptyGame, makeTown, runDays } from '../test/fixtures';
@@ -196,5 +197,59 @@ describe('cargodist: náklad s cílem', () => {
     }
     expect(destined).toBe(true);
     expect(bus.income).toBeGreaterThan(0);
+  });
+
+  it('uložení zachová cíle na palubě, plán stanic i cíle balíků z překládky', () => {
+    const { game, a, b, c, line1 } = twoLines();
+    a.waiting = 40;
+    game.cargodist.addFresh(a, 'passengers', 40);
+    game.passengers.exchange(line1, hold(b.id), a, false, { load: 'none' });
+    a.waiting = 20;
+    game.cargodist.addFresh(a, 'passengers', 20);
+    game.passengers.exchange(line1, hold(b.id), a);
+    const dests = { ...line1.dests };
+    expect(Object.keys(dests).length).toBe(2);
+    b.waiting = 0;
+    game.passengers.exchange(line1, hold(a.id), b, false, { load: 'none' });
+    a.waiting = 10;
+    game.cargodist.addFresh(a, 'passengers', 10);
+    const restored = restoreGame(parseSave(JSON.stringify(serializeGame(game, 'cd'))));
+    const ra = restored.world.rail.stations.find((s) => s.id === a.id)!;
+    const rb = restored.world.rail.stations.find((s) => s.id === b.id)!;
+    expect(ra.planned).toEqual(a.planned);
+    expect(rb.transfers!.passengers!.map((p) => p.dest)).toEqual(b.transfers!.passengers!.map((p) => p.dest));
+    expect(rb.transfers!.passengers!.every((p) => p.dest === c.id)).toBe(true);
+    // Na palubě: naložení cestující s cíli
+    const train = restored.fleet.trains.find((t) => t.id === line1.id)!;
+    expect(train.dests).toEqual(line1.dests);
+    expect(restored.cargodist.settings).toEqual(newGameDistribution());
+  });
+
+  it('balík z překládky k cíli, kam už nic nejede, po měsíci ztratí cíl a nastoupí do čehokoli', () => {
+    const { game, a, b, c, line2 } = twoLines();
+    a.waiting = 30;
+    game.cargodist.addFresh(a, 'passengers', 30);
+    const train = carrier('Vlak');
+    game.passengers.exchange(train, hold(b.id), a);
+    game.passengers.exchange(train, hold(a.id), b, false, { load: 'none' });
+    expect(b.transfers!.passengers![0].dest).toBe(c.id);
+    line2.state = 'depot';
+    game.events.emit('trainsChanged');
+    game.clock.events.emit('month', game.clock.date);
+    expect(b.transfers!.passengers![0].dest).toBeUndefined();
+    const back = carrier('Zpět');
+    b.waiting = 0;
+    game.passengers.exchange(back, hold(a.id), b);
+    expect(back.passengers).toBeGreaterThan(0);
+  });
+
+  it('přepnutí na ručně zahodí plán stanic', () => {
+    const { game, a } = twoLines();
+    a.waiting = 30;
+    game.cargodist.addFresh(a, 'passengers', 30);
+    expect(a.planned!.passengers).toBeDefined();
+    game.cargodist.setMode('passengers', 'manual');
+    expect(a.planned!.passengers).toBeUndefined();
+    expect(a.waiting).toBe(30);
   });
 });

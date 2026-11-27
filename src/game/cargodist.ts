@@ -4,7 +4,15 @@ import {
   CARGO_DIST_ROUNDS,
   CARGO_DIST_STOP_DAYS,
 } from './balance';
-import { destTotal, trimDests, type Cargo, type Carrier, type DestSplit, type LoadRoute } from './cargo';
+import {
+  destTotal,
+  trimDests,
+  type Cargo,
+  type Carrier,
+  type DestSplit,
+  type LoadRoute,
+  type TransferPacket,
+} from './cargo';
 import { cargoCapacity, consistCargos, wagonCapacity } from './consist';
 import type { Game } from './game';
 import { inflowFactor } from './rating';
@@ -390,6 +398,7 @@ export class CargoDist {
     game.clock.events.on('month', () => {
       this.graphs = null;
       this.plans.clear();
+      this.dropUnreachable();
     });
   }
 
@@ -407,7 +416,28 @@ export class CargoDist {
     (this.settings as unknown as Record<string, DistributionMode>)[kind] = mode;
     this.graphs = null;
     this.plans.clear();
+    // Ručně se čerstvý náklad nerozděluje: plán stanic se zahodí (náklad zůstane, jen bez cíle)
+    if (mode === 'manual') {
+      for (const station of this.game.world.rail.primaries()) {
+        for (const cargo of Object.keys(station.planned ?? {}) as Cargo[]) {
+          if (distributionClass(cargo) === kind) delete station.planned![cargo];
+        }
+      }
+    }
     this.game.events.emit('stationsChanged');
+  }
+
+  // Náklad z překládek, jehož cíl už po síti není dosažitelný, ztratí cíl (nastoupí do čehokoli
+  // a doručí se jako dosud)
+  private dropUnreachable(): void {
+    for (const station of this.game.world.rail.primaries()) {
+      for (const [cargo, packets] of Object.entries(station.transfers ?? {}) as [Cargo, TransferPacket[]][]) {
+        if (!this.enabled(cargo)) continue;
+        for (const packet of packets) {
+          if (packet.dest !== undefined && this.nextHops(station, cargo, packet.dest).size === 0) delete packet.dest;
+        }
+      }
+    }
   }
 
   // Graf linek druhu nákladu (i při ruční distribuci, kvůli přehledu)
@@ -564,7 +594,12 @@ export class CargoDist {
     }
     fresh.push({ amount: Math.max(0, total - destined) });
     return {
-      boards: (dest) => dest === undefined || (hop !== undefined && this.nextHops(station, cargo, dest).has(hop)),
+      // Balík z překládky nastoupí, když jede přes další zastávku vozidla; k nedosažitelnému cíli kamkoli
+      boards: (dest) => {
+        if (dest === undefined) return true;
+        const hops = this.nextHops(station, cargo, dest);
+        return hops.size === 0 || (hop !== undefined && hops.has(hop));
+      },
       fresh,
     };
   }

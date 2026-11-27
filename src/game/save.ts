@@ -19,9 +19,11 @@ import {
   emptyFreight,
   isCargo,
   newRatings,
+  trimDests,
   type Cargo,
   type CargoRating,
   type FreightStock,
+  type PlannedCargo,
   type TransferPacket,
   type Transfers,
 } from './cargo';
@@ -229,9 +231,38 @@ function restoreTransfers(value: unknown): Transfers {
         [p.amount, p.boardedAt, p.tiles, p.feeder].every((n) => typeof n === 'number' && Number.isFinite(n)) &&
         (p.amount as number) > 0,
     );
+    // Cíl balíku (cargodist) jen jako id stanice
+    for (const p of packets) if (p.dest !== undefined && !Number.isInteger(p.dest)) delete p.dest;
     if (packets.length > 0) transfers[cargo] = packets;
   }
   return transfers;
+}
+
+// Cargodist: náklad podle cílové stanice na palubě; neplatné údaje se zahodí
+function restoreDests(value: unknown): Record<number, number> | undefined {
+  if (!isObject(value)) return undefined;
+  const dests: Record<number, number> = {};
+  for (const [key, amount] of Object.entries(value)) {
+    if (Number.isInteger(Number(key)) && Number.isInteger(amount) && (amount as number) > 0) {
+      dests[Number(key)] = amount as number;
+    }
+  }
+  return Object.keys(dests).length > 0 ? dests : undefined;
+}
+
+// Cargodist: čerstvý náklad stanice podle „další zastávka:cíl“; neplatné položky se zahodí
+function restorePlanned(value: unknown): PlannedCargo {
+  const planned: PlannedCargo = {};
+  if (!isObject(value)) return planned;
+  for (const cargo of CARGO_TYPES) {
+    const entries = value[cargo];
+    if (!isObject(entries)) continue;
+    const valid = Object.entries(entries).filter(
+      ([key, amount]) => /^\d+:\d+$/.test(key) && typeof amount === 'number' && Number.isFinite(amount) && amount > 0,
+    ) as [string, number][];
+    if (valid.length > 0) planned[cargo] = Object.fromEntries(valid);
+  }
+  return planned;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -380,6 +411,7 @@ export function restoreGame(data: SaveData): Game {
         freight: restoreFreight(s.freight, legacyCoal(s)),
         ratings: restoreRatings(s.ratings, s),
         transfers: restoreTransfers(s.transfers),
+        planned: restorePlanned(s.planned),
       };
       // Verze 11 a starší měly jedno hodnocení pro všechen náklad
       for (const key of ['rating', 'lastVisit', 'lastSpeed']) delete (station as Record<string, unknown>)[key];
@@ -535,16 +567,19 @@ export function restoreGame(data: SaveData): Game {
             ? t.wagonCargo
             : undefined,
         holds: Array.isArray(t.holds)
-          ? t.holds.filter(
-              (hold) =>
-                isObject(hold) &&
-                isCargo(hold.cargo) &&
-                [hold.passengers, hold.boardedStation, hold.boardedAt, hold.tiles].every((n) => Number.isFinite(n)),
-            )
+          ? t.holds
+              .filter(
+                (hold) =>
+                  isObject(hold) &&
+                  isCargo(hold.cargo) &&
+                  [hold.passengers, hold.boardedStation, hold.boardedAt, hold.tiles].every((n) => Number.isFinite(n)),
+              )
+              .map((hold) => ({ ...hold, dests: restoreDests(hold.dests) }))
           : undefined,
         orderFlags,
         serviceUntil: Number.isFinite(t.serviceUntil) ? t.serviceUntil : undefined,
         feeder: Number.isFinite(t.feeder) ? t.feeder : 0,
+        dests: restoreDests(t.dests),
         // Starší uložení údržbu neznají: vlak je jako po servisu
         reliability: Number.isFinite(t.reliability) ? Math.min(1, Math.max(0, t.reliability)) : modelReliability(t),
         lastService: Number.isFinite(t.lastService) ? t.lastService : data.clock.day,
@@ -582,6 +617,7 @@ export function restoreGame(data: SaveData): Game {
         servicing: Number.isInteger(v.servicing) && v.servicing! >= 0 ? v.servicing : undefined,
         // Přestavba (starší uložení ji nemají); nepovolený náklad se zahodí
         cargo: refitted('road', roadVehicleModel(v).cargo, v.cargo),
+        dests: restoreDests(v.dests),
         // Časy jízdního řádu (starší uložení je nemají)
         timetable: restoreTimetable(v.timetable, Array.isArray(v.orders) ? v.orders.length : 0),
       })),
@@ -605,6 +641,7 @@ export function restoreGame(data: SaveData): Game {
         ...restoreMaintenance(p, aircraftReliability(p), data.clock.day),
         servicing: p.servicing === true || undefined,
         cargo: refitted('air', aircraftModel(p).cargo, p.cargo),
+        dests: restoreDests(p.dests),
         timetable: restoreTimetable(p.timetable, Array.isArray(p.orders) ? p.orders.length : 0),
       })),
   );
@@ -627,10 +664,13 @@ export function restoreGame(data: SaveData): Game {
         ...restoreMaintenance(s, shipReliability(s), data.clock.day),
         servicing: s.servicing === true || undefined,
         cargo: refitted('ship', shipModel(s).cargo, s.cargo),
+        dests: restoreDests(s.dests),
         timetable: restoreTimetable(s.timetable, Array.isArray(s.orders) ? s.orders.length : 0),
       })),
   );
   game.shipFleet.nextId = Number.isInteger(shipFleet.nextId) ? shipFleet.nextId : 1;
+  // Náklad s cílem nesmí přesáhnout náklad na palubě
+  for (const v of [...game.roadFleet.vehicles, ...game.airFleet.aircraft, ...game.shipFleet.ships]) trimDests(v);
   // Skupiny až po vozidlech: vozidla z neexistující skupiny se z ní vyjmou
   game.groups.restore(data.groups);
   game.view = validView(data.view);

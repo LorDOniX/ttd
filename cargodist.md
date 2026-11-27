@@ -35,10 +35,10 @@ jako dosud.
 - [x] Vlaky (i smíšené soupravy), auta, letadla, lodě; testy (přestup A–B–C, zpáteční cesta), commit
 
 ## 4. Změny sítě a uložení
-- [ ] Po přepočtu toků se čerstvý náklad přerozdělí; náklad k nedosažitelnému cíli ztratí cíl (doručí se
+- [x] Po přepočtu toků se čerstvý náklad přerozdělí; náklad k nedosažitelnému cíli ztratí cíl (doručí se
       jako dosud, kde se vykupuje)
-- [ ] Uložení nákladu s cílem na stanicích a ve vozidlech, toky se po načtení přepočtou
-- [ ] Testy, commit
+- [x] Uložení nákladu s cílem na stanicích a ve vozidlech, toky se po načtení přepočtou
+- [x] Testy, commit
 
 ## 5. Rozhraní
 - [ ] Okno stanice: čekající náklad podle cíle a další zastávky („do B 12 přes C“), plánované toky
