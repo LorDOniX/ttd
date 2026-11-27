@@ -14,7 +14,7 @@ import {
   type AircraftModel,
   type AirportType,
 } from './balance';
-import { CARGOS, isFreight, type Cargo } from './cargo';
+import { CARGOS, isFreight, nextOrderStop, type Cargo } from './cargo';
 import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
 import {
   arrived,
@@ -92,6 +92,8 @@ export interface Aircraft extends Maintained, Timetabled {
   boardedStation: number;
   boardedAt: number;
   tiles: number;
+  // Cargodist: náklad na palubě podle cílové stanice
+  dests?: Record<number, number>;
   income: number;
   costs: number;
   lastIncome: number;
@@ -618,7 +620,12 @@ export class AirFleet {
   private exchange(plane: Aircraft, airport: Station, loadOnly = false): number {
     const model = aircraftModel(plane);
     const capacity = aircraftCapacity(plane);
-    const hold = { atPlatform: capacity, capacity, speed: model.speed };
+    const hold = {
+      atPlatform: capacity,
+      capacity,
+      speed: model.speed,
+      next: nextOrderStop(plane.orders, plane.target, airport.id),
+    };
     const cargo = aircraftCargo(plane);
     if (isFreight(cargo)) return this.game.freight.exchange(plane, hold, airport, cargo, loadOnly);
     return this.game.passengers.exchange(plane, hold, airport, loadOnly);

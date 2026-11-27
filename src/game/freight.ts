@@ -1,27 +1,24 @@
 import { consistCargos } from './consist';
-import { FEEDER_SHARE, FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDINGS } from './balance';
+import { FREIGHT_MAX_WAITING_MONTHS, MAIL_PER_PASSENGER, TOWN_ACCEPTS_MIN_BUILDINGS } from './balance';
 import {
-  CARGOS,
   FREIGHT_TYPES,
   TOWN_ACCEPTS,
-  feederShare,
   loadCargo,
-  transferOut,
+  planUnload,
   type Carrier,
   type ExchangeOptions,
   type FreightType,
   type Hold,
 } from './cargo';
-import { formatMoney, type Game } from './game';
-import { bonusText } from './subsidies';
-import { catchmentArea, fare, type Area } from './passengers';
+import type { Game } from './game';
+import { catchmentArea, unloadCargo, type Area } from './passengers';
 import { inflowFactor, recordVisit } from './rating';
 import { aircraftCargo } from './aircraft';
 import { vehicleCargo } from './roadVehicles';
 import { refitLoadStops, stationOrders } from './trains';
 import { shipCargo } from './ships';
 import { INDUSTRY_SIZE, INDUSTRY_TYPES, type Industry } from '../world/industry';
-import type { Station, StationShape } from '../world/rail';
+import { poolId, type Station, type StationShape } from '../world/rail';
 
 const DAYS_PER_MONTH = 30;
 
@@ -104,7 +101,8 @@ export class Freight {
 
   // Vyloží náklad, pokud ho nástupiště vykupuje, a naloží čekající (nejdřív z překládky); loadOnly jen doplní.
   // Volby příkazu: vyložit vše (nevykupovaný náklad zůstane na stanici jako překládka), překládka, nevykládat,
-  // nenakládat. Vrací přeložené tuny.
+  // nenakládat. S cargodistem se vyloží náklad s cílem tady a náklad, který pokračuje jinou linkou, a naloží
+  // jen náklad přes další zastávku vozidla. Vrací přeložené tuny.
   exchange(
     train: Carrier,
     hold: Hold,
@@ -114,54 +112,31 @@ export class Freight {
     options: ExchangeOptions = {},
   ): number {
     const { game } = this;
-    const spec = CARGOS[type];
     const { atPlatform } = hold;
     let unloaded = 0;
     const accepted = this.accepted(station).includes(type);
-    // Bez výkupu se náklad vyloží jen na výslovný příkaz, a to jako překládka
-    const transfer = options.unload === 'transfer' || (options.unload === 'unload' && !accepted);
-    const unloading = options.unload !== 'none' && (accepted || transfer);
-    if (!loadOnly && unloading && train.passengers > 0 && train.boardedStation !== station.id) {
-      unloaded = Math.min(train.passengers, atPlatform);
-      const days = game.clock.now - train.boardedAt;
-      if (transfer && unloaded > 0) {
-        const credit = Math.round(fare(unloaded, train.tiles, days, spec.fareTiers) * FEEDER_SHARE);
-        transferOut(train, station, type, unloaded, credit);
-        game.news(
-          `${train.name} přeložil ${unloaded} ${spec.unit} ve stanici ${station.name} (podíl ${formatMoney(credit)}).`,
-          station,
-        );
-      } else if (unloaded > 0) {
-        const share = feederShare(train, unloaded);
-        train.feeder = Math.max(0, (train.feeder ?? 0) - share);
-        train.passengers -= unloaded;
-        const base = fare(unloaded, train.tiles, days, spec.fareTiers);
-        const bonus = game.subsidies.bonus(type, train.origin ?? train.boardedStation, station, base);
-        const income = base + bonus;
-        game.earn(income);
-        game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
-        game.thisYear.freight[type] += unloaded;
-        train.income += income - share;
+    const split = !loadOnly && train.passengers > 0 ? game.cargodist.split(station, type, train, hold.next) : undefined;
+    if (!loadOnly && options.unload !== 'none' && train.passengers > 0 && train.boardedStation !== station.id) {
+      const plan = planUnload(train, atPlatform, options.unload, accepted, poolId(station), split);
+      unloaded = unloadCargo(game, train, station, type, plan, !split, (n) => {
+        game.thisYear.freight[type] += n;
         // Dodávku dostane první závod v dosahu, který ji přijímá (zboží pro město žádný)
         const consumer = this.industriesInReach(station).find((i) => INDUSTRY_TYPES[i.kind].accepts.includes(type));
         if (consumer) {
-          consumer.received += unloaded;
+          consumer.received += n;
           consumer.lastDelivery = game.clock.day;
         }
-        game.news(
-          `${train.name} přivezl ${unloaded} ${spec.unit} do stanice ${station.name}: ` +
-            `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${bonusText(bonus)}.`,
-          station,
-        );
-      }
+      });
     }
 
-    const free = unloaded > 0 ? atPlatform : Math.max(0, atPlatform - train.passengers);
+    const free = split || unloaded === 0 ? Math.max(0, atPlatform - train.passengers) : atPlatform;
     let loading = 0;
     if (options.load !== 'none') {
       const room = Math.min(free, hold.capacity - train.passengers);
-      const loaded = loadCargo(train, station, type, room, station.freight[type], game.clock.now);
+      const route = game.cargodist.boardingRoute(station, type, hold.next, station.freight[type]);
+      const loaded = loadCargo(train, station, type, room, station.freight[type], game.clock.now, route);
       station.freight[type] -= loaded.fresh;
+      if (route) game.cargodist.consumeFresh(station, type, hold.next, loaded.taken);
       loading = loaded.transferred + loaded.fresh;
     }
     recordVisit(station, type, game.clock.now, hold.speed);
@@ -181,6 +156,7 @@ export class Freight {
         const amount = daily * inflowFactor(station.ratings[type].rating);
         const added = Math.max(0, Math.min(amount, max - station.freight[type]));
         station.freight[type] += added;
+        this.game.cargodist.addFresh(station, type, added);
         industry.transported += added;
       }
     }
@@ -200,7 +176,9 @@ export class Freight {
       const monthly = this.monthlyMail(station);
       const amount = (monthly / DAYS_PER_MONTH) * inflowFactor(station.ratings.mail.rating);
       const max = monthly * FREIGHT_MAX_WAITING_MONTHS;
-      station.freight.mail += Math.max(0, Math.min(amount, max - station.freight.mail));
+      const added = Math.max(0, Math.min(amount, max - station.freight.mail));
+      station.freight.mail += added;
+      this.game.cargodist.addFresh(station, 'mail', added);
     }
   }
 }

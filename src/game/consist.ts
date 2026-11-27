@@ -1,4 +1,4 @@
-import { CARGOS, type Cargo } from './cargo';
+import { CARGOS, trimDests, type Cargo } from './cargo';
 
 // Náklad jedné skupiny vagonů na palubě: kolik, odkud a kdy naložen, kolik dlaždic ujel
 export interface CargoLoad {
@@ -8,6 +8,8 @@ export interface CargoLoad {
   tiles: number;
   feeder?: number;
   origin?: number;
+  // Cargodist: náklad podle cílové stanice
+  dests?: Record<number, number>;
 }
 
 // Náklad vagonů s jiným nákladem, než veze první vagon
@@ -79,6 +81,7 @@ function copyLoad(from: CargoLoad): CargoLoad {
     tiles: from.tiles,
     feeder: from.feeder,
     origin: from.origin,
+    ...(from.dests ? { dests: { ...from.dests } } : {}),
   };
 }
 
@@ -93,6 +96,7 @@ export function setConsist(train: Consist, list: readonly Cargo[]): void {
     const room = list.filter((c) => c === cargo).length * wagonCapacity(cargo);
     state.passengers = Math.max(0, Math.min(state.passengers, room));
     if (state.passengers === 0) state.feeder = 0;
+    trimDests(state);
     return state;
   };
   const main = stateFor(primary);
@@ -104,6 +108,8 @@ export function setConsist(train: Consist, list: readonly Cargo[]): void {
   train.tiles = main.tiles;
   train.feeder = main.feeder;
   train.origin = main.origin;
+  if (main.dests) train.dests = main.dests;
+  else delete train.dests;
   const others = [...new Set(list)].filter((c) => c !== primary);
   train.holds = others.length > 0 ? others.map((cargo) => ({ cargo, ...stateFor(cargo) })) : undefined;
   train.wagonCargo = others.length > 0 ? [...list] : undefined;

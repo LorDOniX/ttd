@@ -9,7 +9,7 @@ import {
   TRAIN_SELL_REFUND,
   type ShipModel,
 } from './balance';
-import { CARGOS, isFreight, type Cargo } from './cargo';
+import { CARGOS, isFreight, nextOrderStop, type Cargo } from './cargo';
 import { refitCapacity, refitOptions, vehicleRefitCost } from './vehicleRefit';
 import {
   arrived,
@@ -87,6 +87,8 @@ export interface Ship extends Maintained, Timetabled {
   boardedStation: number;
   boardedAt: number;
   tiles: number;
+  // Cargodist: náklad na palubě podle cílové stanice
+  dests?: Record<number, number>;
   income: number;
   costs: number;
   lastIncome: number;
@@ -634,7 +636,12 @@ export class ShipFleet {
   private exchange(ship: Ship, port: Station, loadOnly = false): number {
     const model = shipModel(ship);
     const capacity = shipCapacity(ship);
-    const hold = { atPlatform: capacity, capacity, speed: model.speed };
+    const hold = {
+      atPlatform: capacity,
+      capacity,
+      speed: model.speed,
+      next: nextOrderStop(ship.orders, ship.target, port.id),
+    };
     const cargo = shipCargo(ship);
     if (isFreight(cargo)) return this.game.freight.exchange(ship, hold, port, cargo, loadOnly);
     return this.game.passengers.exchange(ship, hold, port, loadOnly);

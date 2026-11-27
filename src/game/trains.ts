@@ -337,6 +337,21 @@ function tilesPassed(path: readonly Segment[], from: number, to: number): number
 }
 
 // Index zastávky, kam vlak pojede po té aktuální
+// Další zastávka po té, u které vlak stojí (id stanice; bez dep, průjezdných bodů a průjezdů), nebo undefined
+export function nextStationStop(train: Train, current: number): number | undefined {
+  const orders = train.orders;
+  if (!orders || orders.length === 0) return undefined;
+  const n = orders.length;
+  const at = orders[train.target] === current ? train.target : orders.indexOf(current);
+  if (at < 0) return undefined;
+  for (let k = 1; k <= n; k++) {
+    const i = (at + k) % n;
+    const flags = orderFlags(train, i);
+    if (!isSpecialOrder(flags) && !flags.via) return orders[i];
+  }
+  return undefined;
+}
+
 export function nextStop(train: Train): number {
   return train.orders ? (train.target + 1) % train.orders.length : -1;
 }
@@ -1332,6 +1347,7 @@ export class Fleet {
         atPlatform: (at.get(cargo) ?? 0) * CARGOS[cargo].wagonCapacity,
         capacity: cargoCapacity(train, cargo),
         speed: trainModel(train).speed,
+        next: nextStationStop(train, station.id),
       };
       const carrier = cargo === train.cargo ? train : { ...state, name: train.name, income: 0 };
       moved += isFreight(cargo)
@@ -1340,6 +1356,8 @@ export class Fleet {
       if (carrier !== train) {
         const { name: _name, income, ...rest } = carrier;
         Object.assign(state, rest);
+        // Smazané cíle (vše vyloženo) Object.assign nepřenese
+        if (!rest.dests) delete state.dests;
         train.income += income;
       }
     }

@@ -5,6 +5,7 @@ import {
   type Cargo,
   type CargoRating,
   type FreightStock,
+  type PlannedCargo,
   type Transfers,
 } from '../game/cargo';
 import { GameMap, TileType, type TilePos } from './map';
@@ -100,6 +101,8 @@ export interface Station extends StationShape {
   ratings: Record<Cargo, CargoRating>;
   // Náklad z překládek, který čeká na další vozidlo (starší uložení ho nemají)
   transfers?: Transfers;
+  // Cargodist: čerstvý náklad (část waiting / freight) podle klíče „další zastávka:cíl“ (id spojených stanic)
+  planned?: PlannedCargo;
   // Zastávka aut na silnici nebo letiště; bez údaje železniční nástupiště
   kind?: 'road' | 'air' | 'water';
   // Velikost letiště (jen u kind 'air')
@@ -118,10 +121,12 @@ export function poolId(station: Station): number {
 // Části sdílí s hlavní částí stejné objekty nákladu a hodnocení; čekající cestující a jméno čtou přes ni
 function linkPart(part: Station, owner: Station): void {
   owner.transfers ??= {};
+  owner.planned ??= {};
   part.joinedTo = owner.id;
   part.freight = owner.freight;
   part.ratings = owner.ratings;
   part.transfers = owner.transfers;
+  part.planned = owner.planned;
   for (const key of ['waiting', 'name', 'townId'] as const) {
     Object.defineProperty(part, key, {
       get: () => owner[key],
@@ -491,6 +496,7 @@ export class RailNetwork {
         heir.freight = station.freight;
         heir.ratings = station.ratings;
         heir.transfers = station.transfers;
+        heir.planned = station.planned;
         for (const s of rest) linkPart(s, heir);
       }
     }

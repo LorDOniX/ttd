@@ -10,7 +10,7 @@ import {
   TRAIN_SELL_REFUND,
   type RoadVehicleModel,
 } from './balance';
-import { CARGOS, isFreight, type Cargo } from './cargo';
+import { CARGOS, isFreight, nextOrderStop, type Cargo } from './cargo';
 import { formatMoney, type Game } from './game';
 import { TileType, type TilePos } from '../world/map';
 import { bridgeEnd, bridgeSpanTiles, type Depot, type RailBridge, type Station } from '../world/rail';
@@ -89,6 +89,8 @@ export interface RoadVehicle extends Maintained, Timetabled {
   boardedStation: number;
   boardedAt: number;
   tiles: number;
+  // Cargodist: náklad na palubě podle cílové stanice
+  dests?: Record<number, number>;
   income: number;
   costs: number;
   lastIncome: number;
@@ -769,7 +771,12 @@ export class RoadFleet {
   private exchange(vehicle: RoadVehicle, station: Station, loadOnly = false): number {
     const model = roadVehicleModel(vehicle);
     const capacity = vehicleCapacity(vehicle);
-    const hold = { atPlatform: capacity, capacity, speed: model.speed };
+    const hold = {
+      atPlatform: capacity,
+      capacity,
+      speed: model.speed,
+      next: nextOrderStop(vehicle.orders, vehicle.target, station.id),
+    };
     const cargo = vehicleCargo(vehicle);
     if (isFreight(cargo)) return this.game.freight.exchange(vehicle, hold, station, cargo, loadOnly);
     return this.game.passengers.exchange(vehicle, hold, station, loadOnly);

@@ -4,7 +4,7 @@ import {
   CARGO_DIST_ROUNDS,
   CARGO_DIST_STOP_DAYS,
 } from './balance';
-import type { Cargo } from './cargo';
+import { destTotal, trimDests, type Cargo, type Carrier, type DestSplit, type LoadRoute } from './cargo';
 import { cargoCapacity, consistCargos, wagonCapacity } from './consist';
 import type { Game } from './game';
 import { inflowFactor } from './rating';
@@ -494,5 +494,117 @@ export class CargoDist {
     if (planned && total > 0) return new Map([...planned].map(([next, v]) => [next, v / total]));
     const next = shortestNextHop(this.graph(cargo), from, dest);
     return next === undefined ? new Map() : new Map([[next, 1]]);
+  }
+
+  // Id spojené stanice podle id části (undefined, když stanice neexistuje)
+  poolOf(id: number | undefined): number | undefined {
+    if (id === undefined) return undefined;
+    const station = this.game.world.rail.stations.find((s) => s.id === id);
+    return station ? poolId(station) : undefined;
+  }
+
+  // Nový čerstvý náklad na stanici: rozdělí se podle poptávky mezi cíle a podle toků mezi další zastávky.
+  // Bez cílů (nikam nevede spojení) zůstane bez cíle
+  addFresh(station: Station, cargo: Cargo, amount: number): void {
+    if (amount <= 0 || !this.enabled(cargo)) return;
+    const demand = this.demandFrom(station, cargo);
+    let total = 0;
+    for (const v of demand.values()) total += v;
+    if (total <= 0) return;
+    const planned = ((station.planned ??= {})[cargo] ??= {});
+    for (const [dest, d] of demand) {
+      for (const [next, share] of this.nextHops(station, cargo, dest)) {
+        const key = `${next}:${dest}`;
+        planned[key] = (planned[key] ?? 0) + (amount * d * share) / total;
+      }
+    }
+  }
+
+  // Čerstvý náklad podle cíle srovnaný s celkem na stanici (odchod nespokojených ho zmenšuje poměrně)
+  // a přesměrovaný po změně sítě: náklad, jehož další zastávka už k cíli nevede, dostane novou;
+  // k nedosažitelnému cíli ztratí cíl
+  private fitPlanned(station: Station, cargo: Cargo, total: number): Record<string, number> {
+    const planned = ((station.planned ??= {})[cargo] ??= {});
+    const entries = Object.entries(planned);
+    let sum = 0;
+    for (const [, v] of entries) sum += v;
+    const scale = sum > total && sum > 0 ? Math.max(0, total) / sum : 1;
+    for (const [key, value] of entries) {
+      const amount = value * scale;
+      const [next, dest] = key.split(':').map(Number);
+      const hops = this.nextHops(station, cargo, dest);
+      if (amount <= 1e-6 || hops.size === 0) {
+        delete planned[key];
+        continue;
+      }
+      if (hops.has(next)) {
+        planned[key] = amount;
+        continue;
+      }
+      delete planned[key];
+      for (const [hop, share] of hops) {
+        const k = `${hop}:${dest}`;
+        planned[k] = (planned[k] ?? 0) + amount * share;
+      }
+    }
+    return planned;
+  }
+
+  // Co smí nastoupit do vozidla, které odtud jede na zastávku next (id stanice); undefined = ručně
+  boardingRoute(station: Station, cargo: Cargo, next: number | undefined, total: number): LoadRoute | undefined {
+    if (!this.enabled(cargo)) return undefined;
+    const planned = this.fitPlanned(station, cargo, total);
+    const hop = this.poolOf(next);
+    const fresh: { dest?: number; amount: number }[] = [];
+    let destined = 0;
+    for (const [key, amount] of Object.entries(planned)) {
+      destined += amount;
+      const [n, dest] = key.split(':').map(Number);
+      if (hop !== undefined && n === hop) fresh.push({ dest, amount });
+    }
+    fresh.push({ amount: Math.max(0, total - destined) });
+    return {
+      boards: (dest) => dest === undefined || (hop !== undefined && this.nextHops(station, cargo, dest).has(hop)),
+      fresh,
+    };
+  }
+
+  // Odebere naložený čerstvý náklad s cílem z plánu stanice
+  consumeFresh(station: Station, cargo: Cargo, next: number | undefined, taken: { dest?: number; amount: number }[]) {
+    const planned = station.planned?.[cargo];
+    const hop = this.poolOf(next);
+    if (!planned || hop === undefined) return;
+    for (const t of taken) {
+      if (t.dest === undefined) continue;
+      const key = `${hop}:${t.dest}`;
+      const left = (planned[key] ?? 0) - t.amount;
+      if (left > 1e-6) planned[key] = left;
+      else delete planned[key];
+    }
+  }
+
+  // Náklad na palubě vozidla, které stojí na stanici a pojede na next: doručit, nechat, přeložit, bez cíle.
+  // Cíle, které už nejsou dosažitelné (nebo cíl náklad přestal přijímat), se z paluby smažou
+  split(station: Station, cargo: Cargo, carrier: Carrier, next: number | undefined): DestSplit | undefined {
+    if (!this.enabled(cargo)) return undefined;
+    trimDests(carrier);
+    const here = poolId(station);
+    const hop = this.poolOf(next);
+    const result: DestSplit = { deliver: 0, keep: new Map(), transfers: new Map(), undestined: 0 };
+    for (const [key, amount] of Object.entries(carrier.dests ?? {})) {
+      const dest = Number(key);
+      if (dest === here) {
+        if (this.accepts(station, cargo)) result.deliver += amount;
+        else delete carrier.dests![dest];
+        continue;
+      }
+      const hops = this.nextHops(station, cargo, dest);
+      if (hops.size === 0) delete carrier.dests![dest];
+      else if (hop !== undefined && hops.has(hop)) result.keep.set(dest, amount);
+      else result.transfers.set(dest, amount);
+    }
+    trimDests(carrier);
+    result.undestined = Math.max(0, carrier.passengers - destTotal(carrier.dests));
+    return result;
   }
 }

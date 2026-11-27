@@ -27,12 +27,12 @@ jako dosud.
 - [x] Přepočet měsíčně a po změně grafu, testy, commit
 
 ## 3. Náklad s cílem
-- [ ] Čerstvý náklad na stanici rozdělený podle další zastávky a cíle (součet = `waiting` / `freight`),
+- [x] Čerstvý náklad na stanici rozdělený podle další zastávky a cíle (součet = `waiting` / `freight`),
       odchod nespokojených a hodnocení beze změny
-- [ ] Nakládka: jen náklad pro další zastávku vozidla (nejdřív z překládky); na palubě množství podle cíle
-- [ ] Vykládka: v cíli se doručí a zaplatí, kde cesta pokračuje jinou linkou se přeloží (s historií a podílem
+- [x] Nakládka: jen náklad pro další zastávku vozidla (nejdřív z překládky); na palubě množství podle cíle
+- [x] Vykládka: v cíli se doručí a zaplatí, kde cesta pokračuje jinou linkou se přeloží (s historií a podílem
       jako překládka), náklad pokračující dál zůstane na palubě; příkazy vykládky platí dál
-- [ ] Vlaky (i smíšené soupravy), auta, letadla, lodě; testy (přestup A–B–C, zpáteční cesta), commit
+- [x] Vlaky (i smíšené soupravy), auta, letadla, lodě; testy (přestup A–B–C, zpáteční cesta), commit
 
 ## 4. Změny sítě a uložení
 - [ ] Po přepočtu toků se čerstvý náklad přerozdělí; náklad k nedosažitelnému cíli ztratí cíl (doručí se

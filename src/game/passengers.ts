@@ -7,13 +7,19 @@ import {
   CATCHMENT_RADIUS,
 } from './balance';
 import {
+  CARGOS,
   CARGO_TYPES,
   feederShare,
   loadCargo,
+  planUnload,
+  removeDest,
   transferOut,
+  trimDests,
+  type Cargo,
   type Carrier,
   type ExchangeOptions,
   type Hold,
+  type UnloadPlan,
 } from './cargo';
 import { formatMoney, type Game } from './game';
 import { bonusText } from './subsidies';
@@ -56,6 +62,69 @@ export function inArea(area: Area, x: number, y: number): boolean {
 export function fare(amount: number, tiles: number, days: number, tiers = FARE_TIERS): number {
   const tier = tiers.find((t) => days <= t.maxDays)!;
   return Math.round(amount * tiles * tier.rate);
+}
+
+// Provede plán vykládky: přeloží (vozidlo dostane podíl jízdného, náklad zůstane i s cílem na stanici)
+// a doručí (zaplatí se jízdné i dotace; delivered započte statistiky). manual: hlásit cestující, kteří
+// nevystoupili z vagonů mimo nástupiště. Vrací počet vyložených jednotek
+export function unloadCargo(
+  game: Game,
+  carrier: Carrier,
+  station: Station,
+  cargo: Cargo,
+  plan: UnloadPlan,
+  manual: boolean,
+  delivered: (amount: number) => void,
+): number {
+  const spec = CARGOS[cargo];
+  const here = poolId(station);
+  const days = game.clock.now - carrier.boardedAt;
+  let moved = 0;
+  let transferred = 0;
+  let credits = 0;
+  for (const t of plan.transfers) {
+    if (t.amount <= 0) continue;
+    const credit = Math.round(fare(t.amount, carrier.tiles, days, spec.fareTiers) * FEEDER_SHARE);
+    // Náklad bez cíle zahrnuje i ten s cílem tady (příkaz překládky)
+    if (t.dest === undefined) removeDest(carrier, here, t.amount);
+    transferOut(carrier, station, cargo, t.amount, credit, t.dest);
+    transferred += t.amount;
+    credits += credit;
+  }
+  if (transferred > 0) {
+    game.news(
+      `${carrier.name} přeložil ${transferred} ${spec.unit} ve stanici ${station.name} (podíl ${formatMoney(credits)}).`,
+      station,
+    );
+    moved += transferred;
+  }
+  const amount = Math.min(plan.deliver, carrier.passengers);
+  if (amount > 0) {
+    const share = feederShare(carrier, amount);
+    carrier.feeder = Math.max(0, (carrier.feeder ?? 0) - share);
+    carrier.passengers -= amount;
+    removeDest(carrier, here, amount);
+    trimDests(carrier);
+    const base = fare(amount, carrier.tiles, days, spec.fareTiers);
+    const bonus = game.subsidies.bonus(cargo, carrier.origin ?? carrier.boardedStation, station, base);
+    const income = base + bonus;
+    game.earn(income);
+    game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
+    delivered(amount);
+    // Podíl, který už dostala vozidla před překládkou, se od příjmu tohoto vozidla odečte
+    carrier.income += income - share;
+    const stayed =
+      manual && cargo === 'passengers' && carrier.passengers > 0
+        ? ` (${carrier.passengers} nevystoupilo z vagonů mimo nástupiště)`
+        : '';
+    game.news(
+      `${carrier.name} přivezl ${amount} ${spec.unit} do stanice ${station.name}: ` +
+        `${carrier.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${bonusText(bonus)}${stayed}.`,
+      station,
+    );
+    moved += amount;
+  }
+  return moved;
 }
 
 // Cestující: vznikají ve městech u nástupišť, vlaky je vozí a dostávají za ně zaplaceno
@@ -172,54 +241,35 @@ export class Passengers {
   // Vyloží cestující z jiného nástupiště, zaplatí za ně a naloží čekající (nejdřív z překládky).
   // Vystupuje a nastupuje se jen ve vagonech, které stojí na nástupišti; loadOnly jen doplní (čekání na plné naložení).
   // Volby příkazu: překládka (cestující zůstanou na stanici, vozidlo dostane podíl), nevykládat, nenakládat.
-  // Vrací počet vyložených a naložených cestujících.
+  // S cargodistem vystoupí jen cestující, kteří tu mají cíl nebo přestupují, a nastoupí jen ti, kdo jedou
+  // přes další zastávku vozidla. Vrací počet vyložených a naložených cestujících.
   exchange(train: Carrier, hold: Hold, station: Station, loadOnly = false, options: ExchangeOptions = {}): number {
     const { game } = this;
     const { atPlatform } = hold;
     let unloaded = 0;
+    const split =
+      !loadOnly && train.passengers > 0 ? game.cargodist.split(station, 'passengers', train, hold.next) : undefined;
     if (!loadOnly && options.unload !== 'none' && train.passengers > 0 && train.boardedStation !== station.id) {
-      unloaded = Math.min(train.passengers, atPlatform);
-      const days = game.clock.now - train.boardedAt;
-      if (options.unload === 'transfer') {
-        if (unloaded > 0) {
-          const credit = Math.round(fare(unloaded, train.tiles, days) * FEEDER_SHARE);
-          transferOut(train, station, 'passengers', unloaded, credit);
-          game.news(
-            `${train.name} přeložil ${unloaded} cestujících ve stanici ${station.name} (podíl ${formatMoney(credit)}).`,
-            station,
-          );
-        }
-      } else if (unloaded > 0) {
-        const share = feederShare(train, unloaded);
-        train.feeder = Math.max(0, (train.feeder ?? 0) - share);
-        train.passengers -= unloaded;
-        const stayed = train.passengers > 0 ? ` (${train.passengers} nevystoupilo z vagonů mimo nástupiště)` : '';
-        const base = fare(unloaded, train.tiles, days);
-        const bonus = game.subsidies.bonus('passengers', train.origin ?? train.boardedStation, station, base);
-        const income = base + bonus;
-        game.earn(income);
-        game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
-        game.thisYear.passengers += unloaded;
-        // Podíl, který už dostala vozidla před překládkou, se od příjmu tohoto vozidla odečte
-        train.income += income - share;
-        game.news(
-          `${train.name} přivezl ${unloaded} cestujících do stanice ${station.name}: ` +
-            `${train.tiles} dlaždic za ${Math.round(days)} dní, +${formatMoney(income)}${bonusText(bonus)}${stayed}.`,
-          station,
-        );
-      } else {
+      const plan = planUnload(train, atPlatform, options.unload, true, poolId(station), split);
+      const empty = plan.deliver === 0 && plan.transfers.length === 0;
+      if (empty && !split && options.unload !== 'transfer') {
         game.news(`${train.name} stojí ve stanici ${station.name} mimo nástupiště.`, station);
       }
+      unloaded = unloadCargo(game, train, station, 'passengers', plan, !split, (n) => {
+        game.thisYear.passengers += n;
+      });
     }
 
     // Vagony u nástupiště se vyprázdnily, pokud se vystupovalo; jinak jsou obsazené nejdřív ony
-    const free = unloaded > 0 ? atPlatform : Math.max(0, atPlatform - train.passengers);
+    const free = split || unloaded === 0 ? Math.max(0, atPlatform - train.passengers) : atPlatform;
     let boarding = 0;
     if (options.load !== 'none') {
       // Kdo nevystoupil, jede dál; jeho cesta se započte poměrně do společné jízdenky
       const room = Math.min(free, hold.capacity - train.passengers);
-      const loaded = loadCargo(train, station, 'passengers', room, station.waiting, game.clock.now);
+      const route = game.cargodist.boardingRoute(station, 'passengers', hold.next, station.waiting);
+      const loaded = loadCargo(train, station, 'passengers', room, station.waiting, game.clock.now, route);
       station.waiting -= loaded.fresh;
+      if (route) game.cargodist.consumeFresh(station, 'passengers', hold.next, loaded.taken);
       boarding = loaded.transferred + loaded.fresh;
     }
     for (const town of this.townsInReach(station)) town.served = true;
@@ -235,6 +285,7 @@ export class Passengers {
       const monthly = this.inflow(station);
       const max = monthly * PASSENGERS_MAX_WAITING_MONTHS;
       const waiting = Math.min(max, station.waiting + monthly / DAYS_PER_MONTH);
+      this.game.cargodist.addFresh(station, 'passengers', waiting - station.waiting);
       station.waiting = waiting * (1 - leaveShare(station.ratings.passengers.rating));
     }
     this.game.events.emit('stationsChanged');
