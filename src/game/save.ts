@@ -110,6 +110,8 @@ export interface SaveData {
     distribution?: unknown;
     // Vytížení spojení (cargodist); starší uložení ho nemají
     linkUsage?: unknown;
+    // Místní úřady: hodnocení společnosti ve městech a sochy; starší uložení je nemají
+    authority?: unknown;
   };
   // Dotace; starší uložení je nemají
   subsidies?: unknown;
@@ -207,6 +209,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
       economy: game.economy,
       distribution: { ...game.cargodist.settings },
       linkUsage: game.cargodist.serializeUsage(),
+      authority: game.authority.serialize(),
     },
     subsidies: game.subsidies.serialize(),
     groups: game.groups.serialize(),
@@ -528,6 +531,7 @@ export function restoreGame(data: SaveData): Game {
   game.economy = isEconomySetting(data.game.economy) ? data.game.economy : 'original';
   game.cargodist.settings = parseDistribution(data.game.distribution);
   game.cargodist.restoreUsage(data.game.linkUsage);
+  game.authority.restore(data.game.authority);
   game.money = data.game.money;
   game.loan = data.game.loan;
   // Přepravený náklad starší uložení nezná nebo zná jen uhlí

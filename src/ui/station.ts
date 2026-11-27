@@ -97,7 +97,8 @@ export function stationRows(game: Game, station: Station): [string, string][] {
       const visit = lastVisit < 0 ? 'nikdy' : `před ${Math.floor(now - lastVisit)} dny`;
       return [
         CARGOS[c].name,
-        `${waitingText(station, c)} · hodnocení ${percent(rating)} → ${percent(targetRating(station, c, now))} ` +
+        `${waitingText(station, c)} · hodnocení ${percent(rating)} → ` +
+          `${percent(targetRating(station, c, now, game.authority.stationBonus(station)))} ` +
           `(${onlyRail ? 'vlak' : 'návštěva'} ${visit} ${percent(ratingInfo.visit)}, rychlost ${percent(ratingInfo.speed)}, ` +
           `čekající ${percent(ratingInfo.waiting)})`,
       ];

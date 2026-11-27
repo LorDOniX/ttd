@@ -26,6 +26,7 @@ const COLORS: Record<TileType, [number, number, number]> = {
   [TileType.RoadBridgeY]: [120, 120, 128],
   [TileType.Airport]: [200, 200, 205],
   [TileType.Port]: [255, 216, 74],
+  [TileType.Statue]: [214, 196, 150],
 };
 
 // Okno s minimapou: terén, stavby, vlaky a viditelný výřez; kliknutí přesune pohled

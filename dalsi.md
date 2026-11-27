@@ -11,11 +11,12 @@ se převedou (nové údaje mají rozumný výchozí stav). Konkurenční společ
 - [x] Testy, kontrola v prohlížeči, commit
 
 ## 2. Místní úřad
-- [ ] Hodnocení společnosti v každém městě (−1000 až 1000 jako v OpenTTD, stupně Hrozné … Vynikající)
-- [ ] Kácení stromů a demolice v obvodu města hodnocení snižují, obsluha stanicemi a výsadba stromů zvyšují
-- [ ] Při špatném hodnocení město nepovolí stavbu stanic a demolici svého majetku
-- [ ] Akce v okně města: malá / střední / velká reklama, socha (trvale lepší hodnocení), stávající akce; hodnocení v okně města
-- [ ] Uložení, testy, kontrola v prohlížeči, commit
+- [x] Hodnocení společnosti v každém městě (−1000 až 1000 jako v OpenTTD, stupně Hrozné … Vynikající)
+- [x] Kácení stromů a demolice v obvodu města hodnocení snižují, obsluha stanicemi a výsadba stromů zvyšují
+- [x] Při špatném hodnocení město nepovolí stavbu stanic a demolici svého majetku
+- [x] Akce v okně města: malá / střední / velká reklama, socha na mapě (trvale lepší hodnocení stanic), stávající akce; hodnocení v okně města
+- [x] Nástroj Sázet stromy v okně Úpravy terénu
+- [x] Uložení, testy, kontrola v prohlížeči, commit
 
 ## 3. Růst měst podle obsluhy
 - [ ] Měsíčně dovezení cestující, pošta a potraviny do města (stanice v dosahu)

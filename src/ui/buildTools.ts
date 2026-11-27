@@ -11,6 +11,7 @@ import {
   PORT_COST,
   ROAD_BRIDGE_COST,
   TUNNEL_PIECE_COST,
+  TREE_PLANT_COST,
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
   ROAD_TILE_COST,
@@ -98,6 +99,7 @@ export type BuildTool =
   | 'terraform-raise'
   | 'terraform-lower'
   | 'terraform-level'
+  | 'plant-trees'
   | 'industry'
   | 'info';
 
@@ -444,12 +446,14 @@ export class BuildTools {
         ['terraform-raise', '⛰️', 'Zvednout', '—', `${cost} / roh`],
         ['terraform-lower', '🕳️', 'Snížit', '—', `${cost} / roh`],
         ['terraform-level', '▭', 'Srovnat', '—', `${cost} / roh`],
+        ['plant-trees', '🌳', 'Sázet stromy', '—', `${formatMoneyShort(TREE_PLANT_COST)} / strom`],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Kliknutím zvednete nebo snížíte roh dlaždice nejblíž kurzoru, tažením celou oblast o úroveň. ' +
         'Srovnat: táhněte od místa, jehož výšku má oblast dostat. Sousední rohy se samy dorovnají, aby se ' +
         'lišily nejvýš o úroveň, a platí se každý změněný roh. Pod stavbami, kolejemi a silnicemi a u vody ' +
-        'terén měnit nejde. Esc – zrušit nástroj.',
+        'terén měnit nejde. Sázet stromy: tažením oblasti na volnou trávu; v obvodu města vysazené stromy ' +
+        'zlepší hodnocení místního úřadu (pokácené ho zhorší). Esc – zrušit nástroj.',
     );
   }
 
@@ -849,6 +853,7 @@ export class BuildTools {
       this.tool === 'track' ||
       this.tool === 'road' ||
       this.tool === 'demolish' ||
+      this.tool === 'plant-trees' ||
       terraformMode(this.tool) !== null ||
       this.tool === 'electrify' ||
       this.tool === 'station' ||
@@ -939,6 +944,7 @@ export class BuildTools {
       }
     }
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
+    if (this.tool === 'plant-trees' && !this.estimateMode) this.report(construction.plantTrees(this.demolishArea()));
     const terraform = this.terraformTarget();
     if (terraform && !this.estimateMode) {
       this.report(construction.terraform(terraform.corners, terraform.mode, terraform.target));
@@ -1516,6 +1522,13 @@ export class BuildTools {
               (affordable ? '' : ' · nedostatek peněz'));
         if (terraform.mode === 'level' && !plan.problem) text += ` · na úroveň ${terraform.target}`;
       }
+    } else if (this.tool === 'plant-trees' && tile) {
+      const plan = this.game.construction.plantTreesPlan(this.demolishArea());
+      this.preview.showArea(plan.tiles.length > 0 ? plan.tiles : [tile], plan.tiles.length > 0 ? 'valid' : 'invalid');
+      text =
+        plan.tiles.length > 0
+          ? `${plan.tiles.length} ${plural(plan.tiles.length, 'strom', 'stromy', 'stromů')} · ${formatMoneyShort(plan.cost)}`
+          : 'Stromy jde sázet jen na volnou trávu.';
     } else if (this.tool === 'demolish' && tile) {
       const plan = this.game.construction.demolishPlan(this.demolishArea());
       this.preview.showArea(plan.tiles, 'demolish');

@@ -15,7 +15,7 @@ describe('akce ve městě', () => {
     expect(b.ratings.passengers.rating).toBeCloseTo(rating);
     expect(before - game.money).toBe(AD_CAMPAIGN_COST);
     const lonely = makeTown(2, 50, 50);
-    expect(advertise(game, lonely)).toMatch(/nástupiště/);
+    expect(advertise(game, lonely)).toMatch(/stanici/);
   });
 
   it('financovaná výstavba hned přidá obyvatele i budovy', () => {

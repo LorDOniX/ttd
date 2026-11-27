@@ -1015,3 +1015,30 @@ export const CARGO_DIST_DISTANCE_SCALE = 100;
 // na každou kapacitu navíc
 export const CARGO_DIST_ROUNDS = 4;
 export const CARGO_DIST_OVERLOAD_PENALTY = 2;
+
+// Místní úřad jako v OpenTTD: hodnocení společnosti v každém městě od −1000 do 1000, na začátku 500
+export const AUTHORITY_RATING_INITIAL = 500;
+export const AUTHORITY_RATING_MIN = -1000;
+export const AUTHORITY_RATING_MAX = 1000;
+// Obvod města: poloměr zástavby a tolik dlaždic navíc
+export const AUTHORITY_ZONE_MARGIN = 6;
+// Pokácený strom, zbořená silnice a budova města; vysazený strom zvedne hodnocení nejvýš na strop
+export const AUTHORITY_TREE_DOWN = -35;
+export const AUTHORITY_TREE_UP = 7;
+export const AUTHORITY_TREE_UP_MAX = 220;
+export const AUTHORITY_ROAD_DOWN = -50;
+export const AUTHORITY_BUILDING_DOWN = -100;
+// Každý měsíc za každou stanici v obvodu: obsluhovaná (vozidlo v posledních dnech) zvedne, opuštěná sníží
+export const AUTHORITY_STATION_SERVED = 12;
+export const AUTHORITY_STATION_UNSERVED = -15;
+export const AUTHORITY_SERVED_DAYS = 30;
+// Při tomto hodnocení a horším (Velmi špatné) město nepovolí stavbu stanic ani demolici svých budov a silnic
+export const AUTHORITY_PERMIT = -200;
+// Socha společnosti: trvale vyšší hodnocení stanic ve městě (body hodnocení 0–1)
+export const STATUE_COST = 800_000;
+export const STATUE_STATION_BONUS = 0.1;
+// Střední a velká reklama: násobek ceny malé, dosah od středu města a zvýšení hodnocení stanic
+export const AD_MEDIUM = { costFactor: 2, radius: 15, boost: 0.25 } as const;
+export const AD_LARGE = { costFactor: 4, radius: 22, boost: 0.3 } as const;
+// Výsadba stromu
+export const TREE_PLANT_COST = 1_500;

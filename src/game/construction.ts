@@ -18,6 +18,7 @@ import {
   STATION_SPREAD,
   TERRAFORM_CORNER_COST,
   TRACK_PIECE_COST,
+  TREE_PLANT_COST,
   TUNNEL_PIECE_COST,
   WAYPOINT_COST,
   type AirportType,
@@ -183,6 +184,29 @@ export class Construction {
     return null;
   }
 
+  // Výsadba stromů jako v OpenTTD: na volnou rovnou i šikmou trávu (ne pod mosty); v obvodu města
+  // zvedne hodnocení místního úřadu
+  plantTreesPlan(area: readonly TilePos[]): { tiles: TilePos[]; cost: number } {
+    const { map } = this.game.world;
+    const tiles = area.filter(
+      (t) => map.inBounds(t.x, t.y) && map.isType(t.x, t.y, TileType.Grass) && !map.isBridged(t.x, t.y),
+    );
+    return { tiles, cost: tiles.length * TREE_PLANT_COST };
+  }
+
+  plantTrees(area: readonly TilePos[]): string | null {
+    const { tiles, cost } = this.plantTreesPlan(area);
+    if (tiles.length === 0) return 'Stromy jde sázet jen na volnou trávu.';
+    if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'construction');
+    for (const t of tiles) {
+      this.game.world.map.set(t.x, t.y, TileType.Trees);
+      this.game.authority.treePlanted(t.x, t.y);
+    }
+    this.game.events.emit('treesChanged');
+    return null;
+  }
+
   buildRoad(steps: RoadStep[]): void {
     this.queue.push(...steps.map((step) => ({ kind: 'road' as const, step })));
   }
@@ -255,6 +279,8 @@ export class Construction {
     const cost = stationCost(shape) + (electric ? stationTiles(shape).length * ELECTRIFY_TILE_COST : 0);
     if (!this.game.world.map.allFlat(stationTiles(shape))) return 'Nástupiště potřebuje rovný terén.';
     if (!rail.canPlaceStation(shape)) return 'Sem nástupiště postavit nelze.';
+    const refused = this.game.authority.refusal(shape.x, shape.y, 'povolit stavbu nástupiště');
+    if (refused) return refused;
     if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
     const target = this.joinTarget(stationTiles(shape), join);
     if (typeof target === 'string') return target;
@@ -272,6 +298,8 @@ export class Construction {
     const axis = rail.roadStopAxis(x, y);
     if (!axis) return 'Zastávka aut jde jen na rovnou silnici bez křižovatky.';
     if (!this.game.world.map.isFlat(x, y)) return 'Zastávka aut potřebuje rovný terén.';
+    const refused = this.game.authority.refusal(x, y, 'povolit stavbu zastávky');
+    if (refused) return refused;
     if (this.game.money < ROAD_STOP_COST) return `Nedostatek peněz (${formatMoney(ROAD_STOP_COST)}).`;
     const target = this.joinTarget([{ x, y }], join);
     if (typeof target === 'string') return target;
@@ -290,6 +318,8 @@ export class Construction {
     if (this.game.clock.date.year < spec.year) return `${spec.name} lze stavět až od roku ${spec.year}.`;
     if (!this.game.world.map.allFlat(stationTiles(shape))) return 'Letiště potřebuje rovný terén.';
     if (!rail.canPlaceAirport(shape)) return 'Letiště potřebuje volnou zemi bez staveb, silnic a vody.';
+    const refused = this.game.authority.refusal(x, y, 'povolit stavbu letiště');
+    if (refused) return refused;
     if (this.game.money < spec.cost) return `Nedostatek peněz (${formatMoney(spec.cost)}).`;
     const target = this.joinTarget(stationTiles(shape), join);
     if (typeof target === 'string') return target;
@@ -310,6 +340,8 @@ export class Construction {
     if (!canPlacePort(map, shape, (x, y) => rail.isBerth(x, y))) {
       return 'Přístav potřebuje dvě dlaždice volného břehu a před nimi volnou vodu.';
     }
+    const refused = this.game.authority.refusal(shape.x, shape.y, 'povolit stavbu přístavu');
+    if (refused) return refused;
     if (this.game.money < PORT_COST) return `Nedostatek peněz (${formatMoney(PORT_COST)}).`;
     const target = this.joinTarget(stationTiles(shape), join);
     if (typeof target === 'string') return target;
@@ -686,10 +718,17 @@ export class Construction {
           cost -= ROAD_DEPOT_COST * DEMOLISH_REFUND;
           tiles.push({ x, y });
           break;
-        case TileType.Road:
-          cost += map.getOwner(x, y) === NO_OWNER ? -ROAD_TILE_COST * DEMOLISH_REFUND : DEMOLISH_TOWN_ROAD_COST;
+        case TileType.Road: {
+          const townRoad = map.getOwner(x, y) !== NO_OWNER;
+          const refused = townRoad ? this.game.authority.refusal(x, y, 'povolit demolici silnice') : null;
+          if (refused) {
+            blocked ??= refused;
+            break;
+          }
+          cost += townRoad ? DEMOLISH_TOWN_ROAD_COST : -ROAD_TILE_COST * DEMOLISH_REFUND;
           tiles.push({ x, y });
           break;
+        }
         case TileType.RoadBridgeX:
         case TileType.RoadBridgeY:
           cost -= ROAD_BRIDGE_COST * DEMOLISH_REFUND;
@@ -698,6 +737,11 @@ export class Construction {
         case TileType.Building: {
           const building = buildingAt(towns[map.getOwner(x, y)], x, y);
           if (!building) break;
+          const refused = this.game.authority.refusal(x, y, 'povolit demolici budovy');
+          if (refused) {
+            blocked ??= refused;
+            break;
+          }
           cost += buildingCapacity(building.model) * DEMOLISH_COST_PER_RESIDENT;
           tiles.push({ x, y });
           break;
@@ -777,6 +821,7 @@ export class Construction {
           break;
         }
         case TileType.Road:
+          if (map.getOwner(x, y) !== NO_OWNER) this.game.authority.townRoadDemolished(x, y);
           map.set(x, y, TileType.Grass);
           map.setOwner(x, y, NO_OWNER);
           roadsChanged = true;
@@ -790,7 +835,10 @@ export class Construction {
         case TileType.Building: {
           const town = towns[map.getOwner(x, y)];
           const building = buildingAt(town, x, y);
-          if (building) demolishBuilding(map, town, building);
+          if (building) {
+            demolishBuilding(map, town, building);
+            this.game.authority.buildingDemolished(x, y);
+          }
           townsChanged = true;
           break;
         }

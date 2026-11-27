@@ -34,6 +34,7 @@ import { updateWater } from './water';
 import { TrafficLightsView } from './trafficLights';
 import { TrafficOverlayView } from './trafficOverlay';
 import { FlowOverlayView, type FlowLink } from './flowOverlay';
+import { StatuesView } from './statues';
 import { NIGHT_DETAIL_ZOOM, NightLightsView } from './nightLights';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
@@ -98,6 +99,7 @@ export class GameView {
   readonly trafficOverlay = new TrafficOverlayView();
   // Mapa toků nákladu (cargodist); zobrazený druh nákladu, nebo všechen
   readonly flowOverlay = new FlowOverlayView();
+  private readonly statues: StatuesView;
   flowCargo: Cargo | 'all' = 'all';
   private flowRefreshAt = 0;
   // Živé pohledy v oknech vozidel
@@ -188,12 +190,15 @@ export class GameView {
     this.labels.rebuild(towns);
     this.bindLabelEvents();
     const stationLabels = new StationLabels(map);
+    this.statues = new StatuesView(map);
+    void this.statues.sync(game.authority.statues.values());
     scene.add(
       this.terrain.object,
       roads.object,
       this.nightLights.object,
       this.trafficOverlay.object,
       this.flowOverlay.object,
+      this.statues.object,
       this.ambientProps.object,
       this.trafficLightView.object,
       this.buildings.object,
@@ -273,6 +278,7 @@ export class GameView {
       }
     };
     game.events.on('townsChanged', () => {
+      void this.statues.sync(game.authority.statues.values());
       void this.buildings.rebuild(towns);
       towns.forEach((town) => this.labels.update(town));
       this.trafficLights.refresh();

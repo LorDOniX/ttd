@@ -170,7 +170,9 @@ export class IndustryLife {
     let r = game.rng.next() * weights.reduce((a, b) => a + b, 0);
     const kind = kinds.find((_, i) => (r -= weights[i]) < 0) ?? kinds[0];
     for (let attempt = 0; attempt < FOUND_ATTEMPTS; attempt++) {
-      const industry = tryPlaceIndustry(map, towns, industries, kind, game.rng, game.clock.day);
+      const industry = game.authority.quietly(() =>
+        tryPlaceIndustry(map, towns, industries, kind, game.rng, game.clock.day),
+      );
       if (!industry) continue;
       industries.push(industry);
       game.news(`Zahájen provoz: ${industry.name}.`, centre(industry));

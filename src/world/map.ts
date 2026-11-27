@@ -25,6 +25,8 @@ export enum TileType {
   Airport = 15,
   // Nábřeží přístavu; lodě kotví na vodě před ním
   Port = 16,
+  // Socha společnosti ve městě (místní úřad); zbourat nejde
+  Statue = 17,
 }
 
 // Vede silniční most podél osy přes hranu edge? Hrany V a Z (lichá čísla) leží na ose X
@@ -177,9 +179,13 @@ export class GameMap {
     return this.tiles[y * this.width + x];
   }
 
+  // Volá se, když stromy na dlaždici zmizí (místní úřad za to snižuje hodnocení)
+  onTreesCleared?: (x: number, y: number) => void;
+
   set(x: number, y: number, type: TileType): void {
     const i = y * this.width + x;
     if (this.tiles[i] === type) return;
+    if (this.tiles[i] === TileType.Trees && this.onTreesCleared) this.onTreesCleared(x, y);
     this.tiles[i] = type;
     this.record(i);
   }

@@ -32,15 +32,16 @@ export function ratingParts(station: Station, cargo: Cargo, now: number): Rating
   };
 }
 
-export function targetRating(station: Station, cargo: Cargo, now: number): number {
+// Cílové hodnocení; bonus přidá socha společnosti ve městě
+export function targetRating(station: Station, cargo: Cargo, now: number, bonus = 0): number {
   const { visit, speed, waiting } = ratingParts(station, cargo, now);
-  return visit + speed + waiting;
+  return Math.min(1, visit + speed + waiting + bonus);
 }
 
 // Denní posun hodnocení k cíli, nejvýš o RATING_DAILY_CHANGE
-export function updateRating(station: Station, cargo: Cargo, now: number): void {
+export function updateRating(station: Station, cargo: Cargo, now: number, bonus = 0): void {
   const entry = station.ratings[cargo];
-  const delta = targetRating(station, cargo, now) - entry.rating;
+  const delta = targetRating(station, cargo, now, bonus) - entry.rating;
   entry.rating += Math.max(-RATING_DAILY_CHANGE, Math.min(RATING_DAILY_CHANGE, delta));
 }
 

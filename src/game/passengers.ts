@@ -282,7 +282,8 @@ export class Passengers {
   private generate(): void {
     const now = this.game.clock.now;
     for (const station of this.game.world.rail.primaries()) {
-      for (const cargo of CARGO_TYPES) updateRating(station, cargo, now);
+      const bonus = this.game.authority.stationBonus(station);
+      for (const cargo of CARGO_TYPES) updateRating(station, cargo, now, bonus);
       const monthly = this.inflow(station);
       const max = monthly * PASSENGERS_MAX_WAITING_MONTHS;
       const waiting = Math.min(max, station.waiting + monthly / DAYS_PER_MONTH);

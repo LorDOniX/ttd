@@ -28,6 +28,7 @@ const TILE_NAMES: Record<TileType, string> = {
   [TileType.RoadBridgeY]: 'Silniční most',
   [TileType.Airport]: 'Letiště',
   [TileType.Port]: 'Přístav',
+  [TileType.Statue]: 'Socha společnosti',
 };
 
 export interface TileInfoLinks {

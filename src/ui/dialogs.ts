@@ -6,7 +6,8 @@ import {
   type DistributionMode,
 } from '../game/cargodist';
 import { AIRCRAFT_CREDITS } from './aircraft';
-import { AD_CAMPAIGN_COST, AD_RATING_BOOST } from '../game/balance';
+import { AUTHORITY_PERMIT, STATUE_COST, STATUE_STATION_BONUS } from '../game/balance';
+import { ratingLabel } from '../game/authority';
 import { formatDate } from '../game/clock';
 import { SEASON_MODES, type SeasonMode } from '../game/seasons';
 import { BREAKDOWN_LABELS, BREAKDOWN_SETTINGS, isBreakdownSetting } from '../game/reliability';
@@ -15,7 +16,7 @@ import { SUBSIDY_MULTIPLIERS } from '../game/balance';
 import { isSubsidyMultiplier, multiplierText } from '../game/subsidies';
 import { Game, formatMoney } from '../game/game';
 import { parseSave, serializeGame } from '../game/save';
-import { advertise, fundBuildings, fundBuildingsCost } from '../game/townActions';
+import { AD_SIZES, advertise, fundBuildings, fundBuildingsCost, type AdSize } from '../game/townActions';
 import type { Town, TownKind } from '../world/town';
 import { h } from './dom';
 import { loadTheme, saveTheme, type Theme } from './theme';
@@ -260,31 +261,50 @@ export function openTown(windows: WindowManager, game: Game, town: Town, focus: 
     });
     return b;
   };
-  const render = (): HTMLElement =>
-    h(
+  const render = (): HTMLElement => {
+    const { authority } = game;
+    const rating = authority.rating(town);
+    const statue = authority.statues.has(town.id);
+    const row = (label: string, value: string, className = ''): HTMLTableRowElement =>
+      h('tr', {}, h('td', {}, label), h('td', { className }, value));
+    return h(
       'div',
       { className: 'form' },
       h(
         'table',
         { className: 'table' },
-        h('tr', {}, h('td', {}, 'Typ'), h('td', {}, KIND_LABELS[town.kind])),
-        h('tr', {}, h('td', {}, 'Obyvatel'), h('td', { className: 'num' }, town.population.toLocaleString('cs-CZ'))),
-        h('tr', {}, h('td', {}, 'Budov'), h('td', { className: 'num' }, String(town.buildings.length))),
-        h('tr', {}, h('td', {}, 'Obsluhované'), h('td', { className: 'num' }, town.served ? 'ano' : 'ne')),
+        row('Typ', KIND_LABELS[town.kind]),
+        row('Obyvatel', town.population.toLocaleString('cs-CZ'), 'num'),
+        row('Budov', String(town.buildings.length), 'num'),
+        row('Obsluhované', town.served ? 'ano' : 'ne', 'num'),
+        row(
+          'Hodnocení společnosti',
+          `${ratingLabel(rating)} (${Math.round(rating)})`,
+          rating <= AUTHORITY_PERMIT ? 'num warning' : 'num',
+        ),
+        row('Socha společnosti', statue ? 'stojí' : 'ne', 'num'),
       ),
       h(
         'div',
         { className: 'train__actions' },
-        action(`Reklama (${formatMoney(AD_CAMPAIGN_COST)})`, () => advertise(game, town)),
+        ...(Object.keys(AD_SIZES) as AdSize[]).map((size) =>
+          action(`${AD_SIZES[size].label} (${formatMoney(AD_SIZES[size].cost)})`, () => advertise(game, town, size)),
+        ),
+        ...(statue ? [] : [action(`Postavit sochu (${formatMoney(STATUE_COST)})`, () => authority.buildStatue(town))]),
         action(`Financovat výstavbu (${formatMoney(fundBuildingsCost(town))})`, () => fundBuildings(game, town)),
       ),
       h(
         'div',
         { className: 'form__hint' },
-        `Reklama zvedne hodnocení vašich stanic ve městě o ${Math.round(AD_RATING_BOOST * 100)} bodů. ` +
-          'Financovaná výstavba hned přidá městu rok růstu. Obsluhované město roste rychleji.',
+        'Místní úřad hodnotí, co společnost ve městě a okolí dělá: kácení stromů a bourání budov a silnic ' +
+          'hodnocení snižuje, obsluhované stanice a vysazené stromy ho zvyšují (opuštěné stanice snižují). ' +
+          `Při hodnocení horším než „Špatné“ město nepovolí stavbu stanic ani demolici svého majetku. ` +
+          `Reklama zvedne hodnocení stanic (malá s městem v dosahu, střední a velká i v okolí). ` +
+          `Socha trvale zvedne hodnocení stanic ve městě o ${Math.round(STATUE_STATION_BONUS * 100)} bodů. ` +
+          'Financovaná výstavba hned přidá městu rok růstu.',
       ),
     );
+  };
 
   const off = game.events.on('townsChanged', () => {
     if (windows.isOpen(id)) windows.update(id, render());

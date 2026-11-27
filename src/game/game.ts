@@ -17,6 +17,7 @@ import type { World } from '../world/generator';
 import { Rng } from '../world/rng';
 import type { BreakdownSetting } from './reliability';
 import { CargoDist } from './cargodist';
+import { LocalAuthority } from './authority';
 import type { EconomySetting } from './industryLife';
 import { growTown } from '../world/town';
 
@@ -122,6 +123,7 @@ export class Game {
   readonly industryLife: IndustryLife;
   readonly subsidies: Subsidies;
   readonly cargodist: CargoDist;
+  readonly authority: LocalAuthority;
   readonly groups: VehicleGroups;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
@@ -157,6 +159,7 @@ export class Game {
     // Až po IndustryLife: měsíční nabídky vidí uzavřený odvoz a zaniklé závody
     this.subsidies = new Subsidies(this);
     this.cargodist = new CargoDist(this);
+    this.authority = new LocalAuthority(this);
     this.groups = new VehicleGroups(
       (kind) => this.vehiclesOf(kind),
       () => this.events.emit('groupsChanged'),
@@ -336,10 +339,13 @@ export class Game {
         `hodnota ${formatMoney(companyValue(this))}.`,
     );
 
-    for (const town of this.world.towns) {
-      growTown(this.world.map, town, year + 1, this.rng);
-      town.served = false;
-    }
+    // Růst měst hodnocení společnosti neovlivní (vykácené stromy jdou za městem)
+    this.authority.quietly(() => {
+      for (const town of this.world.towns) {
+        growTown(this.world.map, town, year + 1, this.rng);
+        town.served = false;
+      }
+    });
     this.events.emit('townsChanged');
   }
 }
