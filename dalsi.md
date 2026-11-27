@@ -41,4 +41,4 @@ se převedou (nové údaje mají rozumný výchozí stav). Konkurenční společ
 - [x] Testy, commit
 
 ## 7. Nasazení
-- [ ] Build, `npm run upload`, ověření na https://app.makuderovi.cz/ttd/
+- [x] Build, `npm run upload`, ověření na https://app.makuderovi.cz/ttd/
