@@ -19,6 +19,8 @@ import {
   TERRAFORM_CORNER_COST,
   TRACK_PIECE_COST,
   TREE_PLANT_COST,
+  CANAL_COST,
+  LOCK_COST,
   TRAM_TRACK_COST,
   TUNNEL_PIECE_COST,
   WAYPOINT_COST,
@@ -30,8 +32,9 @@ import { formatMoney, type Game } from './game';
 import type { World } from '../world/generator';
 import { NO_OWNER, TileType, type GameMap, type TilePos } from '../world/map';
 import { airportShape } from '../world/airport';
-import { canPlacePort, type PortShape } from '../world/port';
+import { canPlacePort, waterLevel, type PortShape } from '../world/port';
 import {
+  EDGE_DELTA,
   PIECES,
   RailType,
   axisPiece,
@@ -182,6 +185,66 @@ export class Construction {
     if (this.game.money < plan.cost) return `Nedostatek peněz (${formatMoney(plan.cost)}).`;
     this.game.spend(plan.cost, 'construction');
     applyTerraform(this.game.world.map, plan);
+    return null;
+  }
+
+  // Kanál jako v OpenTTD: na volnou rovnou trávu (i les) mimo mosty; u moře na úrovni 0 na něj navazuje
+  canalPlan(area: readonly TilePos[]): { tiles: TilePos[]; cost: number } {
+    const tiles = area.filter((t) => this.canalSite(t.x, t.y));
+    return { tiles, cost: tiles.length * CANAL_COST };
+  }
+
+  private canalSite(x: number, y: number): boolean {
+    const { map } = this.game.world;
+    return (
+      map.isOpenGround(x, y) && map.isFlat(x, y) && !map.isBridged(x, y) && !this.game.world.rail.tunnelUnder(x, y)
+    );
+  }
+
+  buildCanal(area: readonly TilePos[]): string | null {
+    const { tiles, cost } = this.canalPlan(area);
+    if (tiles.length === 0) return 'Kanál jde jen na volnou rovnou zem.';
+    if (this.game.money < cost) return `Nedostatek peněz (${formatMoney(cost)}).`;
+    this.game.spend(cost, 'construction');
+    for (const t of tiles) this.game.world.map.set(t.x, t.y, TileType.Canal);
+    this.game.events.emit('railChanged');
+    return null;
+  }
+
+  // Zdymadlo na rovném svahu: dole i nahoře musí být kanál (voda) ve správné hladině, nebo rovná volná
+  // zem ve správné výšce, kde kanál přibude
+  lockPlan(x: number, y: number): { cost: number; problem: string | null; canals: TilePos[] } {
+    const { map } = this.game.world;
+    const none = { cost: 0, canals: [] };
+    if (!map.inBounds(x, y)) return { ...none, problem: 'Mimo mapu.' };
+    const slope = map.slope(x, y);
+    if (slope.kind !== 'incline') return { ...none, problem: 'Zdymadlo musí stát na rovném svahu.' };
+    if (!map.isOpenGround(x, y) || map.isBridged(x, y)) return { ...none, problem: 'Zdymadlo potřebuje volnou zem.' };
+    const [dx, dy] = EDGE_DELTA[slope.up as Edge];
+    const canals: TilePos[] = [];
+    for (const [tx, ty, level] of [
+      [x - dx, y - dy, slope.level],
+      [x + dx, y + dy, slope.level + 1],
+    ]) {
+      if (waterLevel(map, tx, ty) === level) continue;
+      if (this.canalSite(tx, ty) && map.tileLevel(tx, ty) === level) {
+        canals.push({ x: tx, y: ty });
+        continue;
+      }
+      return { ...none, problem: 'Pod i nad zdymadlem musí být kanál nebo rovná volná zem ve výšce zdymadla.' };
+    }
+    return { cost: LOCK_COST + canals.length * CANAL_COST, problem: null, canals };
+  }
+
+  buildLock(x: number, y: number): string | null {
+    const plan = this.lockPlan(x, y);
+    if (plan.problem) return plan.problem;
+    if (this.game.money < plan.cost) return `Nedostatek peněz (${formatMoney(plan.cost)}).`;
+    this.game.spend(plan.cost, 'construction');
+    const { map } = this.game.world;
+    map.set(x, y, TileType.Lock);
+    for (const t of plan.canals) map.set(t.x, t.y, TileType.Canal);
+    this.game.events.emit('railChanged');
     return null;
   }
 
@@ -778,6 +841,17 @@ export class Construction {
           cost += DEMOLISH_TREES_COST;
           tiles.push({ x, y });
           break;
+        case TileType.Canal:
+        case TileType.Lock: {
+          const ship = this.game.shipFleet.onTile(x, y);
+          if (ship) {
+            blocked ??= `Tudy pluje ${ship.name}.`;
+            break;
+          }
+          cost -= (type === TileType.Lock ? LOCK_COST : CANAL_COST) * DEMOLISH_REFUND;
+          tiles.push({ x, y });
+          break;
+        }
       }
     }
     return { tiles, cost, blocked };
@@ -811,6 +885,12 @@ export class Construction {
         case TileType.Trees:
           map.set(x, y, TileType.Grass);
           treesChanged = true;
+          break;
+        // Zbouraný kanál a zdymadlo se zasypou
+        case TileType.Canal:
+        case TileType.Lock:
+          map.set(x, y, TileType.Grass);
+          railChanged = true;
           break;
         case TileType.Rail:
         case TileType.Crossing:

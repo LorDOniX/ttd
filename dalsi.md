@@ -31,9 +31,9 @@ se převedou (nové údaje mají rozumný výchozí stav). Konkurenční společ
 - [x] Testy, kontrola v prohlížeči, commit
 
 ## 5. Kanály a zdymadla
-- [ ] Kanál: stavba vody na rovné souši (cena), lodě po něm plují
-- [ ] Zdymadlo na svahu: loď přejede mezi úrovněmi, vykreslení
-- [ ] Hledání cesty lodí přes kanály a zdymadla, testy, kontrola v prohlížeči, commit
+- [x] Kanál: stavba vody na rovné souši (cena), lodě po něm plují
+- [x] Zdymadlo na svahu: loď přejede mezi úrovněmi, vykreslení
+- [x] Hledání cesty lodí přes kanály a zdymadla, testy, kontrola v prohlížeči, commit
 
 ## 6. Podmíněné příkazy
 - [ ] Příkaz „Podmínka“: když (naložení %, spolehlivost, stáří, potřeba servisu, vždy) splňuje porovnání, skoč na příkaz N

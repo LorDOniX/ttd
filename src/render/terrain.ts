@@ -13,6 +13,8 @@ const WATER = new THREE.Color(0x3a6fb0);
 const SHALLOW = new THREE.Color(0x5aa3cc);
 const PAVEMENT = new THREE.Color(0xa3a39a);
 const INDUSTRY_GROUND = new THREE.Color(0x857a68);
+// Dno kanálu a zdymadla (zakryté hladinou, vidět je jen u břehu)
+const CANAL_BED = new THREE.Color(0x5d6a72);
 const SAND = new THREE.Color(0xd6c38c);
 const BANK = new THREE.Color(0x8a7150);
 interface TerrainPalette {
@@ -445,8 +447,9 @@ export class TerrainView {
 
   // Rohy dlaždice ve výšce terénu (voda pod hladinou) a normála podle průměrného sklonu dlaždice
   private writeTileHeight(positions: Float32Array, x: number, y: number): void {
-    const water = this.isWater(x, y);
-    const [nw, ne, se, sw] = this.corners(x, y).map((h) => h * HEIGHT_STEP - (water ? WATER_DEPTH : 0));
+    // Moře i kanál (zdymadlo) leží pod okolní souší; kanál zakryje vlastní hladina (CanalsView)
+    const sunk = this.isWater(x, y) || this.map.isType(x, y, TileType.Canal) || this.map.isType(x, y, TileType.Lock);
+    const [nw, ne, se, sw] = this.corners(x, y).map((h) => h * HEIGHT_STEP - (sunk ? WATER_DEPTH : 0));
     const offset = (y * this.map.width + x) * 12;
     positions.set([x, nw, y, x + 1, ne, y, x + 1, se, y + 1, x, sw, y + 1], offset);
     // Sklon normály je zesílený, aby svahy byly v izometrii jasně světlejší či tmavší jako v OpenTTD
@@ -476,6 +479,9 @@ export class TerrainView {
         return this.towns[this.map.getOwner(x, y)]?.kind === 'city' ? PAVEMENT : palette.garden;
       case TileType.Industry:
         return INDUSTRY_GROUND;
+      case TileType.Canal:
+      case TileType.Lock:
+        return CANAL_BED;
       default:
         return palette.grass;
     }

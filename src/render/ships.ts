@@ -4,6 +4,8 @@ import { shipModel, type Ship, type ShipFleet } from '../game/ships';
 import { inView, type ViewFrustums } from './camera';
 import type { CabPose } from './firstPerson';
 import { WATER_DEPTH } from './terrain';
+import { HEIGHT_STEP, type GameMap } from '../world/map';
+import { waterSurface } from '../world/port';
 
 // Modely z watercraft kitu mají předek na +Z a dno na y = 0; sjednotí se na délku v dlaždicích
 const MODEL_LENGTH: Record<string, number> = {
@@ -44,7 +46,10 @@ export class ShipsView {
   private readonly views = new Map<number, ShipView>();
   private cabId: number | null = null;
 
-  constructor(private readonly fleet: ShipFleet) {}
+  constructor(
+    private readonly fleet: ShipFleet,
+    private readonly map?: GameMap,
+  ) {}
 
   update(frustum: ViewFrustums, seconds: number, dt: number): void {
     const alive = new Set(this.fleet.ships.map((s) => s.id));
@@ -123,7 +128,9 @@ export class ShipsView {
     // V ledu se loď nehoupe
     const sway = this.fleet.frozen ? 0 : 1;
     const bob = Math.sin(seconds * 1.7 + ship.id) * 0.004 * sway;
-    view.group.position.set(sample.x, -WATER_DEPTH - DRAFT + bob, sample.y);
+    // Hladina moře, kanálu, nebo ve zdymadle stoupající
+    const surface = this.map ? waterSurface(this.map, sample.x, sample.y, -WATER_DEPTH, HEIGHT_STEP) : -WATER_DEPTH;
+    view.group.position.set(sample.x, surface - DRAFT + bob, sample.y);
     view.group.rotation.y = view.yaw;
     view.group.rotation.z = Math.sin(seconds * 1.3 + ship.id * 2) * 0.02 * sway;
     view.group.visible = ship.id !== this.cabId && inView(frustum, sample.x, 0, sample.y, 0.7);

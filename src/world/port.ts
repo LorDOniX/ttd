@@ -52,9 +52,78 @@ export function moorDirection(port: PortShape): Point {
   return portFrame(port).u;
 }
 
-// Splavná je jen volná voda: pod nízkými mosty lodě neproplují
+// Splavná je volná voda (pod nízkými mosty lodě neproplují), kanál a zdymadlo
 export function navigable(map: GameMap, x: number, y: number): boolean {
-  return map.isType(x, y, TileType.Water);
+  if (!map.inBounds(x, y)) return false;
+  const type = map.get(x, y);
+  return type === TileType.Water || type === TileType.Canal || type === TileType.Lock;
+}
+
+// Hladina dlaždice ve výškových úrovních: moře 0, kanál v úrovni dlaždice; zdymadlo a souš žádnou nemají
+export function waterLevel(map: GameMap, x: number, y: number): number | null {
+  if (!map.inBounds(x, y)) return null;
+  const type = map.get(x, y);
+  if (type === TileType.Water) return 0;
+  if (type === TileType.Canal) return map.tileLevel(x, y);
+  return null;
+}
+
+// Zdymadlo: dolní hladina na straně ze svahu, horní o úroveň výš na straně do svahu, směr do svahu
+export function lockEnds(map: GameMap, x: number, y: number): { low: number; high: number; up: Edge } | null {
+  if (!map.isType(x, y, TileType.Lock)) return null;
+  const slope = map.slope(x, y);
+  if (slope.kind !== 'incline') return null;
+  return { low: slope.level, high: slope.level + 1, up: slope.up as Edge };
+}
+
+// Navazuje sousední dlaždice (ox, oy) na zdymadlo (lx, ly)? Jen podél svahu, dole ve stejné hladině jako
+// dolní konec, nahoře jako horní
+function lockJoins(map: GameMap, lx: number, ly: number, ox: number, oy: number): boolean {
+  const ends = lockEnds(map, lx, ly);
+  if (!ends) return false;
+  const [dx, dy] = EDGE_DELTA[ends.up];
+  const level = waterLevel(map, ox, oy);
+  if (ox === lx + dx && oy === ly + dy) return level === ends.high;
+  if (ox === lx - dx && oy === ly - dy) return level === ends.low;
+  return false;
+}
+
+// Smí loď přeplout ze sousední dlaždice na sousední? Mezi kanály a mořem jen ve stejné hladině, do zdymadla
+// a z něj jen podél svahu a šikmo vůbec
+export function canSail(map: GameMap, x: number, y: number, nx: number, ny: number): boolean {
+  if (!navigable(map, x, y) || !navigable(map, nx, ny)) return false;
+  const lockA = map.isType(x, y, TileType.Lock);
+  const lockB = map.isType(nx, ny, TileType.Lock);
+  if (lockA || lockB) {
+    if (x !== nx && y !== ny) return false;
+    if (lockA && lockB) return false;
+    return lockA ? lockJoins(map, x, y, nx, ny) : lockJoins(map, nx, ny, x, y);
+  }
+  return waterLevel(map, x, y) === waterLevel(map, nx, ny);
+}
+
+// Kanál leží o kousek níž než okolní souš (světové jednotky pod úrovní dlaždice)
+export const CANAL_DROP = 0.04;
+
+// Výška hladiny (světové jednotky) v bodě (px, py): moře seaSurface, kanál pod úrovní dlaždice,
+// ve zdymadle hladina uprostřed vystoupá k horní úrovni
+export function waterSurface(map: GameMap, px: number, py: number, seaSurface: number, step: number): number {
+  const x = Math.floor(px);
+  const y = Math.floor(py);
+  if (!map.inBounds(x, y)) return seaSurface;
+  const type = map.get(x, y);
+  if (type === TileType.Canal) return map.tileLevel(x, y) * step - CANAL_DROP;
+  const ends = lockEnds(map, x, y);
+  if (!ends) return seaSurface;
+  const [dx, dy] = EDGE_DELTA[ends.up];
+  // Poloha podél svahu: 0 na dolní hraně, 1 na horní
+  const t = dx !== 0 ? (dx > 0 ? px - x : 1 - (px - x)) : dy > 0 ? py - y : 1 - (py - y);
+  const rise = Math.min(1, Math.max(0, (t - 0.35) / 0.3));
+  const low =
+    ends.low === 0 && waterLevel(map, x - dx, y - dy) === 0 && map.isType(x - dx, y - dy, TileType.Water)
+      ? seaSurface
+      : ends.low * step - CANAL_DROP;
+  return low + (ends.high * step - CANAL_DROP - low) * rise;
 }
 
 // Přístav pro kliknutou dlaždici: druhá dlaždice nábřeží vedle ní a voda před oběma; preferred = upřednostněná
@@ -109,7 +178,7 @@ export function waterBodies(map: GameMap): Int32Array {
         const nx = x + dx;
         const ny = y + dy;
         const j = ny * width + nx;
-        if (map.inBounds(nx, ny) && label[j] < 0 && navigable(map, nx, ny)) {
+        if (map.inBounds(nx, ny) && label[j] < 0 && canSail(map, x, y, nx, ny)) {
           label[j] = next;
           stack.push(j);
         }
@@ -159,8 +228,9 @@ export function findWaterRoute(map: GameMap, from: TilePos, to: TilePos): TilePo
     for (const [dx, dy, step] of DIRS) {
       const nx = x + dx;
       const ny = y + dy;
-      if (!navigable(map, nx, ny)) continue;
-      if (dx !== 0 && dy !== 0 && (!navigable(map, x + dx, y) || !navigable(map, x, y + dy))) continue;
+      if (!canSail(map, x, y, nx, ny)) continue;
+      // Šikmo jen tam, kde by loď mohla plout i kolem rohu (obě sousední dlaždice ve stejné hladině)
+      if (dx !== 0 && dy !== 0 && (!canSail(map, x, y, x + dx, y) || !canSail(map, x, y, x, y + dy))) continue;
       const j = ny * width + nx;
       const next = base + step;
       if (next >= (cost.get(j) ?? Infinity)) continue;

@@ -72,6 +72,8 @@ const TILE_NAMES: Partial<Record<TileType, string>> = {
   [TileType.Airport]: 'Letiště',
   [TileType.Port]: 'Přístav',
   [TileType.Statue]: 'Socha společnosti',
+  [TileType.Canal]: 'Kanál',
+  [TileType.Lock]: 'Zdymadlo',
 };
 
 export interface FirstPersonHooks {

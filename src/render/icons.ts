@@ -63,7 +63,9 @@ export type SceneIcon =
   | 'terraform-lower'
   | 'terraform-level'
   | 'plant-trees'
-  | 'tram';
+  | 'tram'
+  | 'canal'
+  | 'lock';
 
 // Čtyřboký jehlan terénu (kopec nahoru, údolí dolů) na dlaždici
 function hillShape(height: number, color: number): THREE.Mesh {
@@ -195,6 +197,42 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
   // Portál tunelu ve svahu s kolejí (silnicí) vedoucí do ústí
   tunnel: () => [tile(), track('x'), createTunnelPortal(0, 0, Edge.E, 0)],
   'road-tunnel': () => [tile(), road('x'), createTunnelPortal(0, 0, Edge.E, 0)],
+  // Kanál: voda mezi kamennými zdmi
+  canal: () => {
+    const water = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 0.02, 0.8),
+      new THREE.MeshLambertMaterial({ color: 0x3a6fb0 }),
+    );
+    const walls = [-0.45, 0.45].map((z) => {
+      const wall = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 0.08, 0.1),
+        new THREE.MeshLambertMaterial({ color: 0x9a9184 }),
+      );
+      wall.position.set(0, 0.02, z);
+      return wall;
+    });
+    return [tile(), water, ...walls];
+  },
+  // Zdymadlo: dvě hladiny a vrata mezi nimi
+  lock: () => {
+    const stone = new THREE.MeshLambertMaterial({ color: 0x9a9184 });
+    const waterMaterial = new THREE.MeshLambertMaterial({ color: 0x3a6fb0 });
+    const low = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.8), waterMaterial);
+    low.position.set(-0.25, 0, 0);
+    const high = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.8), waterMaterial);
+    high.position.set(0.25, 0.1, 0);
+    const gate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05, 0.26, 0.8),
+      new THREE.MeshLambertMaterial({ color: 0x5b4632 }),
+    );
+    gate.position.set(0, 0.11, 0);
+    const walls = [-0.45, 0.45].map((z) => {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(1, 0.26, 0.1), stone);
+      wall.position.set(0, 0.11, z);
+      return wall;
+    });
+    return [tile(), low, high, gate, ...walls];
+  },
   // Tramvaj na silnici
   tram: async () => {
     const tram = await loadModel('train kit', 'train-tram-classic');

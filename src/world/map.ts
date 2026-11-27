@@ -27,6 +27,10 @@ export enum TileType {
   Port = 16,
   // Socha společnosti ve městě (místní úřad); zbourat nejde
   Statue = 17,
+  // Kanál: voda na rovné souši v úrovni dlaždice, lodě po něm plují
+  Canal = 18,
+  // Zdymadlo na rovném svahu: loď v něm vystoupá (klesne) o úroveň mezi kanály podél svahu
+  Lock = 19,
 }
 
 // Vede silniční most podél osy přes hranu edge? Hrany V a Z (lichá čísla) leží na ose X

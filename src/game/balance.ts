@@ -1101,3 +1101,7 @@ export const TOWN_SUPPLY_BONUS = {
   food: { per1000: 10, bonus: 0.02 },
   goods: { per1000: 10, bonus: 0.01 },
 } as const;
+
+// Kanál na rovné souši a zdymadlo na svahu (bez kanálů, které k němu přibudou)
+export const CANAL_COST = 20_000;
+export const LOCK_COST = 120_000;

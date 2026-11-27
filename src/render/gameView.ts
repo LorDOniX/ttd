@@ -12,6 +12,7 @@ import { MiniViews } from './miniViews';
 import { portLamps } from './ports';
 import type { PortShape } from '../world/port';
 import { stationTiles } from '../world/rail';
+import { TileType } from '../world/map';
 import { AmbientPropsView } from './ambientProps';
 import { AnimalsView } from './animals';
 import { BuildingsView } from './buildings';
@@ -36,6 +37,7 @@ import { TrafficOverlayView } from './trafficOverlay';
 import { FlowOverlayView, type FlowLink } from './flowOverlay';
 import { StatuesView } from './statues';
 import { TramTracksView } from './tramTracks';
+import { CanalsView } from './canals';
 import { NIGHT_DETAIL_ZOOM, NightLightsView } from './nightLights';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
@@ -102,6 +104,7 @@ export class GameView {
   readonly flowOverlay = new FlowOverlayView();
   private readonly statues: StatuesView;
   private readonly tramTracks: TramTracksView;
+  private readonly canals: CanalsView;
   flowCargo: Cargo | 'all' = 'all';
   private flowRefreshAt = 0;
   // Živé pohledy v oknech vozidel
@@ -147,7 +150,12 @@ export class GameView {
     this.sun.position.set(10, 20, 5);
     scene.add(this.sun);
 
-    this.terrain = new TerrainView(map, towns, (x, y) => world.rail.tunnelAtPortal(x, y) !== undefined);
+    // Portál tunelu a zdymadlo se kreslí rovně ve výšce dolního rohu
+    this.terrain = new TerrainView(
+      map,
+      towns,
+      (x, y) => world.rail.tunnelAtPortal(x, y) !== undefined || map.isType(x, y, TileType.Lock),
+    );
     const roads = (this.roads = new RoadView(map, world.rail));
     this.nightLights = new NightLightsView(map.width, map.height, map);
     this.nightLights.light(this.terrain.groundMaterial, ...roads.groundMaterials);
@@ -183,7 +191,7 @@ export class GameView {
     this.trains = new TrainsView(game.fleet, map, world.rail);
     this.vehicles = new RoadVehiclesView(game.roadFleet, map);
     this.aircraft = new AircraftView3D(game.airFleet, map);
-    this.ships = new ShipsView(game.shipFleet);
+    this.ships = new ShipsView(game.shipFleet, map);
     this.pedestrians = new PedestriansView(map, world.rail, towns, roads);
     this.crossings = new CrossingsView(map, world.rail);
     this.labels = new TownLabels(container, map);
@@ -195,6 +203,8 @@ export class GameView {
     this.statues = new StatuesView(map);
     this.tramTracks = new TramTracksView(map, world.rail);
     this.tramTracks.rebuild();
+    this.canals = new CanalsView(map);
+    this.canals.rebuild();
     void this.statues.sync(game.authority.statues.values());
     scene.add(
       this.terrain.object,
@@ -204,6 +214,7 @@ export class GameView {
       this.flowOverlay.object,
       this.statues.object,
       this.tramTracks.object,
+      this.canals.object,
       this.ambientProps.object,
       this.trafficLightView.object,
       this.buildings.object,
@@ -295,6 +306,7 @@ export class GameView {
     for (const event of ['railChanged', 'roadsChanged', 'townsChanged'] as const) {
       game.events.on(event, () => this.tramTracks.rebuild());
     }
+    game.events.on('railChanged', () => this.canals.rebuild());
     // Silniční most mění napojení silnic i bez změny dlaždic
     game.events.on('roadsChanged', () => this.roads.invalidate());
     game.events.on('stationsChanged', rebuildStationLabels);

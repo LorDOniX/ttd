@@ -13,6 +13,8 @@ import {
   ROAD_BRIDGE_COST,
   TUNNEL_PIECE_COST,
   TREE_PLANT_COST,
+  CANAL_COST,
+  LOCK_COST,
   TRAM_TRACK_COST,
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
@@ -86,6 +88,8 @@ export type BuildTool =
   | 'tunnel'
   | 'road-tunnel'
   | 'tram'
+  | 'canal'
+  | 'lock'
   | 'station'
   | 'depot'
   | 'signal'
@@ -484,10 +488,15 @@ export class BuildTools {
       'Stavba přístavů',
       [
         ['port', '⚓', 'Přístav', 'W', `${formatMoneyShort(PORT_COST)}, 2 kotviště`],
+        ['canal', '〰️', 'Kanál', '—', `${formatMoneyShort(CANAL_COST)} / pole`],
+        ['lock', '🚪', 'Zdymadlo', '—', formatMoneyShort(LOCK_COST)],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Přístav se staví na břeh: dvě dlaždice volné země a před nimi volná voda pro dvě kotviště. ' +
         'Lodě plují jen po souvislé vodní ploše a pod mosty neproplují. Kliknutím na přístav se otevře loděnice. ' +
+        'Kanál: tažením oblasti na rovnou volnou zem; u moře na úrovni 0 na něj navazuje, výš je to samostatná ' +
+        'hladina. Zdymadlo: klikněte na rovný svah, pod ním a nad ním přibude kanál; loď v něm vystoupá ' +
+        '(klesne) o úroveň. Lodě plují jen mezi vodou ve stejné hladině a zdymadly. ' +
         'R – otočit k vodě, Esc – zrušit nástroj.',
     );
   }
@@ -819,7 +828,7 @@ export class BuildTools {
       if (tool === 'road' || tool === 'road-stop' || tool === 'road-depot' || tool === 'road-bridge') {
         this.openRoadWindow();
       } else if (airportTool(tool)) this.openAirWindow();
-      else if (tool === 'port') this.openWaterWindow();
+      else if (tool === 'port' || tool === 'canal' || tool === 'lock') this.openWaterWindow();
       else this.openRailWindow();
     }
     this.setTool(this.tool === tool ? null : tool);
@@ -861,6 +870,7 @@ export class BuildTools {
       this.tool === 'demolish' ||
       this.tool === 'plant-trees' ||
       this.tool === 'tram' ||
+      this.tool === 'canal' ||
       terraformMode(this.tool) !== null ||
       this.tool === 'electrify' ||
       this.tool === 'station' ||
@@ -872,6 +882,8 @@ export class BuildTools {
       this.updatePath();
     } else if (this.tool === 'waypoint') {
       this.report(this.game.construction.toggleWaypoint(tile.x, tile.y));
+    } else if (this.tool === 'lock') {
+      if (!this.estimateMode) this.report(this.game.construction.buildLock(tile.x, tile.y));
     } else if (this.tool === 'tunnel' || this.tool === 'road-tunnel') {
       if (this.tool === 'tunnel') this.applyRailKind();
       if (!this.estimateMode) {
@@ -952,6 +964,7 @@ export class BuildTools {
     }
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
     if (this.tool === 'plant-trees' && !this.estimateMode) this.report(construction.plantTrees(this.demolishArea()));
+    if (this.tool === 'canal' && !this.estimateMode) this.report(construction.buildCanal(this.demolishArea()));
     if (this.tool === 'tram' && !this.estimateMode) {
       this.report(construction.buildTram(this.tramTiles() ?? [], this.removeMode));
     }
@@ -1542,6 +1555,17 @@ export class BuildTools {
               (affordable ? '' : ' · nedostatek peněz'));
         if (terraform.mode === 'level' && !plan.problem) text += ` · na úroveň ${terraform.target}`;
       }
+    } else if (this.tool === 'canal' && tile) {
+      const plan = this.game.construction.canalPlan(this.demolishArea());
+      const ok = plan.tiles.length > 0;
+      this.preview.showArea(ok ? plan.tiles : [tile], ok ? 'valid' : 'invalid');
+      text = ok
+        ? `kanál na ${plan.tiles.length} polích · ${formatMoneyShort(plan.cost)}`
+        : 'Kanál jde jen na volnou rovnou zem.';
+    } else if (this.tool === 'lock' && tile) {
+      const plan = this.game.construction.lockPlan(tile.x, tile.y);
+      this.preview.showArea([tile, ...plan.canals], plan.problem ? 'invalid' : 'valid');
+      text = plan.problem ?? `Zdymadlo · ${formatMoneyShort(plan.cost)}`;
     } else if (this.tool === 'tram' && tile) {
       const tiles = this.tramTiles();
       const plan = tiles ? this.game.construction.tramPlan(tiles, this.removeMode) : null;

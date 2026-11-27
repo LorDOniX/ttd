@@ -470,6 +470,17 @@ export class ShipFleet {
     return s ? { x: s.x, y: s.y } : undefined;
   }
 
+  // Loď, která pluje přes dlaždici nebo na ní stojí (kanál, zdymadlo), nebo undefined
+  onTile(x: number, y: number): Ship | undefined {
+    return this.ships.find(
+      (ship) =>
+        ship.state !== 'depot' &&
+        ship.path
+          .slice(Math.max(0, Math.floor(ship.pos) - 1))
+          .some((p) => Math.floor(p.x) === x && Math.floor(p.y) === y),
+    );
+  }
+
   demolitionBlocker(port: Station): string | null {
     for (const ship of this.ships) {
       if (ship.state === 'depot') {
