@@ -136,8 +136,8 @@ Pořadí: nejdřív pojistka (testy) a výkon, pak rychlé výhry, přehledová 
 - uděláme možnosti převozu i jiných materiálů než lidí, je potřeba pak grafika např. pro elektrárnu a uhelný důl
 
 ## Nahrání na server
-- `npm run upload` - build a nahrání `dist/` na FTP do `/www/subdom/app/ttd/` = https://app.makuderovi.cz/ttd/ (`scripts/upload.ts`, stejně jako v repu todo)
-- přístup na FTP je v `conf/env.json` (není v gitu): `{ "ftp": { "host", "user", "password", "secure" } }`
-- nahrávají se jen změněné soubory (stav serveru v `build-data/upload.json`), soubory z minulého uploadu, které v buildu chybí, se smažou; vše znovu: `npx tsx scripts/upload.ts --full`
+- `npm run upload` - build a nahrání `dist/` na FTP do `/www/subdom/app/ttd/` = https://app.makuderovi.cz/ttd/ (balíček [`wedos-upload`](https://github.com/LorDOniX/wedos-upload), cíl v `package.json` pod klíčem `wedosUpload`)
+- přístup na FTP je v proměnných prostředí `WEDOS_FTP_HOST`, `WEDOS_FTP_USER`, `WEDOS_FTP_PASSWORD` (společné pro všechna repa)
+- nahrávají se jen změněné soubory (stav serveru v `build-data/upload.json`), soubory z minulého uploadu, které v buildu chybí, se smažou; vše znovu: `npm run build && npx wedos-upload --full`, nanečisto: `npx wedos-upload --dry-run`
 - produkční build má `base: '/ttd/'` (vite.config.ts), dev server zůstává na http://localhost:5173/
 - cesty k modelům a routy (`/all-models`, `/game-assets`) počítají s `import.meta.env.BASE_URL`

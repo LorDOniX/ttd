@@ -13,7 +13,10 @@
     "lint": "oxlint src",
     "format": "prettier --write",
     "format:check": "prettier --check src",
-    "upload": "npm run build && tsx scripts/upload.ts"
+    "upload": "npm run build && wedos-upload"
+  },
+  "wedosUpload": {
+    "remote": "/www/subdom/app/ttd/"
   },
   "dependencies": {
     "three": "^0.186.1"
@@ -21,13 +24,12 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/three": "^0.186.0",
-    "basic-ftp": "^6.2.3",
     "oxlint": "^1.89.0",
     "prettier": "^3.9.10",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wedos-upload": "github:LorDOniX/wedos-upload"
   },
   "allowScripts": {
     "fsevents@2.3.3": true
