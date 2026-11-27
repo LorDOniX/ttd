@@ -32,11 +32,13 @@ export function makeTown(id: number, x: number, y: number, population = 3000): T
   };
 }
 
-// Prázdná hra; poruchy jsou vypnuté, aby testy jiných věcí nezávisely na náhodě (testy poruch je zapnou)
+// Prázdná hra; poruchy a růst měst jsou vypnuté, aby testy jiných věcí nezávisely na náhodě (testy poruch je zapnou)
 export function emptyGame(size = 64, towns: Town[] = []): Game {
   const map = new GameMap(size, size);
   const game = new Game({ seed: 1, map, towns, rail: new RailNetwork(map), industries: [] });
   game.breakdowns = 'none';
+  // Testovací města mají víc obyvatel než budov: měsíční růst by je hned dostavěl a změnil dosah stanic
+  game.townGrowth.enabled = false;
   return game;
 }
 

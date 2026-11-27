@@ -1,4 +1,5 @@
 import { parseDistribution } from './cargodist';
+import { TOWN_SUPPLY_CARGOS, emptySupply } from './townGrowth';
 import { isEconomySetting } from './industryLife';
 import {
   AIRCRAFT_MODELS,
@@ -50,7 +51,7 @@ import {
   type Station,
   type Waypoint,
 } from '../world/rail';
-import { isTownLayout, type Town } from '../world/town';
+import { isTownLayout, type Town, type TownSupply } from '../world/town';
 
 // 2: úvěr, historie let a rozpad výdajů; 3: hodnocení nástupišť; 4: stáří vlaků; 5: návěstidla; 6: průmysl;
 // 7: nákladní doprava uhlí; 8: čekání na plné naložení; 9: náklad podle druhů (dřív jen uhlí); 10: dodávky závodům;
@@ -242,6 +243,17 @@ function restoreTransfers(value: unknown): Transfers {
     if (packets.length > 0) transfers[cargo] = packets;
   }
   return transfers;
+}
+
+// Dovoz do města za měsíc; neplatné hodnoty jsou nula
+function restoreSupply(value: unknown): TownSupply | undefined {
+  if (!isObject(value)) return undefined;
+  const supply = emptySupply();
+  for (const cargo of TOWN_SUPPLY_CARGOS) {
+    const n = value[cargo];
+    if (typeof n === 'number' && Number.isFinite(n)) supply[cargo] = Math.max(0, n);
+  }
+  return supply;
 }
 
 // Cargodist: náklad podle cílové stanice na palubě; neplatné údaje se zahodí
@@ -515,7 +527,14 @@ export function restoreGame(data: SaveData): Game {
     seed: data.seed,
     map,
     // Neznámé rozložení silnic se zahodí; město pak roste v mřížce jako ve starších uloženích
-    towns: data.towns.map((t) => (t.layout === undefined || isTownLayout(t.layout) ? t : { ...t, layout: undefined })),
+    towns: data.towns.map((t) => ({
+      ...t,
+      layout: t.layout === undefined || isTownLayout(t.layout) ? t.layout : undefined,
+      // Dovoz do města (růst podle obsluhy); starší uložení ho nemají
+      supplied: restoreSupply(t.supplied),
+      lastSupplied: restoreSupply(t.lastSupplied),
+      growthCarry: Number.isFinite(t.growthCarry) ? Math.max(0, Math.min(1, t.growthCarry!)) : undefined,
+    })),
     rail,
     // Starší uložení průmysl nemá; cizí soubor může obsahovat nesmysly
     industries: (data.industries ?? [])

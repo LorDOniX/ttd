@@ -111,6 +111,7 @@ export function unloadCargo(
     game.earn(income);
     game.events.emit('income', income, station.x + 0.5, station.y + 0.5);
     delivered(amount);
+    game.townGrowth.recordDelivery(station, cargo, amount);
     // Podíl, který už dostala vozidla před překládkou, se od příjmu tohoto vozidla odečte
     carrier.income += income - share;
     const stayed =

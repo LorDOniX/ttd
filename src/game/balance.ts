@@ -1042,3 +1042,16 @@ export const AD_MEDIUM = { costFactor: 2, radius: 15, boost: 0.25 } as const;
 export const AD_LARGE = { costFactor: 4, radius: 22, boost: 0.3 } as const;
 // Výsadba stromu
 export const TREE_PLANT_COST = 1_500;
+
+// Růst měst podle obsluhy (roční tempo, uplatňuje se měsíčně): za každou aktivní stanici (vozidlo
+// v posledních dnech) s městem v dosahu, nejvýš za tolik stanic
+export const TOWN_GROWTH_PER_STATION = 0.015;
+export const TOWN_GROWTH_MAX_STATIONS = 4;
+export const TOWN_ACTIVE_STATION_DAYS = 30;
+// Dovoz za měsíc na 1000 obyvatel, od kterého město roste rychleji, a o kolik
+export const TOWN_SUPPLY_BONUS = {
+  passengers: { per1000: 20, bonus: 0.01 },
+  mail: { per1000: 5, bonus: 0.005 },
+  food: { per1000: 10, bonus: 0.02 },
+  goods: { per1000: 10, bonus: 0.01 },
+} as const;

@@ -8,6 +8,7 @@ import {
 import { AIRCRAFT_CREDITS } from './aircraft';
 import { AUTHORITY_PERMIT, STATUE_COST, STATUE_STATION_BONUS } from '../game/balance';
 import { ratingLabel } from '../game/authority';
+import { TOWN_SUPPLY_CARGOS } from '../game/townGrowth';
 import { formatDate } from '../game/clock';
 import { SEASON_MODES, type SeasonMode } from '../game/seasons';
 import { BREAKDOWN_LABELS, BREAKDOWN_SETTINGS, isBreakdownSetting } from '../game/reliability';
@@ -17,7 +18,8 @@ import { isSubsidyMultiplier, multiplierText } from '../game/subsidies';
 import { Game, formatMoney } from '../game/game';
 import { parseSave, serializeGame } from '../game/save';
 import { AD_SIZES, advertise, fundBuildings, fundBuildingsCost, type AdSize } from '../game/townActions';
-import type { Town, TownKind } from '../world/town';
+import type { Town, TownKind, TownSupply } from '../world/town';
+import { CARGOS } from '../game/cargo';
 import { h } from './dom';
 import { loadTheme, saveTheme, type Theme } from './theme';
 import type { WindowManager } from './windows';
@@ -250,6 +252,15 @@ export function openNewsLog(windows: WindowManager, game: Game, focus: (x: numbe
   windows.open('news', 'Zprávy', render(), { width: 420, onClose: off });
 }
 
+// „120 cestujících · 8 t pošty · 30 t potravin“
+function supplyText(supply: TownSupply | undefined): string {
+  if (!supply) return 'nic';
+  const parts = TOWN_SUPPLY_CARGOS.filter((c) => Math.round(supply[c]) > 0).map(
+    (c) => `${Math.round(supply[c])} ${CARGOS[c].unit}`,
+  );
+  return parts.length > 0 ? parts.join(' · ') : 'nic';
+}
+
 export function openTown(windows: WindowManager, game: Game, town: Town, focus: (x: number, z: number) => void): void {
   const id = `town-${town.id}`;
   const action = (label: string, run: () => string | null): HTMLButtonElement => {
@@ -276,7 +287,13 @@ export function openTown(windows: WindowManager, game: Game, town: Town, focus: 
         row('Typ', KIND_LABELS[town.kind]),
         row('Obyvatel', town.population.toLocaleString('cs-CZ'), 'num'),
         row('Budov', String(town.buildings.length), 'num'),
-        row('Obsluhované', town.served ? 'ano' : 'ne', 'num'),
+        row('Aktivní stanice', String(game.townGrowth.activeStations(town)), 'num'),
+        row('Dovoz minulý měsíc', supplyText(town.lastSupplied), 'num'),
+        row(
+          'Růst',
+          `${(game.townGrowth.annualRate(town) * 100).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} % ročně`,
+          'num',
+        ),
         row(
           'Hodnocení společnosti',
           `${ratingLabel(rating)} (${Math.round(rating)})`,
@@ -301,7 +318,8 @@ export function openTown(windows: WindowManager, game: Game, town: Town, focus: 
           `Při hodnocení horším než „Špatné“ město nepovolí stavbu stanic ani demolici svého majetku. ` +
           `Reklama zvedne hodnocení stanic (malá s městem v dosahu, střední a velká i v okolí). ` +
           `Socha trvale zvedne hodnocení stanic ve městě o ${Math.round(STATUE_STATION_BONUS * 100)} bodů. ` +
-          'Financovaná výstavba hned přidá městu rok růstu.',
+          'Financovaná výstavba hned přidá městu rok růstu. Město roste každý měsíc: rychleji s více ' +
+          'obsluhovanými stanicemi (vozidlo v posledních 30 dnech) a s dovozem cestujících, pošty, potravin a zboží.',
       ),
     );
   };

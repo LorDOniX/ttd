@@ -49,6 +49,19 @@ export interface Town {
   served: boolean;
   // Silniční síť; starší uložení ho nemají a rostou dál v mřížce podle druhu města
   layout?: TownLayout;
+  // Doručený náklad do stanic s městem v dosahu: tento a minulý měsíc (starší uložení ho nemají)
+  supplied?: TownSupply;
+  lastSupplied?: TownSupply;
+  // Necelý přírůstek obyvatel z měsíčního růstu
+  growthCarry?: number;
+}
+
+// Doručení do města za měsíc: cestující a tuny pošty, potravin a zboží
+export interface TownSupply {
+  passengers: number;
+  mail: number;
+  food: number;
+  goods: number;
 }
 
 // Rozložení města; bez údaje mřížka jako dřív (velkoměsto 2×2, ostatní 3×3)
@@ -454,7 +467,22 @@ function redevelopCentre(town: Town, year: number, rng: Rng): void {
   }
 }
 
-// Roční růst: přestavba centra, přírůstek obyvatel a nové budovy na okraji
+// Přírůstek obyvatel o podíl rate (necelí obyvatelé se střádají) a nové budovy na okraji
+export function growTownBy(map: GameMap, town: Town, year: number, rng: Rng, rate: number): void {
+  const grown = town.population * rate + (town.growthCarry ?? 0);
+  const whole = Math.floor(grown);
+  town.growthCarry = grown - whole;
+  if (whole <= 0) return;
+  town.population += whole;
+  expandTown(map, town, year, rng);
+}
+
+// Roční přestavba centra (mrakodrapy)
+export function redevelopTown(town: Town, year: number, rng: Rng): void {
+  redevelopCentre(town, year, rng);
+}
+
+// Roční růst (úvodní obrazovka): přestavba centra, přírůstek obyvatel a nové budovy na okraji
 export function growTown(map: GameMap, town: Town, year: number, rng: Rng): void {
   redevelopCentre(town, year, rng);
   const rate = town.served ? TOWN_GROWTH_SERVED : TOWN_GROWTH_BASE;

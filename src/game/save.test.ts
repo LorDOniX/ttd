@@ -25,6 +25,8 @@ describe('uložení a načtení', () => {
 
     const copy = restoreGame(parseSave(JSON.stringify(serializeGame(game, 'test'))));
     expect(copy.companyName).toBe('ČSD Test');
+    // Růst měst je v testovacím přípravku vypnutý a neukládá se
+    copy.townGrowth.enabled = game.townGrowth.enabled;
     for (let i = 0; i < 20_000; i++) {
       game.update(200);
       copy.update(200);

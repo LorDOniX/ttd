@@ -19,10 +19,10 @@ se převedou (nové údaje mají rozumný výchozí stav). Konkurenční společ
 - [x] Uložení, testy, kontrola v prohlížeči, commit
 
 ## 3. Růst měst podle obsluhy
-- [ ] Měsíčně dovezení cestující, pošta a potraviny do města (stanice v dosahu)
-- [ ] Rychlost růstu podle počtu obsluhujících stanic a dovozu (jako v OpenTTD), bez obsluhy jen pomalu
-- [ ] Okno města: dovoz za minulý měsíc, rychlost růstu
-- [ ] Uložení, testy, commit
+- [x] Měsíčně dovezení cestující, pošta a potraviny do města (stanice v dosahu)
+- [x] Rychlost růstu podle počtu obsluhujících stanic a dovozu (jako v OpenTTD), bez obsluhy jen pomalu
+- [x] Okno města: dovoz za minulý měsíc, rychlost růstu
+- [x] Uložení, testy, commit
 
 ## 4. Tramvaje
 - [ ] Tramvajová kolej na silnici (stavba tažením po silnicích, cena, demolice, uložení)

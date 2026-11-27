@@ -18,8 +18,9 @@ import { Rng } from '../world/rng';
 import type { BreakdownSetting } from './reliability';
 import { CargoDist } from './cargodist';
 import { LocalAuthority } from './authority';
+import { TownGrowth } from './townGrowth';
 import type { EconomySetting } from './industryLife';
-import { growTown } from '../world/town';
+import { redevelopTown } from '../world/town';
 
 export const DEFAULT_COMPANY_NAME = 'Moje dopravní společnost';
 const MAX_NEWS_LOG = 200;
@@ -124,6 +125,7 @@ export class Game {
   readonly subsidies: Subsidies;
   readonly cargodist: CargoDist;
   readonly authority: LocalAuthority;
+  readonly townGrowth: TownGrowth;
   readonly groups: VehicleGroups;
   readonly rng: Rng;
   companyName = DEFAULT_COMPANY_NAME;
@@ -160,6 +162,7 @@ export class Game {
     this.subsidies = new Subsidies(this);
     this.cargodist = new CargoDist(this);
     this.authority = new LocalAuthority(this);
+    this.townGrowth = new TownGrowth(this);
     this.groups = new VehicleGroups(
       (kind) => this.vehiclesOf(kind),
       () => this.events.emit('groupsChanged'),
@@ -339,13 +342,8 @@ export class Game {
         `hodnota ${formatMoney(companyValue(this))}.`,
     );
 
-    // Růst měst hodnocení společnosti neovlivní (vykácené stromy jdou za městem)
-    this.authority.quietly(() => {
-      for (const town of this.world.towns) {
-        growTown(this.world.map, town, year + 1, this.rng);
-        town.served = false;
-      }
-    });
+    // Města rostou každý měsíc (TownGrowth); jednou za rok se přestaví centra
+    for (const town of this.world.towns) redevelopTown(town, year + 1, this.rng);
     this.events.emit('townsChanged');
   }
 }
