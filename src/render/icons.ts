@@ -62,7 +62,8 @@ export type SceneIcon =
   | 'terraform-raise'
   | 'terraform-lower'
   | 'terraform-level'
-  | 'plant-trees';
+  | 'plant-trees'
+  | 'tram';
 
 // Čtyřboký jehlan terénu (kopec nahoru, údolí dolů) na dlaždici
 function hillShape(height: number, color: number): THREE.Mesh {
@@ -194,6 +195,14 @@ const SCENES: Record<SceneIcon, () => Promise<THREE.Object3D[]> | THREE.Object3D
   // Portál tunelu ve svahu s kolejí (silnicí) vedoucí do ústí
   tunnel: () => [tile(), track('x'), createTunnelPortal(0, 0, Edge.E, 0)],
   'road-tunnel': () => [tile(), road('x'), createTunnelPortal(0, 0, Edge.E, 0)],
+  // Tramvaj na silnici
+  tram: async () => {
+    const tram = await loadModel('train kit', 'train-tram-classic');
+    tram.scale.setScalar(0.3);
+    tram.rotation.y = Math.PI / 2;
+    tram.position.y = 0.02;
+    return [tile(), road('x'), tram];
+  },
   'terraform-raise': () => [tile(), hillShape(0.55, GRASS)],
   // Strom na trávě
   'plant-trees': async () => [tile(), await loadModel('nature kit', 'tree_default')],

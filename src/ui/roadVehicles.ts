@@ -1,5 +1,5 @@
 import { editingGroups, groupPanel, groupSelect, inGroup, validFilter, type GroupFilter } from './groups';
-import { ROAD_VEHICLE_LIFETIME_YEARS } from '../game/balance';
+import { ROAD_VEHICLE_LIFETIME_YEARS, roadVehicleKit } from '../game/balance';
 import { CARGOS, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
 import {
@@ -276,7 +276,7 @@ export function openRoadDepot(windows: WindowManager, game: Game, depot: Depot, 
     const info = h(
       'div',
       { className: 'train__info' },
-      modelThumb('car kit', model.model),
+      modelThumb(roadVehicleKit(model), model.model),
       h('strong', {}, vehicle.name),
       ` · ${model.name} · ${formatVehicleLoad(vehicle)}`,
       h(
@@ -358,19 +358,20 @@ export function openRoadDepot(windows: WindowManager, game: Game, depot: Depot, 
     const models = roadFleet.available();
     // Seřazené podle nákladu, aby skupiny v nabídce šly za sebou
     const cargos = Object.keys(CARGOS) as Cargo[];
-    const sorted = [...models].sort((a, b) => cargos.indexOf(a.cargo) - cargos.indexOf(b.cargo));
+    const rank = (m: (typeof models)[number]): number => (m.tram ? cargos.length : cargos.indexOf(m.cargo));
+    const sorted = [...models].sort((a, b) => rank(a) - rank(b));
     // Výchozí volba: nejnovější autobus
-    const fallback = models.filter((m) => m.cargo === 'passengers').at(-1) ?? models[0];
+    const fallback = models.filter((m) => m.cargo === 'passengers' && !m.tram).at(-1) ?? models[0];
     picker.setOptions(
       sorted.map((m) => ({
         value: m.id,
-        kit: 'car kit',
+        kit: roadVehicleKit(m),
         model: m.model,
         name: m.name,
         details:
           `${formatMoney(m.price)} · ${m.capacity} ${CARGOS[m.cargo].unit} · ` +
           `${speedText(m.speed)} dlaždic/den · provoz ${formatMoney(m.runningCost)}/rok`,
-        group: CARGOS[m.cargo].name,
+        group: m.tram ? 'Tramvaje (jen po tramvajové koleji)' : CARGOS[m.cargo].name,
       })),
       fallback.id,
     );
@@ -441,7 +442,12 @@ export function openVehicleList(windows: WindowManager, game: Game, links: Vehic
           const tr = h(
             'tr',
             { title: `Otevřít okno auta (${CARGOS[vehicleCargo(v)].name})` },
-            h('td', { className: 'table__name' }, modelThumb('car kit', roadVehicleModel(v).model), v.name),
+            h(
+              'td',
+              { className: 'table__name' },
+              modelThumb(roadVehicleKit(roadVehicleModel(v)), roadVehicleModel(v).model),
+              v.name,
+            ),
             h('td', {}, vehicleStateText(game, v)),
             h('td', { className: isOldVehicle(v, today) ? 'num warning' : 'num' }, formatYears(vehicleAge(v, today))),
             h('td', { className: 'num' }, formatVehicleLoad(v)),

@@ -33,11 +33,13 @@ function opensTo(rail: RailNetwork, x: number, y: number, edge: Edge): boolean {
   }
 }
 
-// Sousední dlaždice, kam auto z (x, y) může přejet
-export function roadMoves(rail: RailNetwork, x: number, y: number): TilePos[] {
+// Sousední dlaždice, kam auto z (x, y) může přejet; tramvaj jen po tramvajové koleji
+export function roadMoves(rail: RailNetwork, x: number, y: number, tram = false): TilePos[] {
   const moves: TilePos[] = [];
+  if (tram && !rail.hasTram(x, y)) return moves;
   for (let edge = 0; edge < 4; edge++) {
     const [dx, dy] = EDGE_DELTA[edge];
+    if (tram && !rail.hasTram(x + dx, y + dy)) continue;
     if (opensTo(rail, x, y, edge) && opensTo(rail, x + dx, y + dy, opposite(edge))) {
       moves.push({ x: x + dx, y: y + dy });
     }
@@ -45,12 +47,14 @@ export function roadMoves(rail: RailNetwork, x: number, y: number): TilePos[] {
   return moves;
 }
 
-// Kam auto z dlaždice cesty může přejet, včetně jízdy po silničních mostech
-export function roadSteps(rail: RailNetwork, tile: RoadTile): RoadTile[] {
+// Kam auto z dlaždice cesty může přejet, včetně jízdy po silničních mostech a tunelech;
+// tramvaj přes most či tunel jen s kolejí na obou nájezdech
+export function roadSteps(rail: RailNetwork, tile: RoadTile, tram = false): RoadTile[] {
   const { x, y } = tile;
   if (tile.level) {
     const bridge = rail.roadBridgeOver(x, y);
     if (!bridge) return [];
+    if (tram && !tramBridge(rail, bridge)) return [];
     const [dx, dy] = EDGE_DELTA[bridge.dir];
     const end = bridgeEnd(bridge);
     return [-1, 1].map((sign) => {
@@ -63,14 +67,21 @@ export function roadSteps(rail: RailNetwork, tile: RoadTile): RoadTile[] {
         : { x: nx, y: ny, level: 1 as const };
     });
   }
-  const moves: RoadTile[] = roadMoves(rail, x, y);
+  const moves: RoadTile[] = roadMoves(rail, x, y, tram);
   const exit = rail.roadBridges.length > 0 && rail.map.isType(x, y, TileType.Road) ? rail.roadBridgeExit(x, y) : null;
-  if (exit !== null) {
+  const head = exit !== null ? rail.roadBridgeAtHead(x, y) : undefined;
+  if (exit !== null && (!tram || (head && tramBridge(rail, head)))) {
     const [dx, dy] = EDGE_DELTA[exit];
     const tunnel = rail.roadBridgeAtHead(x, y)?.tunnel;
     moves.push(tunnel ? { x: x + dx, y: y + dy, level: 1, tunnel: 1 } : { x: x + dx, y: y + dy, level: 1 });
   }
   return moves;
+}
+
+// Má silniční most (tunel) tramvajovou kolej na obou nájezdech?
+function tramBridge(rail: RailNetwork, bridge: { x: number; y: number; dir: Edge; span: number }): boolean {
+  const end = bridgeEnd(bridge as Parameters<typeof bridgeEnd>[0]);
+  return rail.hasTram(bridge.x, bridge.y) && rail.hasTram(end.x, end.y);
 }
 
 export function sameRoadTile(a: RoadTile, b: RoadTile): boolean {
@@ -93,11 +104,13 @@ export function sameRoadLevel(a: readonly RoadTile[], aPos: number, b: readonly 
   return Math.abs(roadElevation(a, aPos) - roadElevation(b, bPos)) < 0.5;
 }
 
-// Nejkratší cesta po silnicích a silničních mostech (BFS) včetně výchozí dlaždice, nebo null
+// Nejkratší cesta po silnicích a silničních mostech (BFS) včetně výchozí dlaždice, nebo null;
+// tramvaj (tram) jen po tramvajové koleji
 export function findRoadRoute(
   rail: RailNetwork,
   start: RoadTile,
   isGoal: (x: number, y: number) => boolean,
+  tram = false,
 ): RoadTile[] | null {
   const width = rail.map.width;
   const size = width * rail.map.height;
@@ -121,7 +134,7 @@ export function findRoadRoute(
       for (let i = key; i !== -1; i = from.get(i)!) path.push(tileOf(i));
       return path.reverse();
     }
-    for (const next of roadSteps(rail, tile)) {
+    for (const next of roadSteps(rail, tile, tram)) {
       const nextKey = keyOf(next);
       if (from.has(nextKey)) continue;
       from.set(nextKey, key);

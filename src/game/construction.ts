@@ -19,6 +19,7 @@ import {
   TERRAFORM_CORNER_COST,
   TRACK_PIECE_COST,
   TREE_PLANT_COST,
+  TRAM_TRACK_COST,
   TUNNEL_PIECE_COST,
   WAYPOINT_COST,
   type AirportType,
@@ -181,6 +182,32 @@ export class Construction {
     if (this.game.money < plan.cost) return `Nedostatek peněz (${formatMoney(plan.cost)}).`;
     this.game.spend(plan.cost, 'construction');
     applyTerraform(this.game.world.map, plan);
+    return null;
+  }
+
+  // Tramvajová kolej po silnici: nové dílky (nebo s remove odebrané) na dlaždicích, kudy kolej smí vést
+  tramPlan(tiles: readonly TilePos[], remove = false): { tiles: TilePos[]; cost: number; problem: string | null } {
+    const { rail } = this.game.world;
+    const valid = tiles.filter((t) => rail.canHaveTram(t.x, t.y));
+    if (valid.length < tiles.length) return { tiles: [], cost: 0, problem: 'Tramvajová kolej vede jen po silnici.' };
+    const changed = valid.filter((t) => rail.hasTram(t.x, t.y) === remove);
+    const cost = remove ? -changed.length * TRAM_TRACK_COST * DEMOLISH_REFUND : changed.length * TRAM_TRACK_COST;
+    return { tiles: changed, cost, problem: null };
+  }
+
+  buildTram(tiles: readonly TilePos[], remove = false): string | null {
+    const plan = this.tramPlan(tiles, remove);
+    if (plan.problem) return plan.problem;
+    if (plan.tiles.length === 0) return remove ? 'Tady žádná tramvajová kolej není.' : 'Kolej už tu leží.';
+    if (remove) {
+      const blocker = plan.tiles.map((t) => this.game.roadFleet.demolitionBlocker(t.x, t.y)).find((b) => b);
+      if (blocker) return blocker;
+    }
+    if (plan.cost > this.game.money) return `Nedostatek peněz (${formatMoney(plan.cost)}).`;
+    if (plan.cost > 0) this.game.spend(plan.cost, 'construction');
+    else this.game.earn(-plan.cost);
+    for (const t of plan.tiles) this.game.world.rail.setTram(t.x, t.y, !remove);
+    this.game.events.emit('roadsChanged');
     return null;
   }
 
@@ -726,6 +753,7 @@ export class Construction {
             break;
           }
           cost += townRoad ? DEMOLISH_TOWN_ROAD_COST : -ROAD_TILE_COST * DEMOLISH_REFUND;
+          if (rail.hasTram(x, y)) cost -= TRAM_TRACK_COST * DEMOLISH_REFUND;
           tiles.push({ x, y });
           break;
         }
@@ -821,6 +849,7 @@ export class Construction {
           break;
         }
         case TileType.Road:
+          rail.setTram(x, y, false);
           if (map.getOwner(x, y) !== NO_OWNER) this.game.authority.townRoadDemolished(x, y);
           map.set(x, y, TileType.Grass);
           map.setOwner(x, y, NO_OWNER);

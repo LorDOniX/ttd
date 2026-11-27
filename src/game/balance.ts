@@ -28,6 +28,8 @@ export const SIGNAL_COST = 5_000;
 export const ROAD_TILE_COST = 3_000;
 // Dílek silničního mostu nad vodou, stejný poměr k silnici jako u kolejí
 export const ROAD_BRIDGE_COST = 12_000;
+// Tramvajová kolej na dlaždici silnice (s trolejí)
+export const TRAM_TRACK_COST = 6_000;
 // Pole tunelu (železničního i silničního) pod kopcem
 export const TUNNEL_PIECE_COST = 15_000;
 
@@ -244,6 +246,13 @@ export interface RoadVehicleModel {
   speed: number;
   runningCost: number;
   capacity: number;
+  // Tramvaj: jezdí jen po tramvajové koleji, model z train kitu
+  tram?: true;
+}
+
+// Kit s modelem silničního vozidla: tramvaje jsou z train kitu
+export function roadVehicleKit(model: Pick<RoadVehicleModel, 'tram'>): 'car kit' | 'train kit' {
+  return model.tram ? 'train kit' : 'car kit';
 }
 
 export const ROAD_VEHICLE_MODELS: readonly RoadVehicleModel[] = [
@@ -588,6 +597,43 @@ export const ROAD_VEHICLE_MODELS: readonly RoadVehicleModel[] = [
     speed: 5.3,
     runningCost: 41_200,
     capacity: 18,
+  },
+  // Tramvaje jako v OpenTTD: větší kapacita než autobus, jen po tramvajové koleji
+  {
+    id: 'tram-classic',
+    name: 'Tramvaj Tatra T1',
+    model: 'train-tram-classic',
+    cargo: 'passengers',
+    year: 1951,
+    price: 210_000,
+    speed: 2.8,
+    runningCost: 19_000,
+    capacity: 60,
+    tram: true,
+  },
+  {
+    id: 'tram-round',
+    name: 'Tramvaj Tatra T3',
+    model: 'train-tram-round',
+    cargo: 'passengers',
+    year: 1962,
+    price: 260_000,
+    speed: 3.8,
+    runningCost: 24_000,
+    capacity: 85,
+    tram: true,
+  },
+  {
+    id: 'tram-modern',
+    name: 'Tramvaj Škoda 15T',
+    model: 'train-tram-modern',
+    cargo: 'passengers',
+    year: 1995,
+    price: 340_000,
+    speed: 5.2,
+    runningCost: 31_000,
+    capacity: 120,
+    tram: true,
   },
 ];
 

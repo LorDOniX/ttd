@@ -35,6 +35,7 @@ import { TrafficLightsView } from './trafficLights';
 import { TrafficOverlayView } from './trafficOverlay';
 import { FlowOverlayView, type FlowLink } from './flowOverlay';
 import { StatuesView } from './statues';
+import { TramTracksView } from './tramTracks';
 import { NIGHT_DETAIL_ZOOM, NightLightsView } from './nightLights';
 import { TrainsView } from './trains';
 import { TreesView } from './trees';
@@ -100,6 +101,7 @@ export class GameView {
   // Mapa toků nákladu (cargodist); zobrazený druh nákladu, nebo všechen
   readonly flowOverlay = new FlowOverlayView();
   private readonly statues: StatuesView;
+  private readonly tramTracks: TramTracksView;
   flowCargo: Cargo | 'all' = 'all';
   private flowRefreshAt = 0;
   // Živé pohledy v oknech vozidel
@@ -191,6 +193,8 @@ export class GameView {
     this.bindLabelEvents();
     const stationLabels = new StationLabels(map);
     this.statues = new StatuesView(map);
+    this.tramTracks = new TramTracksView(map, world.rail);
+    this.tramTracks.rebuild();
     void this.statues.sync(game.authority.statues.values());
     scene.add(
       this.terrain.object,
@@ -199,6 +203,7 @@ export class GameView {
       this.trafficOverlay.object,
       this.flowOverlay.object,
       this.statues.object,
+      this.tramTracks.object,
       this.ambientProps.object,
       this.trafficLightView.object,
       this.buildings.object,
@@ -287,6 +292,9 @@ export class GameView {
       this.nightLights.invalidate();
     });
     game.events.on('railChanged', () => (this.railDirty = true));
+    for (const event of ['railChanged', 'roadsChanged', 'townsChanged'] as const) {
+      game.events.on(event, () => this.tramTracks.rebuild());
+    }
     // Silniční most mění napojení silnic i bez změny dlaždic
     game.events.on('roadsChanged', () => this.roads.invalidate());
     game.events.on('stationsChanged', rebuildStationLabels);

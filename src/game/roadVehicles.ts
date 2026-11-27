@@ -124,8 +124,14 @@ export function vehicleCapacity(vehicle: RoadVehicle): number {
   return refitCapacity(model.capacity, model.cargo, vehicleCargo(vehicle));
 }
 
+// Jezdí auto jen po tramvajové koleji?
+export function isTram(vehicle: RoadVehicle): boolean {
+  return roadVehicleModel(vehicle).tram === true;
+}
+
 // Druh vozidla v mužském rodě, aby seděly zprávy „… přivezl …“
-export function vehicleKind(cargo: Cargo): string {
+export function vehicleKind(cargo: Cargo, tram = false): string {
+  if (tram) return 'Tramvajový vůz';
   if (cargo === 'passengers') return 'Autobus';
   if (cargo === 'mail') return 'Poštovní vůz';
   return 'Nákladní vůz';
@@ -376,7 +382,7 @@ export class RoadFleet {
     const id = this.nextId++;
     this.vehicles.push({
       id,
-      name: `${vehicleKind(model.cargo)} ${id}`,
+      name: `${vehicleKind(model.cargo, model.tram)} ${id}`,
       modelId: model.id,
       depotId: depot.id,
       orders: null,
@@ -476,7 +482,8 @@ export class RoadFleet {
     const route = this.routeTo(depot, vehicle);
     if (!route) {
       this.changed();
-      return `Z garáže nevede silnice k zastávce ${this.stationName(orders[0])}.`;
+      const way = isTram(vehicle) ? 'tramvajová kolej' : 'silnice';
+      return `Z garáže nevede ${way} k zastávce ${this.stationName(orders[0])}.`;
     }
     vehicle.path = route;
     vehicle.pos = 0;
@@ -696,7 +703,7 @@ export class RoadFleet {
         break;
       }
       if (k - 0.5 > pos) break;
-      if (!roadSteps(this.game.world.rail, from).some((t) => sameRoadTile(t, to))) {
+      if (!roadSteps(this.game.world.rail, from, isTram(vehicle)).some((t) => sameRoadTile(t, to))) {
         this.replan(vehicle);
         return;
       }
@@ -813,7 +820,7 @@ export class RoadFleet {
     const { rail } = this.game.world;
     const here = vehicle.path[vehicle.path.length - 1];
     if (!here) return;
-    const route = findRoadRoute(rail, here, (x, y) => rail.roadDepotAt(x, y) !== undefined);
+    const route = findRoadRoute(rail, here, (x, y) => rail.roadDepotAt(x, y) !== undefined, isTram(vehicle));
     if (!route || route.length > SERVICE_MAX_ROUTE) return;
     vehicle.servicing = vehicle.target;
     vehicle.target = -1;
@@ -830,7 +837,7 @@ export class RoadFleet {
     }
     const next = vehicle.state === 'running' && i + 1 < path.length ? path[i + 1] : null;
     const fromNext =
-      next && roadSteps(this.game.world.rail, here).some((t) => sameRoadTile(t, next))
+      next && roadSteps(this.game.world.rail, here, isTram(vehicle)).some((t) => sameRoadTile(t, next))
         ? this.routeTo(next, vehicle)
         : null;
     if (fromNext && next) {
@@ -861,11 +868,11 @@ export class RoadFleet {
   private routeTo(start: RoadTile, vehicle: RoadVehicle): RoadTile[] | null {
     const { rail } = this.game.world;
     if (vehicle.target === -1) {
-      return findRoadRoute(rail, start, (x, y) => rail.roadDepotAt(x, y) !== undefined);
+      return findRoadRoute(rail, start, (x, y) => rail.roadDepotAt(x, y) !== undefined, isTram(vehicle));
     }
     const goal = this.goal(vehicle);
     if (!goal) return null;
-    return findRoadRoute(rail, start, (x, y) => x === goal.x && y === goal.y);
+    return findRoadRoute(rail, start, (x, y) => x === goal.x && y === goal.y, isTram(vehicle));
   }
 
   private goal(vehicle: RoadVehicle): Station | null {
@@ -885,7 +892,7 @@ export class RoadFleet {
       const from = Math.max(0, Math.floor(vehicle.pos));
       const valid = vehicle.path
         .slice(from + 1)
-        .every((t, k) => roadSteps(rail, vehicle.path[from + k]).some((m) => sameRoadTile(m, t)));
+        .every((t, k) => roadSteps(rail, vehicle.path[from + k], isTram(vehicle)).some((m) => sameRoadTile(m, t)));
       if (!valid || (vehicle.target !== -1 && !this.goal(vehicle))) this.replan(vehicle);
     }
   }

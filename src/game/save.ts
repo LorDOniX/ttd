@@ -74,6 +74,8 @@ export interface SaveData {
     pieces: string;
     // Trolejové vedení po dlaždicích; starší uložení ho nemají
     electrified?: string;
+    // Tramvajové koleje na silnicích; starší uložení je nemají
+    tram?: string;
     // Druh koleje na dlaždicích (jednokolejka, maglev); starší uložení mají jen železnici
     railType?: string;
     stations: Station[];
@@ -180,6 +182,7 @@ export function serializeGame(game: Game, seedText: string): SaveData {
     rail: {
       pieces: encode(rail.pieces),
       electrified: encode(rail.electrified),
+      tram: encode(rail.tram),
       railType: encode(rail.railType),
       stations: rail.stations,
       depots: rail.depots,
@@ -566,6 +569,10 @@ export function restoreGame(data: SaveData): Game {
     for (let i = 0; i < wires.length; i++) if (wires[i] && rail.pieces[i] && !rail.railType[i]) rail.electrified[i] = 1;
   } else if (data.fleet.trains.some((t) => TRAIN_MODELS.find((m) => m.id === t.modelId)?.electric)) {
     for (let i = 0; i < rail.pieces.length; i++) if (rail.pieces[i]) rail.electrified[i] = 1;
+  }
+  if (typeof data.rail.tram === 'string') {
+    const tram = decode(data.rail.tram, width * height);
+    for (let i = 0; i < tram.length; i++) if (tram[i] === 1) rail.tram[i] = 1;
   }
   game.clock.date = data.clock.date;
   game.clock.day = data.clock.day;

@@ -4,6 +4,7 @@ import {
   AIRCRAFT_MODELS,
   AIRPORT_TYPES,
   ROAD_VEHICLE_MODELS,
+  roadVehicleKit,
   SHIP_MODELS,
   TRAIN_MODELS,
   type AirportType,
@@ -38,7 +39,7 @@ function usedModels(): GalleryModel[] {
   for (const cargo of CARGO_TYPES) {
     for (const wagon of CARGOS[cargo].wagonModels ?? []) add('train kit', wagon, 'Vagony');
   }
-  for (const model of ROAD_VEHICLE_MODELS) add('car kit', model.model, 'Silniční vozidla');
+  for (const model of ROAD_VEHICLE_MODELS) add(roadVehicleKit(model), model.model, 'Silniční vozidla');
   for (const model of CITY_CAR_MODELS) add('car kit', model, 'Městská auta');
   for (const model of AIRCRAFT_MODELS) add('airplanes', model.model, 'Letadla');
   for (const model of SHIP_MODELS) add('watercraft kit', model.model, 'Lodě');

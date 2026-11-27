@@ -2,7 +2,14 @@ import * as THREE from 'three';
 import { loadModel } from '../assets';
 import { CARGOS } from '../game/cargo';
 import type { CityCar } from '../game/cityTraffic';
-import { roadVehicleModel, vehicleCargo, vehiclePoint, type RoadFleet, type RoadVehicle } from '../game/roadVehicles';
+import {
+  isTram,
+  roadVehicleModel,
+  vehicleCargo,
+  vehiclePoint,
+  type RoadFleet,
+  type RoadVehicle,
+} from '../game/roadVehicles';
 import type { GameMap } from '../world/map';
 import { inView, type ViewFrustums } from './camera';
 import { LIGHT_MARKER_MATERIAL, lightMarkerGeometry } from './nightLights';
@@ -13,6 +20,8 @@ import { roadElevation } from '../world/roadRoute';
 
 // Modely z car kitu jsou dlouhé ~3 jednotky podél +Z (předek), kola stojí na y = 0
 const SCALE = 0.13;
+// Tramvaj z train kitu: vůz dlouhý zhruba jako dvě auta
+const TRAM_SCALE = 0.15;
 const ROAD_TOP = 0.01;
 // Jízda vpravo: posun od osy silnice kolmo ke směru jízdy
 
@@ -184,9 +193,11 @@ export class RoadVehiclesView {
       cab: null,
       placed: false,
     };
-    view.group.scale.setScalar(SCALE);
+    const tram = vehicle ? isTram(vehicle) : false;
+    const scale = tram ? TRAM_SCALE : SCALE;
+    view.group.scale.setScalar(scale);
     view.group.add(view.lights);
-    void loadModel('car kit', modelId).then((object) => {
+    void loadModel(tram ? 'train kit' : 'car kit', modelId).then((object) => {
       if (this.views.get(key) !== view) return;
       // Popelářský vůz slouží jako cisterna, odpadky na střeše nepatří k ropě
       const trash = object.getObjectByName('trash');
@@ -197,7 +208,7 @@ export class RoadVehiclesView {
       object.traverse((o) => {
         if (o instanceof THREE.Mesh && o.visible) box.expandByObject(o);
       });
-      view.cab = { height: box.max.y * SCALE, front: box.max.z * SCALE };
+      view.cab = { height: box.max.y * scale, front: box.max.z * scale };
       view.group.add(object);
       const kind = cargo && FLATBED_LOADS[cargo];
       if (cargo && kind) {

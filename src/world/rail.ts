@@ -113,6 +113,16 @@ export interface Station extends StationShape {
   joinedTo?: number;
 }
 
+// Dlaždice, kudy může vést tramvajová kolej
+export const TRAM_TILES: readonly TileType[] = [
+  TileType.Road,
+  TileType.Crossing,
+  TileType.RoadStop,
+  TileType.RoadDepot,
+  TileType.RoadBridgeX,
+  TileType.RoadBridgeY,
+];
+
 // Id spojené stanice (hlavní části); samostatná stanice je sama sobě hlavní částí
 export function poolId(station: Station): number {
   return station.joinedTo ?? station.id;
@@ -282,8 +292,11 @@ export class RailNetwork {
   readonly railType: Uint8Array;
   // Druh koleje, který se právě staví: nová kolej ho dostane a navázat jde jen na kolej stejného druhu
   buildType: RailType = RailType.Rail;
+  // Tramvajová kolej na silnici (1 = položená); platí jen na silnici, přejezdu, zastávce, garáži a silničním mostě
+  readonly tram: Uint8Array;
 
   constructor(readonly map: GameMap) {
+    this.tram = new Uint8Array(map.width * map.height);
     this.pieces = new Uint8Array(map.width * map.height);
     this.electrified = new Uint8Array(map.width * map.height);
     this.railType = new Uint8Array(map.width * map.height);
@@ -292,6 +305,26 @@ export class RailNetwork {
   // Druh koleje na dlaždici (bez koleje železnice)
   railTypeAt(x: number, y: number): RailType {
     return this.map.inBounds(x, y) ? (this.railType[y * this.map.width + x] as RailType) : RailType.Rail;
+  }
+
+  // Leží na dlaždici tramvajová kolej? Po zboření silnice zmizí i kolej
+  hasTram(x: number, y: number): boolean {
+    if (!this.map.inBounds(x, y) || this.tram[y * this.map.width + x] !== 1) return false;
+    return TRAM_TILES.includes(this.map.get(x, y));
+  }
+
+  // Smí tu ležet tramvajová kolej (silnice a stavby na ní)?
+  canHaveTram(x: number, y: number): boolean {
+    return this.map.inBounds(x, y) && TRAM_TILES.includes(this.map.get(x, y));
+  }
+
+  setTram(x: number, y: number, on: boolean): void {
+    if (!this.map.inBounds(x, y)) return;
+    const i = y * this.map.width + x;
+    if ((this.tram[i] === 1) === on) return;
+    this.tram[i] = on ? 1 : 0;
+    this.map.touch(x, y);
+    this.revision++;
   }
 
   isElectrified(x: number, y: number): boolean {

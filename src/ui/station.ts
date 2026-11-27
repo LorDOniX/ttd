@@ -1,7 +1,13 @@
 import { stationCost } from '../game/construction';
 import { CARGOS, CARGO_TYPES, transferWaiting, type Cargo } from '../game/cargo';
 import { Game, formatMoney } from '../game/game';
-import { AIRPORT_TYPES, MAINTENANCE_RATE, STATION_SPREAD, TOWN_ACCEPTS_MIN_BUILDINGS } from '../game/balance';
+import {
+  AIRPORT_TYPES,
+  MAINTENANCE_RATE,
+  STATION_SPREAD,
+  TOWN_ACCEPTS_MIN_BUILDINGS,
+  roadVehicleKit,
+} from '../game/balance';
 import { aircraftModel, type Aircraft } from '../game/aircraft';
 import { shipModel, type Ship } from '../game/ships';
 import { ratingParts, targetRating, waitingAmount } from '../game/rating';
@@ -159,7 +165,7 @@ export function openStation(
         const b = h(
           'button',
           { className: 'small-button small-button--thumb' },
-          modelThumb('car kit', roadVehicleModel(v).model),
+          modelThumb(roadVehicleKit(roadVehicleModel(v)), roadVehicleModel(v).model),
           v.name,
         );
         b.addEventListener('click', () => links.openVehicle(v));

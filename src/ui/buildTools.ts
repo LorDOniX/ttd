@@ -1,4 +1,5 @@
 import { areaCorners, nearestCorner, planTiles, type TerraformMode } from '../world/terraform';
+import { findRoadRoute } from '../world/roadRoute';
 import {
   AIRPORT_TYPES,
   BRIDGE_PIECE_COST,
@@ -12,6 +13,7 @@ import {
   ROAD_BRIDGE_COST,
   TUNNEL_PIECE_COST,
   TREE_PLANT_COST,
+  TRAM_TRACK_COST,
   ROAD_DEPOT_COST,
   ROAD_STOP_COST,
   ROAD_TILE_COST,
@@ -83,6 +85,7 @@ export type BuildTool =
   | 'bridge'
   | 'tunnel'
   | 'road-tunnel'
+  | 'tram'
   | 'station'
   | 'depot'
   | 'signal'
@@ -405,12 +408,15 @@ export class BuildTools {
         ['road-depot', '🏠', 'Garáž', 'U', formatMoneyShort(ROAD_DEPOT_COST)],
         ['road-bridge', '🌉', 'Most', '—', `${formatMoneyShort(ROAD_BRIDGE_COST)} / pole`],
         ['road-tunnel', '🚇', 'Tunel', '—', `${formatMoneyShort(TUNNEL_PIECE_COST)} / pole`],
+        ['tram', '🚋', 'Tramvajová kolej', '—', `${formatMoneyShort(TRAM_TRACK_COST)} / pole`],
         ['demolish', '🧨', 'Demolice', 'X', 'vrátí 50 %'],
       ],
       'Silnice a demolice: táhněte levým tlačítkem. Zastávka aut jde na rovnou silnici bez křižovatky, ' +
         'garáž se natočí vjezdem k silnici. Most: táhněte od nájezdu k nájezdu přes koleje, silnice, vodu ' +
         'i trávu; nájezd je volná země nebo silnice bez křižovatky a provoz pod mostem zůstane. ' +
         'Tunel: klikněte na svah, kde má být portál, tunel vede rovně k protějšímu svahu ve stejné výšce. ' +
+        'Tramvajová kolej: táhněte po silnici od místa k místu, kolej s trolejí se položí po cestě (Ctrl ji ' +
+        'odebere). Tramvaje se kupují v garáži, která leží na koleji, a jezdí jen po ní mezi zastávkami na koleji. ' +
         'R – otočit garáž, Esc – zrušit nástroj.',
     );
   }
@@ -854,6 +860,7 @@ export class BuildTools {
       this.tool === 'road' ||
       this.tool === 'demolish' ||
       this.tool === 'plant-trees' ||
+      this.tool === 'tram' ||
       terraformMode(this.tool) !== null ||
       this.tool === 'electrify' ||
       this.tool === 'station' ||
@@ -945,6 +952,9 @@ export class BuildTools {
     }
     if (this.tool === 'demolish') this.report(construction.demolish(this.demolishArea()));
     if (this.tool === 'plant-trees' && !this.estimateMode) this.report(construction.plantTrees(this.demolishArea()));
+    if (this.tool === 'tram' && !this.estimateMode) {
+      this.report(construction.buildTram(this.tramTiles() ?? [], this.removeMode));
+    }
     const terraform = this.terraformTarget();
     if (terraform && !this.estimateMode) {
       this.report(construction.terraform(terraform.corners, terraform.mode, terraform.target));
@@ -1124,6 +1134,16 @@ export class BuildTools {
       if (tiles) return { tiles, along: true };
     }
     return { tiles: this.demolishArea(), along: false };
+  }
+
+  // Dlaždice tramvajové koleje: cesta po silnici od začátku tažení ke kurzoru (null, když nevede)
+  private tramTiles(): TilePos[] | null {
+    const a = this.dragStart ?? this.hover;
+    const b = this.hover ?? a;
+    if (!a || !b) return null;
+    if (a.x === b.x && a.y === b.y) return [a];
+    const route = findRoadRoute(this.game.world.rail, a, (x, y) => x === b.x && y === b.y);
+    return route ? route.filter((t) => !t.level).map((t) => ({ x: t.x, y: t.y })) : null;
   }
 
   private demolishArea(): TilePos[] {
@@ -1521,6 +1541,19 @@ export class BuildTools {
             : `${corners} ${plural(corners, 'roh', 'rohy', 'rohů')} · ${formatMoneyShort(plan.cost)}` +
               (affordable ? '' : ' · nedostatek peněz'));
         if (terraform.mode === 'level' && !plan.problem) text += ` · na úroveň ${terraform.target}`;
+      }
+    } else if (this.tool === 'tram' && tile) {
+      const tiles = this.tramTiles();
+      const plan = tiles ? this.game.construction.tramPlan(tiles, this.removeMode) : null;
+      if (!tiles || !plan || plan.problem) {
+        this.preview.showArea([tile], 'invalid');
+        text = plan?.problem ?? 'Mezi těmito místy nevede silnice.';
+      } else {
+        this.preview.showArea(tiles, this.removeMode ? 'demolish' : 'valid');
+        const count = plan.tiles.length;
+        text = this.removeMode
+          ? `odebrat kolej z ${count} polí · vrátí ${formatMoneyShort(-plan.cost)}`
+          : `tramvajová kolej na ${count} polích · ${formatMoneyShort(plan.cost)}`;
       }
     } else if (this.tool === 'plant-trees' && tile) {
       const plan = this.game.construction.plantTreesPlan(this.demolishArea());

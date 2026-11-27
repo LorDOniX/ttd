@@ -25,10 +25,10 @@ se převedou (nové údaje mají rozumný výchozí stav). Konkurenční společ
 - [x] Uložení, testy, commit
 
 ## 4. Tramvaje
-- [ ] Tramvajová kolej na silnici (stavba tažením po silnicích, cena, demolice, uložení)
-- [ ] Vykreslení kolejí a trolejí na silnici
-- [ ] Tramvaje jako silniční vozidla jezdící jen po tramvajové koleji (modely, nákup v garáži, zastávky)
-- [ ] Testy, kontrola v prohlížeči, commit
+- [x] Tramvajová kolej na silnici (stavba tažením po silnicích, cena, demolice, uložení)
+- [x] Vykreslení kolejí a trolejí na silnici
+- [x] Tramvaje jako silniční vozidla jezdící jen po tramvajové koleji (modely, nákup v garáži, zastávky)
+- [x] Testy, kontrola v prohlížeči, commit
 
 ## 5. Kanály a zdymadla
 - [ ] Kanál: stavba vody na rovné souši (cena), lodě po něm plují
