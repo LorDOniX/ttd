@@ -17,7 +17,14 @@ import { modelThumb } from '../render/icons';
 import type { Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, maintenanceRows, openVehicleWindow, refitControl, type VehicleStatus } from './vehicleWindow';
+import {
+  destinationRows,
+  liveWindow,
+  maintenanceRows,
+  openVehicleWindow,
+  refitControl,
+  type VehicleStatus,
+} from './vehicleWindow';
 import { brokenText } from '../game/reliability';
 import { latenessText, openTimetableWindow, timesNote, vehicleTimetable } from './timetable';
 import { h } from './dom';
@@ -133,6 +140,7 @@ function shipDetails(game: Game, ship: Ship, links: ShipLinks): HTMLElement {
     { className: 'table' },
     row('Model', `${model.name} (${model.year})`),
     row('Náklad', formatShipLoad(ship), 'num'),
+    ...destinationRows(game, ship, row),
     row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
     row('Plavební řád', latenessText(ship), (ship.lateness ?? 0) > 0 ? 'num warning' : 'num'),
     row(

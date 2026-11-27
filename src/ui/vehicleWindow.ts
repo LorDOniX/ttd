@@ -179,3 +179,31 @@ export function refitControl(
     h('small', {}, ` přestavba ${formatMoney(cost)}`),
   );
 }
+
+// Cargodist: náklad na palubě podle cílové stanice (u smíšené soupravy po druzích nákladu)
+export function destinationRows(
+  game: Game,
+  vehicle: {
+    passengers: number;
+    dests?: Record<number, number>;
+    cargo?: Cargo;
+    holds?: (CargoLoadLike & { cargo: Cargo })[];
+  },
+  row: (label: string, value: string, className?: string) => HTMLTableRowElement,
+): HTMLTableRowElement[] {
+  const loads: { cargo?: Cargo; load: CargoLoadLike }[] = [
+    { cargo: vehicle.cargo, load: vehicle },
+    ...(vehicle.holds ?? []).map((hold) => ({ cargo: hold.cargo, load: hold })),
+  ];
+  const texts = loads.flatMap(({ cargo, load }) => {
+    const text = game.cargodist.loadText(load);
+    if (!text) return [];
+    return [loads.length > 1 && cargo ? `${CARGOS[cargo].name}: ${text}` : text];
+  });
+  return texts.length > 0 ? [row('Cíle nákladu', texts.join('; '))] : [];
+}
+
+interface CargoLoadLike {
+  passengers: number;
+  dests?: Record<number, number>;
+}

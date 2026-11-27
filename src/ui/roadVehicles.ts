@@ -17,7 +17,14 @@ import { modelThumb } from '../render/icons';
 import type { Depot, Station } from '../world/rail';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, maintenanceRows, openVehicleWindow, refitControl, type VehicleStatus } from './vehicleWindow';
+import {
+  destinationRows,
+  liveWindow,
+  maintenanceRows,
+  openVehicleWindow,
+  refitControl,
+  type VehicleStatus,
+} from './vehicleWindow';
 import { brokenText } from '../game/reliability';
 import { latenessText, openTimetableWindow, timesNote, vehicleTimetable } from './timetable';
 import { h } from './dom';
@@ -120,6 +127,7 @@ function roadDetails(game: Game, vehicle: RoadVehicle, links: VehicleLinks): HTM
     { className: 'table' },
     row('Model', `${model.name} (${model.year})`),
     row('Náklad', formatVehicleLoad(vehicle), 'num'),
+    ...destinationRows(game, vehicle, row),
     row('Rychlost', `${speedText(model.speed)} dlaždic/den`, 'num'),
     row('Jízdní řád', latenessText(vehicle), (vehicle.lateness ?? 0) > 0 ? 'num warning' : 'num'),
     row(

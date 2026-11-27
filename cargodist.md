@@ -41,9 +41,9 @@ jako dosud.
 - [x] Testy, commit
 
 ## 5. Rozhraní
-- [ ] Okno stanice: čekající náklad podle cíle a další zastávky („do B 12 přes C“), plánované toky
-- [ ] Okno vozidla: náklad na palubě podle cíle
-- [ ] Kontrola v prohlížeči, commit
+- [x] Okno stanice: čekající náklad podle cíle a další zastávky („do B 12 přes C“), plánované toky
+- [x] Okno vozidla: náklad na palubě podle cíle
+- [x] Kontrola v prohlížeči, commit
 
 ## 6. Dokončení
 - [ ] Zápis do nth.md (Hotovo), odstranění „Cargodist“ ze Zbývá

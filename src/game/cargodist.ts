@@ -642,4 +642,54 @@ export class CargoDist {
     result.undestined = Math.max(0, carrier.passengers - destTotal(carrier.dests));
     return result;
   }
+
+  // Jméno stanice podle id spojené stanice
+  stationName(id: number): string {
+    return this.game.world.rail.stations.find((s) => s.id === id)?.name ?? `stanice ${id}`;
+  }
+
+  // Čekající náklad podle cíle (čerstvý i z překládek) a hlavní další zastávka; dest undefined = bez cíle
+  waitingByDest(station: Station, cargo: Cargo, fresh: number): { dest?: number; next?: number; amount: number }[] {
+    const byDest = new Map<number | undefined, number>();
+    const add = (dest: number | undefined, amount: number): void => {
+      if (amount > 0) byDest.set(dest, (byDest.get(dest) ?? 0) + amount);
+    };
+    const planned = Object.entries(station.planned?.[cargo] ?? {});
+    let sum = 0;
+    for (const [, v] of planned) sum += v;
+    const scale = sum > fresh && sum > 0 ? fresh / sum : 1;
+    for (const [key, v] of planned) add(Number(key.split(':')[1]), v * scale);
+    add(undefined, fresh - Math.min(fresh, sum));
+    for (const packet of station.transfers?.[cargo] ?? []) add(packet.dest, packet.amount);
+    return [...byDest]
+      .map(([dest, amount]) => {
+        if (dest === undefined) return { amount };
+        const hops = [...this.nextHops(station, cargo, dest)].sort((x, y) => y[1] - x[1]);
+        return { dest, next: hops[0]?.[0], amount };
+      })
+      .sort((x, y) => (x.dest === undefined ? 1 : y.dest === undefined ? -1 : y.amount - x.amount));
+  }
+
+  // „B 12 · C 5 přes B · bez cíle 3“
+  waitingText(station: Station, cargo: Cargo, fresh: number): string {
+    const parts = this.waitingByDest(station, cargo, fresh)
+      .filter((w) => Math.floor(w.amount) > 0)
+      .map((w) => {
+        const amount = Math.floor(w.amount);
+        if (w.dest === undefined) return `bez cíle ${amount}`;
+        const via = w.next !== undefined && w.next !== w.dest ? ` přes ${this.stationName(w.next)}` : '';
+        return `${this.stationName(w.dest)} ${amount}${via}`;
+      });
+    return parts.length > 0 ? parts.join(' · ') : 'nic nečeká';
+  }
+
+  // Náklad na palubě podle cíle: „B 20 · C 10 · bez cíle 5“, nebo null (bez cílů)
+  loadText(load: { passengers: number; dests?: Record<number, number> }): string | null {
+    const dests = Object.entries(load.dests ?? {}).filter(([, n]) => n > 0);
+    if (dests.length === 0 || load.passengers <= 0) return null;
+    const parts = dests.sort((x, y) => y[1] - x[1]).map(([dest, n]) => `${this.stationName(Number(dest))} ${n}`);
+    const rest = load.passengers - destTotal(load.dests);
+    if (rest > 0) parts.push(`bez cíle ${rest}`);
+    return parts.join(' · ');
+  }
 }

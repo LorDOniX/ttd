@@ -31,6 +31,23 @@ function waitingText(station: Station, cargo: Cargo): string {
   return cargo === 'passengers' ? `čeká ${amount}${extra}` : `${amount} t${extra}`;
 }
 
+// Cargodist: čekající náklad podle cíle a spojení ze stanice s kapacitou za měsíc
+function distributionRows(game: Game, station: Station): [string, string][] {
+  const { cargodist } = game;
+  return stationCargos(game, station).flatMap((c): [string, string][] => {
+    if (!cargodist.enabled(c)) return [];
+    const linked = cargodist.linksFrom(station, c);
+    const waiting = waitingAmount(station, c) + transferWaiting(station, c);
+    // Druh, který odtud nic neveze a nic nečeká, okno nezahlcuje
+    if (linked.length === 0 && Math.floor(waiting) <= 0) return [];
+    const links = linked.map((l) => `${cargodist.stationName(l.to)} ${Math.round(l.capacity)}`).join(', ');
+    return [
+      [`${CARGOS[c].name} – cíle`, cargodist.waitingText(station, c, waitingAmount(station, c))],
+      [`${CARGOS[c].name} – spojení`, links ? `${links} (kapacita za měsíc)` : 'žádné'],
+    ];
+  });
+}
+
 // Popis části stanice: „nástupiště 2×5“, „zastávka aut“, „malé letiště 5×4“, „přístav se 2 kotvišti“
 export function partLabel(part: Station): string {
   if (part.kind === 'road') return 'zastávka aut';
@@ -85,6 +102,7 @@ export function stationRows(game: Game, station: Station): [string, string][] {
           `čekající ${percent(ratingInfo.waiting)})`,
       ];
     }),
+    ...distributionRows(game, station),
     ['Výkup', accepted.length > 0 ? accepted.join(', ') : 'nic'],
     ...(towns
       ? [['Příliv cestujících za měsíc', String(Math.round(game.passengers.inflow(station)))] as [string, string]]

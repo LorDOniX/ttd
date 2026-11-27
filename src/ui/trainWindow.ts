@@ -21,7 +21,7 @@ import type { Depot } from '../world/rail';
 import { pointAt } from '../world/route';
 import { vehicleViewport } from './vehicleViewport';
 import { openOrders, type OrdersSource } from './vehicleOrders';
-import { liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
+import { destinationRows, liveWindow, maintenanceRows, openVehicleWindow, type VehicleStatus } from './vehicleWindow';
 import { brokenText } from '../game/reliability';
 import { consistCargos } from '../game/consist';
 import { h } from './dom';
@@ -195,6 +195,7 @@ function trainDetails(game: Game, train: Train, links: TrainLinks): HTMLElement 
     { className: 'table' },
     row('Model', `${model.name} (${model.year})`),
     row('Náklad', formatLoad(train), 'num'),
+    ...destinationRows(game, train, row),
     row(
       'Délka',
       `${formatTiles(trainLength(train))} (${train.wagons} ${train.wagons === 1 ? 'vagon' : train.wagons >= 2 && train.wagons <= 4 ? 'vagony' : 'vagonů'})`,

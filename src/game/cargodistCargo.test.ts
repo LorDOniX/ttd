@@ -252,4 +252,20 @@ describe('cargodist: náklad s cílem', () => {
     expect(a.planned!.passengers).toBeUndefined();
     expect(a.waiting).toBe(30);
   });
+
+  it('texty pro okna: čekající podle cíle a náklad na palubě podle cíle', () => {
+    const { game, a, b, c } = twoLines();
+    a.waiting = 40;
+    game.cargodist.addFresh(a, 'passengers', 40);
+    a.waiting = 50;
+    const text = game.cargodist.waitingText(a, 'passengers', a.waiting);
+    expect(text).toMatch(/^(B|C) \d+/);
+    expect(text).toContain('C ');
+    expect(text).toContain('přes B');
+    expect(text).toContain('bez cíle 10');
+    expect(game.cargodist.loadText({ passengers: 30, dests: { [b.id]: 20, [c.id]: 5 } })).toBe(
+      'B 20 · C 5 · bez cíle 5',
+    );
+    expect(game.cargodist.loadText({ passengers: 30 })).toBeNull();
+  });
 });
