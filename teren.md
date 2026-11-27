@@ -46,11 +46,11 @@ proto jde po každém kroku hrát a commitovat. Body se odškrtávají průběž
 - [x] Testy, kontrola v prohlížeči, commit
 
 ## 6. Tunely
-- [ ] Železniční tunel: vjezd na nakloněné dlaždici, rovně skrz kopec k protějšímu svahu ve stejné výšce
-- [ ] Silniční tunel stejně
-- [ ] Vlaky a auta tunelem projedou (trasa jako přes most), uvnitř nejsou vidět
-- [ ] Portály tunelu ve vykreslení, náhled a cena podle délky, demolice portálu zboří tunel
-- [ ] Uložení, info o dlaždici, testy, kontrola v prohlížeči, commit
+- [x] Železniční tunel: vjezd na nakloněné dlaždici, rovně skrz kopec k protějšímu svahu ve stejné výšce
+- [x] Silniční tunel stejně
+- [x] Vlaky a auta tunelem projedou (trasa jako přes most), uvnitř nejsou vidět
+- [x] Portály tunelu ve vykreslení, náhled a cena podle délky, demolice portálu zboří tunel
+- [x] Uložení, info o dlaždici, testy, kontrola v prohlížeči, commit
 
 ## 7. Dokončení
 - [ ] Zápis do nth.md (Hotovo), odstranění položek „Tunely“ a „Výška terénu“ ze Zbývá

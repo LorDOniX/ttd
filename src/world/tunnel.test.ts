@@ -29,9 +29,9 @@ describe('tunely', () => {
     expect(rail.tunnelShape(15, 5, false)).toMatchObject({ x: 15, y: 5, dir: Edge.W, span: 6 });
     expect(rail.tunnelShape(9, 5, false)).toMatchObject({ dir: Edge.E, span: 4 });
     expect(rail.tunnelShape(5, 5, false)).toBe('Portál tunelu musí stát na rovném svahu.');
-    // Do údolí místo kopce: za portálem terén klesá
-    world.map.setCornerLevel(20, 5, 1);
-    world.map.setCornerLevel(20, 6, 1);
+    // Za portálem krátká plošina a pak terén klesá zpět na úroveň portálu, ale ne protějším svahem
+    for (const cx of [20, 21]) for (const cy of [5, 6]) world.map.setCornerLevel(cx, cy, 1);
+    world.map.setCornerLevel(22, 6, 1);
     expect(rail.tunnelShape(19, 5, false)).toBe('Tunel by vyšel na povrch: na druhé straně není svah ve stejné výšce.');
   });
 
@@ -55,15 +55,17 @@ describe('tunely', () => {
     expect(path).not.toBeNull();
     expect(path.find((s) => s.span)).toMatchObject({ x: 9, span: 6 });
     expect(pathLength(path)).toBe(17);
+    // Trasa začíná za dlaždicí 3: portál 8 je d 4..5, tunel 5..11, portál 15 je 11..12.
     // Portál i tunel jsou rovně ve výšce portálu (úroveň 0), bez rampy mostu
-    for (const d of [5.2, 5.8, 8, 10.5]) {
+    for (const d of [4.2, 4.8, 8, 11.8]) {
       expect(groundAt(rail, path, d)).toBe(0);
       expect(heightAt(rail, path, d)).toBe(0);
     }
-    expect(inTunnelAt(rail, path, 5.2)).toBe(false);
-    expect(inTunnelAt(rail, path, 5.8)).toBe(true);
+    expect(inTunnelAt(rail, path, 4.2)).toBe(false);
+    expect(inTunnelAt(rail, path, 4.8)).toBe(true);
     expect(inTunnelAt(rail, path, 9)).toBe(true);
-    expect(inTunnelAt(rail, path, 12.8)).toBe(false);
+    expect(inTunnelAt(rail, path, 11.2)).toBe(true);
+    expect(inTunnelAt(rail, path, 11.8)).toBe(false);
   });
 
   it('silniční tunel: auta jím projedou, portály se stanou silnicí', () => {

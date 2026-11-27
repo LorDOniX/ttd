@@ -208,7 +208,6 @@ export class RoadVehiclesView {
     return view;
   }
 
-  // Výška vozovky (bez ROAD_TOP) v místě pos trasy: terén, nebo mostovka ve výšce nájezdu
   // Je auto v tunelu? Mizí v portálu (ve středu jeho dlaždice) a vyjede z druhého
   private inTunnel(path: RoadVehicle['path'], pos: number): boolean {
     const k = Math.max(0, Math.min(path.length - 1, Math.round(pos)));
@@ -216,6 +215,7 @@ export class RoadVehiclesView {
     return Boolean(path[k]?.tunnel || (path[k + 1]?.tunnel && u > 0) || (path[k - 1]?.tunnel && u < 0));
   }
 
+  // Výška vozovky (bez ROAD_TOP) v místě pos trasy: terén, nebo mostovka ve výšce nájezdu
   private roadHeight(path: RoadVehicle['path'], pos: number): number {
     const { x, y } = vehiclePoint(path, pos);
     const height = roadElevation(path, pos);
